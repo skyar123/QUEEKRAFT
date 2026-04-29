@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>QUEER HACK ++ 2033</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="game-area">
+            <canvas id="game-canvas" tabindex="0"></canvas>
+            
+            <div id="message-area"></div>
+            
+            <div id="status-line">
+                <span id="player-name">Skylar</span> the Survivor | 
+                Depth:<span id="depth">1</span> | 
+                Hearts:<span id="player-hearts"></span> |
+                Archives:<span id="zines">0</span>/19 | 
+                Survivors:<span id="figures">0</span>/9 | 
+                Scrap:<span id="treasures">0</span>
+            </div>
+        </div>
+
+        <div id="controls">
+            <div class="dpad-container">
+                <button class="control-btn dpad-btn" id="up"><span>↑</span></button>
+                <button class="control-btn dpad-btn" id="left"><span>←</span></button>
+                <button class="control-btn dpad-btn" id="right"><span>→</span></button>
+                <button class="control-btn dpad-btn" id="down"><span>↓</span></button>
+            </div>
+            <div class="action-container">
+                <button class="control-btn" id="interact">USE</button>
+                <button class="control-btn" id="quick-attack" style="font-size: 14px">Q-ATK</button>
+                <button class="control-btn" id="power-attack" style="font-size: 14px">E-ATK</button>
+            </div>
+            <div id="control-status">WASD/Arrows: Isometric Move | Q/E: Attack | SPACE: Interact</div>
+        </div>
+    </div>
+
+    <!-- Modals for Zines, Dialogues, Victory, Game Over -->
+    <div id="zine-modal" class="modal">
+        <div class="zine-box">
+            <div class="zine-header" id="zine-title">Trans Resources</div>
+            <div class="zine-content" id="zine-content"></div>
+            <button class="zine-close" id="zine-close-btn">Close</button>
+        </div>
+    </div>
+
+    <div id="conversation-modal" class="modal">
+        <div class="conversation-box" style="display: flex; flex-direction: column;">
+            <div class="conversation-header" id="conversation-name">Historical Figure</div>
+            <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                <img src="/images/portrait_npc.png" style="width: 120px; height: 120px; border: 2px solid var(--punk-cyan); box-shadow: 0 0 10px var(--punk-cyan);">
+                <div class="conversation-content" id="conversation-text" style="flex: 1; margin-bottom: 0;"></div>
+            </div>
+            <div class="conversation-controls" id="conversation-choices">
+                <!-- Buttons injected dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <div id="victory-screen" class="modal">
+        <div class="victory-content" style="text-align: center;">
+            <img src="/images/ui_victory.png" style="max-width: 100%; max-height: 50vh; border: 4px solid var(--punk-cyan); margin-bottom: 15px;">
+            <div>
+                You've collected all 19 sacred zines<br>
+                AND learned from all 9 historical ancestors!<br><br>
+                Their voices live on through you.<br>
+                The revolution continues...<br><br>
+                <span style="color: #FF71CE;">✊ Power in our stories ✊</span><br>
+                <span style="color: #5BCEFA;">🏳️‍⚧️ Trans liberation now! 🏳️‍⚧️</span>
+            </div>
+            <button class="restart-btn" id="victory-restart-btn">Play Again</button>
+        </div>
+    </div>
+
+    <div id="game-over-screen" class="modal">
+        <div class="game-over-content">
+            <div style="color: var(--blood-red); font-size: 24px; margin-bottom: 15px;">💀 YOU DIED IN THE WASTELAND 💀</div>
+            <div id="death-message" style="color: var(--fg)">
+                A mutant got you!<br><br>
+                The revolution must continue...
+            </div>
+            <button class="restart-btn" id="game-over-continue-btn">Choose Your Heir</button>
+        </div>
+    </div>
+
+    <!-- Heir Selection Screen -->
+    <div id="heir-select-screen" class="modal">
+        <div class="heir-box">
+            <div style="color: var(--terminal-amber); font-size: 24px; margin-bottom: 15px; text-align: center;">CHOOSE YOUR SURVIVOR</div>
+            <div style="text-align: center; margin-bottom: 20px;">The wasteland claimed you, but the revolution does not end. Select who will carry the torch.</div>
+            <div id="heir-options" style="display: flex; gap: 15px; justify-content: center;">
+                <!-- Dynamically populated -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Camp / Upgrades Screen -->
+    <div id="camp-screen" class="modal">
+        <div class="camp-box">
+            <div style="color: var(--terminal-green); font-size: 24px; margin-bottom: 15px; text-align: center;">THE RUINED SAFEHOUSE (UPGRADES)</div>
+            <div style="text-align: center; margin-bottom: 20px;">Rest and prepare. Use collected Scrap to strengthen the next generation.</div>
+            <div style="text-align: center; margin-bottom: 15px; font-size: 20px; color: var(--terminal-amber);">Scrap: <span id="camp-treasures">0</span></div>
+            
+            <div id="upgrade-options" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                <div class="upgrade-row">
+                    <span>Max Health (+1 Heart) - Cost: <span id="cost-health">3</span></span>
+                    <button class="upgrade-btn" id="upgrade-health-btn">Upgrade</button>
+                </div>
+                <div class="upgrade-row">
+                    <span>Base Damage (+1 DMG) - Cost: <span id="cost-damage">5</span></span>
+                    <button class="upgrade-btn" id="upgrade-damage-btn">Upgrade</button>
+                </div>
+            </div>
+            
+            <button class="restart-btn" id="enter-dungeon-btn" style="width: 100%; border-color: var(--terminal-green); color: var(--terminal-green);">Enter the Wasteland</button>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
