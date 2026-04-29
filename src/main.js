@@ -191,14 +191,20 @@ function startDungeon() {
     draw();
 }
 
+// Player tile-space helpers (player.x/y are floats from physics)
+function playerTileX() { return Math.round(game.player.x); }
+function playerTileY() { return Math.round(game.player.y); }
+
 function updateFOV() {
-    let fovRadius = 4;
-    if (game.player.trait && game.player.trait.id === 'dysphoria') fovRadius = 2;
-    
+    let fovRadius = 6;
+    if (game.player.trait && game.player.trait.id === 'dysphoria') fovRadius = 3;
+
+    const px = playerTileX();
+    const py = playerTileY();
     for (let dy = -fovRadius; dy <= fovRadius; dy++) {
         for (let dx = -fovRadius; dx <= fovRadius; dx++) {
-            const x = game.player.x + dx;
-            const y = game.player.y + dy;
+            const x = px + dx;
+            const y = py + dy;
             if (x >= 0 && y >= 0 && x < game.mapWidth && y < game.mapHeight) {
                 game.seen[`${x},${y}`] = true;
             }
@@ -212,177 +218,146 @@ function isPassable(x, y) {
     return tile === '.' || tile === '>';
 }
 
-function movePlayer(dx, dy) {
-    if (!game.player.alive) return;
-    
-    // Update facing direction
-    game.player.facingX = dx;
-    game.player.facingY = dy;
-    
-    const newX = game.player.x + dx;
-    const newY = game.player.y + dy;
-    
-    const troll = game.trolls.find(t => t.x === newX && t.y === newY);
-    if (troll) {
-        // Bump attack into enemy
-        attackEnemy(game, dx, dy, 'quick');
-        processTurn();
-        return;
+// Solid surface (something an entity can stand on)
+function isSolid(x, y) {
+    if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return true;
+    return game.map[`${x},${y}`] === '#';
+}
+
+// Move an enemy one tile toward target, respecting platformer rules.
+// Enemies walk along surfaces and won't step into open air unless they fly.
+function moveEnemy(troll, tdx, tdy, opts = {}) {
+    const flying = opts.flying || troll.enemyType === 'wraith';
+    const nx = troll.x + tdx;
+    const ny = troll.y + tdy;
+    if (!isPassable(nx, ny)) return false;
+    if (game.trolls.find(t => t !== troll && t.x === nx && t.y === ny)) return false;
+    if (!flying) {
+        // Don't walk off cliffs unless we're already falling (needs ground below or directly below)
+        if (!isSolid(nx, ny + 1)) {
+            // Allow a little falling: if blocked horizontally, drop down
+            if (tdy === 0 && isSolid(nx, ny + 2)) {
+                // there's ground 1 tile below, OK to drop
+            } else if (tdy === 0) {
+                return false;
+            }
+        }
     }
-    
-    if (!isPassable(newX, newY)) {
-        return; // silently blocked — no wall spam
-    }
-    
-    game.player.x = newX;
-    game.player.y = newY;
-    game.player.facingX = dx;
-    game.player.facingY = dy;
-    
-    Audio.playStep();
-    processTurn();
+    troll.x = nx;
+    troll.y = ny;
+    return true;
 }
 
 function processTurn() {
-    // Decrement attack cooldown each turn (for power attack delay)
     if (game.player.attackCooldown > 0) game.player.attackCooldown--;
     if (game.player.hurtCooldown > 0) game.player.hurtCooldown--;
+
+    const px = playerTileX();
+    const py = playerTileY();
 
     game.trolls.forEach(troll => {
         troll.moveDelay++;
         if (troll.moveDelay < troll.maxMoveDelay) return;
         troll.moveDelay = 0;
 
+        const dist = Math.abs(px - troll.x) + Math.abs(py - troll.y);
+
         if (troll.enemyType === 'gatekeeper') {
-            // Gatekeepers don't move but DO attack if adjacent
-            const dist = Math.abs(game.player.x - troll.x) + Math.abs(game.player.y - troll.y);
-            if (dist === 1) takeDamage(game, 2);
+            if (dist <= 1) takeDamage(game, 2);
             return;
         }
 
-        const dist = Math.abs(game.player.x - troll.x) + Math.abs(game.player.y - troll.y);
         let alertRadius = troll.alertRadius;
         if (game.player.trait && game.player.trait.id === 'clocked') alertRadius += 3;
         if (game.player.trait && game.player.trait.id === 'stealth') alertRadius = 1;
 
-        // CONCERN TROLL: drains HP when adjacent, moves slowly toward player
+        const tdx = px > troll.x ? 1 : px < troll.x ? -1 : 0;
+        const tdy = py > troll.y ? 1 : py < troll.y ? -1 : 0;
+
         if (troll.enemyType === 'concern') {
-            if (dist === 1) {
+            if (dist <= 1) {
                 takeDamage(game, 1);
                 UI.addMessage("Concern Troll whispers 'Are you SURE about this?'", 'death');
             } else if (dist <= alertRadius) {
-                const tdx = game.player.x > troll.x ? 1 : game.player.x < troll.x ? -1 : 0;
-                const tdy = game.player.y > troll.y ? 1 : game.player.y < troll.y ? -1 : 0;
-                if (isPassable(troll.x + tdx, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x + tdx && t.y === troll.y + tdy)) {
-                    troll.x += tdx; troll.y += tdy;
-                }
+                if (!moveEnemy(troll, tdx, 0)) moveEnemy(troll, 0, tdy);
             }
             return;
         }
 
-        // BOSS: always aggressive, spawns minions
         if (troll.enemyType === 'boss') {
-            // Attack if adjacent
-            if (dist === 1) { takeDamage(game, 2); return; }
-            // Spawn minion 25% of turns when health < half
+            if (dist <= 1) { takeDamage(game, 2); return; }
             if (troll.health < troll.maxHealth / 2 && Math.random() < 0.25 && game.trolls.length < 12) {
-                const tdx = (Math.random() < 0.5 ? -1 : 1);
-                const tdy = (Math.random() < 0.5 ? -1 : 1);
-                if (isPassable(troll.x + tdx, troll.y + tdy)) {
-                    game.trolls.push({ x: troll.x+tdx, y: troll.y+tdy, enemyType: 'wraith',
-                        health: 1, maxHealth: 1, patrolPath: [], patrolIndex: 0, direction: 1,
-                        moveDelay: 0, maxMoveDelay: 1, alertRadius: 8, chasingTurns: 0 });
+                const sx = troll.x + (Math.random() < 0.5 ? -1 : 1);
+                const sy = troll.y;
+                if (isPassable(sx, sy)) {
+                    game.trolls.push({
+                        x: sx, y: sy, enemyType: 'wraith',
+                        health: 1, maxHealth: 1,
+                        patrolPath: [], patrolIndex: 0, direction: 1,
+                        moveDelay: 0, maxMoveDelay: 1, alertRadius: 8, chasingTurns: 0
+                    });
                     UI.addMessage("⚡ BOSS spawned a Wraith!", "death");
                 }
             } else {
-                const tdx = game.player.x > troll.x ? 1 : game.player.x < troll.x ? -1 : 0;
-                const tdy = game.player.y > troll.y ? 1 : game.player.y < troll.y ? -1 : 0;
-                if (isPassable(troll.x + tdx, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x+tdx && t.y === troll.y+tdy)) {
-                    troll.x += tdx; troll.y += tdy;
-                }
+                if (!moveEnemy(troll, tdx, 0)) moveEnemy(troll, 0, tdy);
             }
             return;
         }
 
-        // WRAITH: teleports, high dodge — attack if adjacent
         if (troll.enemyType === 'wraith') {
-            if (dist === 1) { takeDamage(game, 1); return; }
-            if (dist <= alertRadius) {
-                if (Math.random() < 0.6) {
-                    // Aggressive teleport toward player
-                    const tdx = game.player.x > troll.x ? 1 : game.player.x < troll.x ? -1 : 0;
-                    const tdy = game.player.y > troll.y ? 1 : game.player.y < troll.y ? -1 : 0;
-                    const nx = troll.x + tdx, ny = troll.y + tdy;
-                    if (isPassable(nx, ny) && !game.trolls.find(t => t !== troll && t.x === nx && t.y === ny)) {
-                        for (let i = 0; i < 5; i++) game.particles.push({x: troll.x, y: troll.y, vx: 0, vy: -0.4, life: 1, color: '#39FF14'});
-                        troll.x = nx; troll.y = ny;
+            // Wraiths fly and teleport
+            if (dist <= 1) { takeDamage(game, 1); return; }
+            if (dist <= alertRadius && Math.random() < 0.6) {
+                if (moveEnemy(troll, tdx, tdy, { flying: true })) {
+                    for (let i = 0; i < 5; i++) {
+                        game.particles.push({ x: troll.x, y: troll.y, vx: 0, vy: -0.4, life: 1, color: '#39FF14' });
                     }
                 }
             }
             return;
         }
 
-        // POLICE: fast, aggressive, 2 damage
         if (troll.enemyType === 'police') {
-            if (dist === 1) { takeDamage(game, 2); return; }
+            if (dist <= 1) { takeDamage(game, 2); return; }
             if (dist <= alertRadius) {
-                const tdx = game.player.x > troll.x ? 1 : game.player.x < troll.x ? -1 : 0;
-                const tdy = game.player.y > troll.y ? 1 : game.player.y < troll.y ? -1 : 0;
-                if (isPassable(troll.x + tdx, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x+tdx && t.y === troll.y+tdy)) {
-                    troll.x += tdx; troll.y += tdy;
-                }
+                if (!moveEnemy(troll, tdx, 0)) moveEnemy(troll, 0, tdy);
             }
             return;
         }
 
-        // DEFAULT TROLL: chase forever once alerted, 1 damage on contact
-        if (dist === 1) { takeDamage(game, 1); return; }
+        // Default troll: chase if alerted
+        if (dist <= 1) { takeDamage(game, 1); return; }
         if (dist <= alertRadius) {
-            troll.chasingTurns = 99; // chase indefinitely
-            const tdx = game.player.x > troll.x ? 1 : game.player.x < troll.x ? -1 : 0;
-            const tdy = game.player.y > troll.y ? 1 : game.player.y < troll.y ? -1 : 0;
-            if (isPassable(troll.x + tdx, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x+tdx && t.y === troll.y+tdy)) {
-                troll.x += tdx; troll.y += tdy;
-                return;
-            }
+            if (!moveEnemy(troll, tdx, 0)) moveEnemy(troll, 0, tdy);
+            return;
         }
 
         // Idle wander
         if (Math.random() < 0.4) {
-            const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
-            const [rx, ry] = dirs[Math.floor(Math.random() * dirs.length)];
-            if (isPassable(troll.x + rx, troll.y + ry) && !game.trolls.find(t => t.x === troll.x + rx && t.y === troll.y + ry)) {
-                troll.x += rx;
-                troll.y += ry;
-            }
+            const dir = Math.random() < 0.5 ? -1 : 1;
+            moveEnemy(troll, dir, 0);
         }
     });
-    
-    // Check if player is caught
-    const caught = game.trolls.find(t => t.x === game.player.x && t.y === game.player.y);
+
+    // Body-collision damage when player overlaps an enemy tile
+    const caught = game.trolls.find(t => t.x === px && t.y === py);
     if (caught) {
         let dmg = 1;
         if (caught.enemyType === 'police') dmg = 2;
         if (caught.enemyType === 'boss') dmg = 3;
         takeDamage(game, dmg);
-        
-        // Push the player back slightly if possible
-        const pushX = game.player.x + (game.player.x > caught.x ? 1 : -1);
-        const pushY = game.player.y + (game.player.y > caught.y ? 1 : -1);
-        if (isPassable(pushX, pushY)) {
-            game.player.x = pushX;
-            game.player.y = pushY;
-        }
     }
-    
+
     checkPickups();
-    draw();
 }
 
 function interact() {
     if (!game.player.alive) return;
-    
-    if (game.map[`${game.player.x},${game.player.y}`] === '>') {
+
+    const px = playerTileX();
+    const py = playerTileY();
+
+    if (game.map[`${px},${py}`] === '>') {
         game.depth++;
         UI.addMessage(`Descending to level ${game.depth}...`);
         Audio.playStairs();
@@ -391,12 +366,16 @@ function interact() {
         draw();
         return;
     }
-    
-    const npc = game.npcs.find(n => n.x === game.player.x && n.y === game.player.y);
+
+    // Match adjacency (within 1 tile in any direction) so the player doesn't
+    // need to be perfectly snapped to a tile to interact.
+    const near = (a, b) => Math.abs(a.x - px) <= 1 && Math.abs(a.y - py) <= 1;
+
+    const npc = game.npcs.find(near);
     if (npc) {
-        if (!game.seen[npc.figureKey]) {
+        if (!game.persistent.seenFigures[npc.figureKey]) {
+            game.persistent.seenFigures[npc.figureKey] = true;
             game.historicalFigures++;
-            game.seen[npc.figureKey] = true;
         }
         DialogueUI.start(game, npc.figureKey);
         game.npcs = game.npcs.filter(n => n !== npc);
@@ -404,8 +383,8 @@ function interact() {
         draw();
         return;
     }
-    
-    const item = game.items.find(i => i.x === game.player.x && i.y === game.player.y);
+
+    const item = game.items.find(near);
     if (item) {
         if (item.type === 'zine') {
             if (!game.persistent.seenZines[item.zineKey]) {
@@ -454,11 +433,23 @@ function interact() {
     }
 }
 
+// Throttle pickup hint messages so they don't spam every physics tick
+let lastPickupHint = '';
 function checkPickups() {
-    const item = game.items.find(i => i.x === game.player.x && i.y === game.player.y);
-    if (item) UI.addMessage(`You see: ${item.name}. Press USE to interact.`);
-    const npc = game.npcs.find(n => n.x === game.player.x && n.y === game.player.y);
-    if (npc) UI.addMessage(`You see a historical figure. Press USE to speak.`);
+    const px = playerTileX();
+    const py = playerTileY();
+    const near = (a) => Math.abs(a.x - px) <= 1 && Math.abs(a.y - py) <= 1;
+
+    const item = game.items.find(near);
+    const npc = game.npcs.find(near);
+    let hint = '';
+    if (item) hint = `You see: ${item.name}. Press USE to interact.`;
+    else if (npc) hint = `You see a historical figure. Press USE to speak.`;
+    if (hint && hint !== lastPickupHint) {
+        UI.addMessage(hint);
+        lastPickupHint = hint;
+    }
+    if (!hint) lastPickupHint = '';
 }
 
 function drawTile(ctx, sx, sy, color, isWall, glowColor, pattern) {
@@ -487,42 +478,83 @@ requestAnimationFrame(gameLoop);
 
 function update(dt) {
     game.animFrame++;
-    
+
     if (!game.player.alive) return;
-    
-    // Gravity
-    game.player.vy += 0.5; // Gravity constant
-    
-    // Apply velocity
-    const nextY = game.player.y + game.player.vy * 0.1;
-    if (isPassable(Math.floor(game.player.x), Math.floor(nextY + 0.8)) && 
-        isPassable(Math.floor(game.player.x + 0.8), Math.floor(nextY + 0.8))) {
-        game.player.y = nextY;
-        game.player.onGround = false;
+
+    const PLAYER_W = 0.8;
+
+    // Gravity (only when airborne — keeps onGround stable, no jitter)
+    if (!game.player.onGround) {
+        game.player.vy = Math.min(game.player.vy + 0.6, 8);
     } else {
-        if (game.player.vy > 0) {
-            game.player.onGround = true;
-            game.player.y = Math.floor(game.player.y);
-        }
         game.player.vy = 0;
     }
-    
+
+    // Vertical movement
+    const nextY = game.player.y + game.player.vy * 0.1;
+    const checkBottom = Math.floor(nextY + PLAYER_W);
+    const checkTop = Math.floor(nextY);
+    const xL = Math.floor(game.player.x);
+    const xR = Math.floor(game.player.x + PLAYER_W);
+
+    if (game.player.vy >= 0) {
+        // Falling: check tile under feet
+        if (isPassable(xL, checkBottom) && isPassable(xR, checkBottom)) {
+            game.player.y = nextY;
+            game.player.onGround = false;
+        } else {
+            // Snap so feet rest on top of the wall
+            game.player.y = checkBottom - PLAYER_W;
+            game.player.vy = 0;
+            game.player.onGround = true;
+        }
+    } else {
+        // Jumping up: check tile above head
+        if (isPassable(xL, checkTop) && isPassable(xR, checkTop)) {
+            game.player.y = nextY;
+            game.player.onGround = false;
+        } else {
+            // Bonk a ceiling
+            game.player.y = checkTop + 1;
+            game.player.vy = 0;
+        }
+    }
+
+    // Re-check ground after vertical movement (in case we walked off an edge)
+    if (game.player.onGround) {
+        const fy = Math.floor(game.player.y + PLAYER_W + 0.05);
+        if (isPassable(xL, fy) && isPassable(xR, fy)) {
+            game.player.onGround = false;
+        }
+    }
+
+    // Horizontal movement
     const nextX = game.player.x + game.player.vx * 0.1;
-    if (isPassable(Math.floor(nextX), Math.floor(game.player.y)) && 
-        isPassable(Math.floor(nextX + 0.8), Math.floor(game.player.y)) &&
-        isPassable(Math.floor(nextX), Math.floor(game.player.y + 0.8)) && 
-        isPassable(Math.floor(nextX + 0.8), Math.floor(game.player.y + 0.8))) {
+    const yT = Math.floor(game.player.y);
+    const yB = Math.floor(game.player.y + PLAYER_W);
+    const checkX = game.player.vx > 0 ? Math.floor(nextX + PLAYER_W) : Math.floor(nextX);
+
+    if (isPassable(checkX, yT) && isPassable(checkX, yB)) {
         game.player.x = nextX;
     } else {
+        // Snap to wall edge
+        if (game.player.vx > 0) game.player.x = checkX - PLAYER_W;
+        else if (game.player.vx < 0) game.player.x = checkX + 1;
         game.player.vx = 0;
     }
-    
+
     // Friction
     game.player.vx *= 0.8;
-    
-    // Enemy AI & Cooldowns tick periodically (simulating "turns" in real-time)
+    if (Math.abs(game.player.vx) < 0.05) game.player.vx = 0;
+
+    // Enemy AI & cooldown ticks (simulating "turns" in real-time)
     if (game.animFrame % 10 === 0) {
         processTurn();
+    }
+
+    // Refresh visibility around the player every few frames
+    if (game.animFrame % 5 === 0) {
+        updateFOV();
     }
 }
 
@@ -537,30 +569,33 @@ function draw() {
     const renderables = [];
     const VIEW_W = Math.ceil(canvas.width / T) + 2;
     const VIEW_H = Math.ceil(canvas.height / T) + 2;
-    const startX = Math.max(0, game.player.x - Math.ceil(VIEW_W / 2));
-    const startY = Math.max(0, game.player.y - Math.ceil(VIEW_H / 2));
+    const ptx = playerTileX();
+    const pty = playerTileY();
+    const startX = Math.max(0, ptx - Math.ceil(VIEW_W / 2));
+    const startY = Math.max(0, pty - Math.ceil(VIEW_H / 2));
     const endX = Math.min(game.mapWidth, startX + VIEW_W);
     const endY = Math.min(game.mapHeight, startY + VIEW_H);
-    
+
+    const VIS_R2 = 80; // squared visibility radius
     for (let y = startY; y < endY; y++) {
         for (let x = startX; x < endX; x++) {
             const tile = game.map[`${x},${y}`];
             if (!tile) continue;
-            const dx = x - game.player.x;
-            const dy = y - game.player.y;
-            const isVisible = (dx * dx + dy * dy) <= 50;
+            const dx = x - ptx;
+            const dy = y - pty;
+            const isVisible = (dx * dx + dy * dy) <= VIS_R2;
             const isExplored = game.seen[`${x},${y}`];
             if (isVisible || isExplored) {
                 renderables.push({ type: 'tile', tile, x, y, z: 0, isVisible });
             }
         }
     }
-    
+
     game.items.forEach(item => { if (game.seen[`${item.x},${item.y}`]) renderables.push({ type: 'item', entity: item, x: item.x, y: item.y, z: 1 }); });
     game.npcs.forEach(npc => { if (game.seen[`${npc.x},${npc.y}`]) renderables.push({ type: 'npc', entity: npc, x: npc.x, y: npc.y, z: 1 }); });
-    game.trolls.forEach(troll => { 
-        const d = (troll.x - game.player.x)**2 + (troll.y - game.player.y)**2;
-        if (d <= 50) renderables.push({ type: 'troll', entity: troll, x: troll.x, y: troll.y, z: 2 });
+    game.trolls.forEach(troll => {
+        const d = (troll.x - ptx) ** 2 + (troll.y - pty) ** 2;
+        if (d <= VIS_R2) renderables.push({ type: 'troll', entity: troll, x: troll.x, y: troll.y, z: 2 });
     });
     if (game.player.alive) {
         renderables.push({ type: 'player', entity: game.player, x: game.player.x, y: game.player.y, z: 3 });
@@ -965,45 +1000,63 @@ function draw() {
     ctx.globalAlpha = 1.0;
 }
 
+function jump() {
+    if (game.player.onGround) {
+        game.player.vy = -10;
+        game.player.onGround = false;
+        Audio.playJump();
+    }
+}
+
+function isModalOpen() {
+    return UI.modals.zine.style.display === 'flex'
+        || UI.modals.conversation.style.display === 'flex'
+        || UI.modals.victory.style.display === 'flex'
+        || UI.modals.gameOver.style.display === 'flex'
+        || UI.modals.heirSelect.style.display === 'flex'
+        || UI.modals.camp.style.display === 'flex';
+}
+
 function setupControls() {
     const keys = {};
     document.addEventListener('keydown', e => {
         keys[e.code] = true;
-        
-        if (UI.modals.zine.style.display === 'flex' || UI.modals.conversation.style.display === 'flex') return;
-        
+        if (isModalOpen()) return;
+
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-            if (game.player.onGround) {
-                game.player.vy = -12;
-                game.player.onGround = false;
-                Audio.playStep();
-            }
+            jump();
+            e.preventDefault();
         }
-        
+
+        const fx = game.player.facingX || 1;
         if (e.code === 'KeyQ') {
-            attackEnemy(game, game.player.facingX, game.player.facingY, 'quick');
+            attackEnemy(game, fx, 0, 'quick');
         } else if (e.code === 'KeyE') {
-            attackEnemy(game, game.player.facingX, game.player.facingY, 'power');
+            attackEnemy(game, fx, 0, 'power');
         } else if (e.code === 'KeyR') {
             if (game.player.attackCooldown === 0) {
                 game.player.attackCooldown = 5;
                 UI.addMessage("NEON BLAST! 💥", "special");
                 UI.shakeScreen();
-                const dirs = [[0,1], [0,-1], [1,0], [-1,0], [1,1], [-1,-1], [1,-1], [-1,1]];
+                const dirs = [[1, 0], [-1, 0], [1, -1], [-1, -1], [0, -1]];
                 dirs.forEach(d => attackEnemy(game, d[0], d[1], 'blast'));
             }
-        } else if (e.code === 'Enter') {
+        } else if (e.code === 'Enter' || e.code === 'KeyF') {
             interact();
         }
     });
-    
+
     document.addEventListener('keyup', e => {
         keys[e.code] = false;
     });
 
-    // Add horizontal movement to update loop
+    // Wrap update with input handling. Pauses while a modal is open.
     const originalUpdate = update;
     update = (dt) => {
+        if (isModalOpen()) {
+            game.player.vx = 0;
+            return;
+        }
         if (keys['ArrowLeft'] || keys['KeyA']) {
             game.player.vx = -4;
             game.player.facingX = -1;
@@ -1014,13 +1067,34 @@ function setupControls() {
         originalUpdate(dt);
     };
 
-    document.getElementById('up').onclick = () => { if(game.player.onGround) game.player.vy = -12; };
-    document.getElementById('left').onclick = () => { game.player.vx = -4; game.player.facingX = -1; };
-    document.getElementById('right').onclick = () => { game.player.vx = 4; game.player.facingX = 1; };
+    // Touch / mobile controls
+    const upBtn = document.getElementById('up');
+    const leftBtn = document.getElementById('left');
+    const rightBtn = document.getElementById('right');
+    const downBtn = document.getElementById('down');
+
+    const setMove = (dir) => () => {
+        if (dir === 0) {
+            game.player.vx = 0;
+        } else {
+            game.player.vx = dir * 4;
+            game.player.facingX = dir;
+        }
+    };
+
+    upBtn.ontouchstart = upBtn.onmousedown = (e) => { e.preventDefault(); jump(); };
+    leftBtn.ontouchstart = leftBtn.onmousedown = (e) => { e.preventDefault(); setMove(-1)(); };
+    leftBtn.ontouchend = leftBtn.onmouseup = leftBtn.onmouseleave = setMove(0);
+    rightBtn.ontouchstart = rightBtn.onmousedown = (e) => { e.preventDefault(); setMove(1)(); };
+    rightBtn.ontouchend = rightBtn.onmouseup = rightBtn.onmouseleave = setMove(0);
+    if (downBtn) {
+        downBtn.ontouchstart = downBtn.onmousedown = (e) => { e.preventDefault(); interact(); };
+    }
+
     document.getElementById('interact').onclick = interact;
-    document.getElementById('quick-attack').onclick = () => attackEnemy(game, game.player.facingX, game.player.facingY, 'quick');
-    document.getElementById('power-attack').onclick = () => attackEnemy(game, game.player.facingX, game.player.facingY, 'power');
-    
+    document.getElementById('quick-attack').onclick = () => attackEnemy(game, game.player.facingX || 1, 0, 'quick');
+    document.getElementById('power-attack').onclick = () => attackEnemy(game, game.player.facingX || 1, 0, 'power');
+
     document.getElementById('victory-restart-btn').onclick = () => location.reload();
     document.getElementById('game-over-continue-btn').onclick = () => {
         const heirs = generateHeirs();

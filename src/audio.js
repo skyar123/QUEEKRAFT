@@ -34,5 +34,14 @@ export const Audio = {
     },
     playStep: () => {
         playTone(100, 'triangle', 0.05, 0.05);
+    },
+    playJump: () => {
+        playTone(220, 'square', 0.08, 0.08);
+        setTimeout(() => playTone(440, 'square', 0.08, 0.05), 60);
+    },
+    playStairs: () => {
+        playTone(330, 'sine', 0.15, 0.1);
+        setTimeout(() => playTone(440, 'sine', 0.15, 0.1), 80);
+        setTimeout(() => playTone(660, 'sine', 0.2, 0.1), 160);
     }
 };

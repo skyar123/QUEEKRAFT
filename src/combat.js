@@ -2,18 +2,25 @@ import { UI } from './ui.js';
 import { Audio } from './audio.js';
 
 export function attackEnemy(game, dx, dy, type) {
-    if (game.player.attackCooldown > 0) return; // silently block — no spam message
-    
-    // Determine target based on player facing direction
-    const targetX = game.player.x + dx;
-    const targetY = game.player.y + dy;
-    
-    const enemy = game.trolls.find(t => t.x === targetX && t.y === targetY);
-    
+    if (game.player.attackCooldown > 0) return;
+
+    // Player position rounded to tile grid for combat targeting
+    const px = Math.round(game.player.x);
+    const py = Math.round(game.player.y);
+
+    // Side-view platformer: melee hits an arc in front of (and slightly above/below) the player
+    const range = type === 'power' ? 2 : 1;
+    const enemy = game.trolls.find(t => {
+        const exDist = (t.x - px) * Math.sign(dx || 1);
+        const inFront = dx === 0 ? Math.abs(t.x - px) <= 1 : (exDist > 0 && exDist <= range);
+        const verticalOK = Math.abs(t.y - py) <= 1;
+        return inFront && verticalOK;
+    });
+
     if (!enemy) {
         if (type !== 'blast') {
             // no cooldown on a miss — can swing freely
-            game.attackAnim = { x: game.player.x, y: game.player.y, dx: dx, dy: dy, life: 8, weaponType: type === 'power' ? 'sword' : 'spoon' };
+            game.attackAnim = { x: px, y: py, dx, dy, life: 8, weaponType: type === 'power' ? 'sword' : 'spoon' };
             game.turnCounter++;
         }
         return;
@@ -52,8 +59,8 @@ export function attackEnemy(game, dx, dy, type) {
     UI.shakeScreen();
     Audio.playHit();
     
-    // Attack Animation
-    game.attackAnim = { x: game.player.x, y: game.player.y, dx: dx, dy: dy, life: 8, weaponType: type === 'power' ? 'sword' : 'spoon' };
+    // Attack Animation (anchored at player tile, not float pos)
+    game.attackAnim = { x: px, y: py, dx, dy, life: 8, weaponType: type === 'power' ? 'sword' : 'spoon' };
     
     // Floating Damage Text
     game.floatingText.push({
@@ -100,11 +107,18 @@ export function attackEnemy(game, dx, dy, type) {
             game.persistent.treasures += 15;
             game.player.health = game.player.maxHealth;
             Audio.playLoot();
-            // Drop a bunch of healing and scrap around the boss
-            const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
+            // Drop scrap around the boss
+            const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
             dirs.forEach(d => {
-                game.items.push({ x: enemy.x + d[0], y: enemy.y + d[1], type: 'treasure', name: 'Boss Scrap' });
+                const dx = enemy.x + d[0];
+                const dy = enemy.y + d[1];
+                if (game.map[`${dx},${dy}`] === '.') {
+                    game.items.push({ x: dx, y: dy, type: 'treasure', name: 'Boss Scrap' });
+                }
             });
+            // Reveal the exit at the boss's location so the player can descend
+            game.map[`${enemy.x},${enemy.y}`] = '>';
+            UI.addMessage("✨ A portal opens where the boss fell! ✨", "special");
         }
     }
     
