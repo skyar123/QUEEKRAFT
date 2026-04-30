@@ -37,6 +37,7 @@ const game = {
         dashTimer: 0,           // active dash duration
         dashCooldown: 0,        // ticks until next dash allowed
         dashDir: 1,
+        dropThrough: 0,         // grace frames where one-way platforms are intangible
         // Class power state
         powerCooldown: 0,
         powerActive: 0,         // active duration of current power
@@ -249,9 +250,9 @@ function startDungeon() {
 }
 
 function updateFOV() {
-    let fovRadius = 6;
-    if (game.player.trait && game.player.trait.id === 'dysphoria') fovRadius = 3;
-    if (game.player.traits && game.player.traits.some(t => t.id === 'autism')) fovRadius += 1;
+    let fovRadius = 9;
+    if (game.player.trait && game.player.trait.id === 'dysphoria') fovRadius = 5;
+    if (game.player.traits && game.player.traits.some(t => t.id === 'autism')) fovRadius += 2;
 
     const px = tileX(), py = tileY();
     for (let dy = -fovRadius; dy <= fovRadius; dy++) {
@@ -269,7 +270,8 @@ function updateFOV() {
 function isPassable(x, y) {
     if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return false;
     const tile = game.map[`${x},${y}`];
-    return tile === '.' || tile === '>';
+    // For AI, FOV, attack target lookups: one-way platforms are passable.
+    return tile === '.' || tile === '>' || tile === '=';
 }
 
 // Legacy turn-based movement kept as a no-op shim — platformer physics handles motion now.
@@ -564,15 +566,38 @@ const DASH_FRAMES = 8;
 const DASH_COOLDOWN = 30;
 const DASH_SPEED = 0.55;
 
+// Returns true if (px, py) lies inside any solid wall.
+// One-way platforms are NOT considered solid by this — use isOneWayBlocking
+// to test whether falling feet should land on a `=` tile.
 function pointSolid(px, py) {
-    return !isPassable(Math.floor(px), Math.floor(py));
+    const x = Math.floor(px), y = Math.floor(py);
+    if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return true;
+    return game.map[`${x},${y}`] === '#';
+}
+
+// True when feet at `feetY` should land on a one-way platform — the platform
+// only catches feet that are arriving onto it from above. We treat the
+// platform's effective "top" as the integer Y of the tile; if previous-frame
+// feet were above that line, the platform catches them.
+function isOneWayBlocking(px, feetY, prevFeetY) {
+    const x = Math.floor(px), y = Math.floor(feetY);
+    if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return false;
+    if (game.map[`${x},${y}`] !== '=') return false;
+    // Drop-through grace period: ignore the platform briefly after Down+Jump.
+    if (game.player.dropThrough > 0) return false;
+    return prevFeetY <= y + 0.0001;
 }
 
 function isGrounded(p) {
     const feet = p.y + PLAYER_H + 0.02;
-    return pointSolid(p.x + 0.05, feet) ||
-           pointSolid(p.x + PLAYER_W - 0.05, feet) ||
-           pointSolid(p.x + PLAYER_W * 0.5, feet);
+    const prevFeet = p.y + PLAYER_H;
+    if (pointSolid(p.x + 0.05, feet) ||
+        pointSolid(p.x + PLAYER_W - 0.05, feet) ||
+        pointSolid(p.x + PLAYER_W * 0.5, feet)) return true;
+    if (isOneWayBlocking(p.x + 0.05, feet, prevFeet) ||
+        isOneWayBlocking(p.x + PLAYER_W - 0.05, feet, prevFeet) ||
+        isOneWayBlocking(p.x + PLAYER_W * 0.5, feet, prevFeet)) return true;
+    return false;
 }
 
 function moveX(dx) {
@@ -580,6 +605,8 @@ function moveX(dx) {
     const p = game.player;
     const target = p.x + dx;
     const lead = dx > 0 ? target + PLAYER_W : target;
+    // Horizontal motion only blocks on solid walls — you can walk past a
+    // one-way platform's edge column horizontally.
     if (pointSolid(lead, p.y) ||
         pointSolid(lead, p.y + PLAYER_H * 0.5) ||
         pointSolid(lead, p.y + PLAYER_H - 0.001)) {
@@ -594,18 +621,25 @@ function moveX(dx) {
 function moveY(dy) {
     if (dy === 0) return;
     const p = game.player;
+    const prevFeet = p.y + PLAYER_H;
     const target = p.y + dy;
     if (dy > 0) {
+        // Falling — land on solids OR on one-way platforms when arriving from above.
         const feet = target + PLAYER_H;
-        if (pointSolid(p.x + 0.05, feet) ||
-            pointSolid(p.x + PLAYER_W - 0.05, feet) ||
-            pointSolid(p.x + PLAYER_W * 0.5, feet)) {
+        const hitSolid = pointSolid(p.x + 0.05, feet) ||
+                         pointSolid(p.x + PLAYER_W - 0.05, feet) ||
+                         pointSolid(p.x + PLAYER_W * 0.5, feet);
+        const hitOneWay = isOneWayBlocking(p.x + 0.05, feet, prevFeet) ||
+                          isOneWayBlocking(p.x + PLAYER_W - 0.05, feet, prevFeet) ||
+                          isOneWayBlocking(p.x + PLAYER_W * 0.5, feet, prevFeet);
+        if (hitSolid || hitOneWay) {
             p.y = Math.floor(feet) - PLAYER_H - 0.0001;
             p.vy = 0;
         } else {
             p.y = target;
         }
     } else {
+        // Rising — only true walls block the head; jump up through one-ways.
         const head = target;
         if (pointSolid(p.x + 0.05, head) ||
             pointSolid(p.x + PLAYER_W - 0.05, head)) {
@@ -663,6 +697,7 @@ function update(dt) {
     if (p.dashCooldown > 0) p.dashCooldown--;
     if (p.powerCooldown > 0) p.powerCooldown--;
     if (p.powerActive > 0) p.powerActive--;
+    if (p.dropThrough > 0) p.dropThrough--;
 
     // Resolve buffered jump (only if it succeeds, consume it)
     if (p.jumpBuffer > 0 && (p.coyoteTimer > 0 || (p.jumpsLeft > 0 && !p.onGround))) {
@@ -798,6 +833,15 @@ function draw() {
                     ctx.fillStyle = '#01CDFE';
                     ctx.shadowBlur = 20; ctx.shadowColor = '#01CDFE';
                     ctx.beginPath(); ctx.arc(sx + T/2, sy + T/2, 8, 0, Math.PI*2); ctx.fill();
+                    ctx.shadowBlur = 0;
+                } else if (r.tile === '=') {
+                    // One-way platform: a thin neon ledge along the top of the tile.
+                    ctx.globalAlpha = 1.0;
+                    ctx.fillStyle = '#FF71CE';
+                    ctx.shadowBlur = 12; ctx.shadowColor = '#FF71CE';
+                    ctx.fillRect(sx + 1, sy, T - 2, 4);
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(sx + 1, sy, T - 2, 1);
                     ctx.shadowBlur = 0;
                 }
             }
@@ -1336,7 +1380,12 @@ function setupControls() {
         if (UI.modals.zine.style.display === 'flex' || UI.modals.conversation.style.display === 'flex') return;
 
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-            if (!tryJump()) {
+            // Holding Down + jump drops through the one-way platform you're standing on.
+            if ((keys['ArrowDown'] || keys['KeyS']) && game.player.onGround) {
+                game.player.dropThrough = 8;
+                game.player.onGround = false;
+                game.player.vy = 1.5;
+            } else if (!tryJump()) {
                 // Out of jumps right now — buffer so a slightly-early press still lands.
                 game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
             }
