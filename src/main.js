@@ -1,6 +1,6 @@
 import { UI, DialogueUI } from './ui.js';
 import { generateMap } from './map.js';
-import { attackEnemy, takeDamage } from './combat.js';
+import { attackEnemy, takeDamage, tickStatus, applyStatus, isFrozen } from './combat.js';
 import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES } from './data.js';
 import { Audio } from './audio.js';
 
@@ -42,6 +42,9 @@ const game = {
         powerCooldown: 0,
         powerActive: 0,         // active duration of current power
         powerType: null,        // 'rage' | 'slow' | 'aura' | 'bump' | 'bomb' | null
+        // Charge attack state — hold E to build power, release to unleash a heavy strike.
+        chargeAttack: 0,        // 0..120 (frames held)
+        chargeReady: false,     // true once charge meter exceeds threshold
         // Lineage stat tracking
         kills: 0, depthReached: 1, scrapEarned: 0
     },
@@ -104,6 +107,38 @@ const NAMES = ['Ash', 'River', 'Rowan', 'Sage', 'Onyx', 'Quinn', 'Zephyr', 'Nova
 
 // Lineage history of all past characters (persistent across runs)
 const lineage = [];
+
+// Save/load persistent state to localStorage so progress carries between sessions.
+const SAVE_KEY = 'queekraft-save-v1';
+function saveGame() {
+    try {
+        const payload = {
+            persistent: game.persistent,
+            lineage,
+            colorPalette: game.player.colorPalette || 0,
+            ts: Date.now()
+        };
+        localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+    } catch (e) {
+        // localStorage may be disabled (private mode); silently no-op.
+    }
+}
+function loadGame() {
+    try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (data.persistent) Object.assign(game.persistent, data.persistent);
+        if (Array.isArray(data.lineage)) {
+            lineage.length = 0;
+            data.lineage.forEach(l => lineage.push(l));
+        }
+        if (typeof data.colorPalette === 'number') game.player.colorPalette = data.colorPalette;
+    } catch (e) {
+        // Corrupted save — ignore and start fresh.
+    }
+}
+loadGame();
 
 const PALETTES = [
     { id: 'trans-blue', name: '🏳️‍⚧️ Trans Blue', body: '#5BCEFA', accent: '#F5A9B8', glow: '#5BCEFA' },
@@ -202,6 +237,7 @@ function startCamp() {
                 game.persistent.treasures -= cost;
                 game.persistent.healthUpgrades++;
                 game.persistent.healthCost += 2;
+                saveGame();
                 return true;
             }
             return false;
@@ -213,6 +249,7 @@ function startCamp() {
                 game.persistent.treasures -= cost;
                 game.persistent.damageUpgrades++;
                 game.persistent.damageCost += 3;
+                saveGame();
                 return true;
             }
             return false;
@@ -297,7 +334,11 @@ function processTurn() {
     if (slowed && game.animFrame % 2 !== 0) return;
 
     game.trolls.forEach(troll => {
-        troll.moveDelay++;
+        // Frozen enemies move at half rate.
+        const frozen = troll.status && troll.status.freeze && troll.status.freeze.duration > 0;
+        const shocked = troll.status && troll.status.shock && troll.status.shock.duration > 0;
+        if (shocked) return; // shocked = stunned, skip turn entirely
+        troll.moveDelay += frozen ? 0.5 : 1;
         if (troll.moveDelay < troll.maxMoveDelay) return;
         troll.moveDelay = 0;
 
@@ -450,6 +491,7 @@ function interact() {
         generateMap(game);
         lastPromptTile = null;
         updateFOV();
+        saveGame();
         draw();
         return;
     }
@@ -556,6 +598,7 @@ let physicsAccumulator = 0;
 const FIXED_DT = 1 / 60;
 const MAX_FRAME_DT = 0.1; // clamp huge tab-switch hitches so we don't death-spiral
 let paused = false;
+let questLogVisible = false;
 
 function gameLoop(time) {
     const real = (time - lastTime) / 1000;
@@ -740,6 +783,14 @@ function update(dt) {
     if (p.powerActive > 0) p.powerActive--;
     if (p.dropThrough > 0) p.dropThrough--;
 
+    // Charge meter ticks while E is held (capped at 120).
+    if (p.chargeAttack > 0 && p.chargeAttack < 120) p.chargeAttack++;
+    if (p.chargeAttack >= 60 && !p.chargeReady) {
+        p.chargeReady = true;
+        // Tiny visual confirmation when ready
+        spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H * 0.5, 6, '#FFD700');
+    }
+
     // Resolve buffered jump (only if it succeeds, consume it)
     if (p.jumpBuffer > 0 && (p.coyoteTimer > 0 || (p.jumpsLeft > 0 && !p.onGround))) {
         if (tryJump()) p.jumpBuffer = 0;
@@ -829,6 +880,9 @@ function update(dt) {
     // Friction (only when not dashing)
     if (p.dashTimer <= 0) p.vx *= 0.78;
     if (Math.abs(p.vx) < 0.05) p.vx = 0;
+
+    // Status effect ticking (DOTs, freeze duration, etc.)
+    tickStatus(game);
 
     // Enemy AI / cooldown tick (turn-style every ~10 frames)
     if (game.animFrame % 10 === 0) {
@@ -1125,6 +1179,30 @@ function draw() {
                 ctx.fillRect(drawX - barW/2, drawY - h - 10 + bob, barW, 4);
                 ctx.fillStyle = '#FF71CE';
                 ctx.fillRect(drawX - barW/2, drawY - h - 10 + bob, barW * (r.entity.health / r.entity.maxHealth), 4);
+
+                // Status effect glyphs floating above the health bar.
+                if (r.entity.status) {
+                    let ix = drawX - barW / 2;
+                    const iy = drawY - h - 22 + bob;
+                    if (r.entity.status.burn && r.entity.status.burn.duration > 0) {
+                        ctx.fillStyle = '#FF8C00'; ctx.shadowColor = '#FF8C00'; ctx.shadowBlur = 8;
+                        ctx.font = 'bold 12px VT323'; ctx.fillText('🔥', ix, iy); ix += 14;
+                    }
+                    if (r.entity.status.freeze && r.entity.status.freeze.duration > 0) {
+                        ctx.fillStyle = '#5BCEFA'; ctx.shadowColor = '#5BCEFA'; ctx.shadowBlur = 8;
+                        ctx.font = 'bold 12px VT323'; ctx.fillText('❄', ix, iy); ix += 14;
+                        // Frosty overlay on the sprite itself
+                        ctx.globalAlpha = 0.35;
+                        ctx.fillStyle = '#5BCEFA';
+                        ctx.fillRect(drawX - size/2, drawY - h + bob, size, h);
+                        ctx.globalAlpha = 1;
+                    }
+                    if (r.entity.status.shock && r.entity.status.shock.duration > 0) {
+                        ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 8;
+                        ctx.font = 'bold 12px VT323'; ctx.fillText('⚡', ix, iy);
+                    }
+                    ctx.shadowBlur = 0;
+                }
             } else if (r.type === 'player') {
                 if (r.entity.hurtCooldown % 2 === 0) {
                     const bob = Math.sin(game.animFrame * 0.4) * 2;
@@ -1393,6 +1471,29 @@ function draw() {
     ctx.fillStyle = `rgba(0,0,0,${scanAlpha})`;
     for (let y = 0; y < canvas.height; y += 3) ctx.fillRect(0, y, canvas.width, 1);
 
+    // Charge attack meter — sits above the player on screen so it's always visible.
+    if (game.player.chargeAttack > 0) {
+        const chargeRatio = Math.min(1, game.player.chargeAttack / 120);
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2 - 60;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(cx - 32, cy, 64, 6);
+        const isOver = game.player.chargeAttack >= 110;
+        const isReady = game.player.chargeAttack >= 60;
+        ctx.fillStyle = isOver ? '#FF0040' : isReady ? '#FFD700' : '#01CDFE';
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = 10;
+        ctx.fillRect(cx - 32, cy, 64 * chargeRatio, 6);
+        ctx.shadowBlur = 0;
+        if (isReady) {
+            ctx.font = 'bold 11px VT323';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = isOver ? '#FF0040' : '#FFD700';
+            ctx.fillText(isOver ? 'OVERCHARGED!' : 'READY', cx, cy + 18);
+            ctx.textAlign = 'left';
+        }
+    }
+
     // Class power HUD
     if (game.player.classObj) {
         const cls = game.player.classObj;
@@ -1446,6 +1547,57 @@ function draw() {
         game.damageFlash *= 0.86;
     } else {
         game.damageFlash = 0;
+    }
+
+    // Quest log overlay (J to toggle) — Cendric-style objective tracker.
+    if (questLogVisible) {
+        const w = 320, h = 220;
+        const x0 = canvas.width / 2 - w / 2;
+        const y0 = canvas.height / 2 - h / 2;
+        ctx.fillStyle = 'rgba(5,5,12,0.92)';
+        ctx.fillRect(x0, y0, w, h);
+        ctx.strokeStyle = '#FF71CE';
+        ctx.shadowColor = '#FF71CE';
+        ctx.shadowBlur = 12;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x0, y0, w, h);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#FF71CE';
+        ctx.font = 'bold 18px VT323';
+        ctx.textAlign = 'center';
+        ctx.fillText('📋 QUEST LOG', x0 + w / 2, y0 + 22);
+
+        ctx.textAlign = 'left';
+        ctx.font = '14px VT323';
+        const seenZ = Object.keys(game.persistent.seenZines || {}).length;
+        const seenF = Object.keys(game.persistent.seenFigures || {}).length;
+
+        let yy = y0 + 50;
+        const line = (label, color) => { ctx.fillStyle = color; ctx.fillText(label, x0 + 16, yy); yy += 20; };
+        line('▸ Recover the lost zines:', '#FFFFFF');
+        const zRatio = seenZ / 19;
+        ctx.fillStyle = '#1a1a1a'; ctx.fillRect(x0 + 30, yy - 12, 240, 8);
+        ctx.fillStyle = '#FF71CE'; ctx.fillRect(x0 + 30, yy - 12, 240 * zRatio, 8);
+        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenZ} / 19`, x0 + 280, yy - 4);
+        yy += 12;
+
+        ctx.font = '14px VT323';
+        line('▸ Meet the historical figures:', '#FFFFFF');
+        const fRatio = seenF / 9;
+        ctx.fillStyle = '#1a1a1a'; ctx.fillRect(x0 + 30, yy - 12, 240, 8);
+        ctx.fillStyle = '#01CDFE'; ctx.fillRect(x0 + 30, yy - 12, 240 * fRatio, 8);
+        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenF} / 9`, x0 + 280, yy - 4);
+        yy += 16;
+
+        ctx.font = '14px VT323';
+        line(`▸ Current depth: ${game.depth}  ·  Max reached: ${game.player.depthReached || game.depth}`, '#FFD700');
+        line(`▸ Scrap banked: ${game.persistent.treasures}`, '#39FF14');
+        line(`▸ Lineage size: ${lineage.length}`, '#B967DB');
+
+        ctx.fillStyle = '#888';
+        ctx.font = '12px VT323';
+        ctx.fillText('Press J to close', x0 + 16, y0 + h - 12);
+        ctx.textAlign = 'left';
     }
 
     // Pause overlay on top of HUD.
@@ -1503,6 +1655,14 @@ function activateClassPower() {
     } else if (cls === 'archivist') {
         p.powerType = 'slow'; p.powerActive = 240;
         UI.addMessage("TIME DILATION ⏳", "special");
+        // Freeze every enemy in sight when activated.
+        const px2 = tileX(), py2 = tileY();
+        game.trolls.forEach(t => {
+            if (Math.abs(t.x - px2) + Math.abs(t.y - py2) <= 8) {
+                applyStatus(t, 'freeze', 240, 1);
+                game.particles.push({ x: t.x, y: t.y, vx: 0, vy: -0.2, life: 1, color: '#5BCEFA' });
+            }
+        });
     } else if (cls === 'brawler') {
         tryDash();
         p.dashTimer = DASH_FRAMES * 2; p.hurtCooldown = 30;
@@ -1557,13 +1717,17 @@ function setupControls() {
         if (e.code === 'KeyQ') {
             attackEnemy(game, game.player.facingX, 0, 'quick');
         } else if (e.code === 'KeyE') {
-            attackEnemy(game, game.player.facingX, 0, 'power');
+            // Begin charging — holding builds the meter; release in keyup.
+            game.player.chargeAttack = 1;
+            game.player.chargeReady = false;
         } else if (e.code === 'KeyR') {
             activateClassPower();
         } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
             tryDash();
         } else if (e.code === 'Enter' || e.code === 'KeyF') {
             interact();
+        } else if (e.code === 'KeyJ') {
+            questLogVisible = !questLogVisible;
         }
     });
 
@@ -1573,6 +1737,27 @@ function setupControls() {
         // truncates upward velocity, so taps = small hop, holds = full leap.
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
             if (game.player.vy < -3.5) game.player.vy *= 0.45;
+        }
+        // Release charge attack — heavy if charged, regular power swing if barely held.
+        if (e.code === 'KeyE' && game.player.chargeAttack > 0) {
+            const charged = game.player.chargeAttack >= 60;
+            const overcharge = game.player.chargeAttack >= 110;
+            if (overcharge) {
+                // Overcharged release — hits in an arc and applies burn to all in front.
+                UI.addMessage("OVERCHARGED STRIKE! 🔥", 'special');
+                UI.shakeScreen();
+                game.screenShake = Math.max(game.screenShake, 0.8);
+                const fx = game.player.facingX || 1;
+                attackEnemy(game, fx, 0, 'power');
+                attackEnemy(game, fx, -1, 'power');
+                attackEnemy(game, fx, 1, 'power');
+            } else if (charged) {
+                attackEnemy(game, game.player.facingX || 1, 0, 'power');
+            } else {
+                attackEnemy(game, game.player.facingX || 1, 0, 'quick');
+            }
+            game.player.chargeAttack = 0;
+            game.player.chargeReady = false;
         }
     });
 
@@ -1596,14 +1781,108 @@ function setupControls() {
         originalUpdate(dt);
     };
 
-    // On-screen controls
-    document.getElementById('up').onclick = () => { if (!tryJump()) game.player.jumpBuffer = JUMP_BUFFER_FRAMES; };
-    document.getElementById('left').onclick = () => { game.player.vx = -4; game.player.facingX = -1; };
-    document.getElementById('right').onclick = () => { game.player.vx = 4; game.player.facingX = 1; };
-    document.getElementById('down').onclick = () => tryDash();
-    document.getElementById('interact').onclick = interact;
-    document.getElementById('quick-attack').onclick = () => attackEnemy(game, game.player.facingX, 0, 'quick');
-    document.getElementById('power-attack').onclick = () => attackEnemy(game, game.player.facingX, 0, 'power');
+    // On-screen / touch controls — held-state via pointer events so a finger
+    // resting on Left actually keeps walking left, not just one tap of motion.
+    function bindHold(id, onPress, onRelease) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const press = (e) => {
+            e.preventDefault();
+            el.classList.add('pressed');
+            onPress && onPress();
+        };
+        const release = (e) => {
+            e && e.preventDefault && e.preventDefault();
+            el.classList.remove('pressed');
+            onRelease && onRelease();
+        };
+        // Pointer events handle touch + mouse + pen uniformly on iOS Safari ≥13.
+        el.addEventListener('pointerdown', press);
+        el.addEventListener('pointerup', release);
+        el.addEventListener('pointercancel', release);
+        el.addEventListener('pointerleave', release);
+        // Belt-and-suspenders for older iOS that fire touch but not pointer.
+        el.addEventListener('touchstart', press, { passive: false });
+        el.addEventListener('touchend', release, { passive: false });
+    }
+
+    // Held-state flags drive the wrapped update loop.
+    const touchHeld = { left: false, right: false };
+    bindHold('left',  () => { touchHeld.left = true;  game.player.facingX = -1; },
+                      () => { touchHeld.left = false; });
+    bindHold('right', () => { touchHeld.right = true; game.player.facingX = 1; },
+                      () => { touchHeld.right = false; });
+    bindHold('up', () => {
+        if ((touchHeld.down || keys['ArrowDown'] || keys['KeyS']) && game.player.onGround) {
+            game.player.dropThrough = 8;
+            game.player.onGround = false;
+            game.player.vy = 1.5;
+        } else if (!tryJump()) {
+            game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
+        }
+    }, () => {
+        // Variable jump on touch release too.
+        if (game.player.vy < -3.5) game.player.vy *= 0.45;
+    });
+    bindHold('down', () => { touchHeld.down = true; tryDash(); }, () => { touchHeld.down = false; });
+
+    // Action buttons.
+    bindHold('interact', interact);
+    bindHold('quick-attack', () => attackEnemy(game, game.player.facingX || 1, 0, 'quick'));
+    // Power attack: hold to charge, release to fire (mirrors keyboard E).
+    bindHold('power-attack',
+        () => { game.player.chargeAttack = 1; game.player.chargeReady = false; },
+        () => {
+            if (game.player.chargeAttack <= 0) return;
+            const charged = game.player.chargeAttack >= 60;
+            const overcharge = game.player.chargeAttack >= 110;
+            const fx = game.player.facingX || 1;
+            if (overcharge) {
+                UI.addMessage("OVERCHARGED STRIKE! 🔥", 'special');
+                game.screenShake = Math.max(game.screenShake, 0.8);
+                attackEnemy(game, fx, 0, 'power');
+                attackEnemy(game, fx, -1, 'power');
+                attackEnemy(game, fx, 1, 'power');
+            } else if (charged) {
+                attackEnemy(game, fx, 0, 'power');
+            } else {
+                attackEnemy(game, fx, 0, 'quick');
+            }
+            game.player.chargeAttack = 0;
+            game.player.chargeReady = false;
+        });
+    bindHold('class-power', activateClassPower);
+
+    // Top-row UI buttons.
+    bindHold('pause-btn', () => { paused = !paused; });
+    bindHold('quest-btn', () => { questLogVisible = !questLogVisible; });
+
+    // Hook touch held-state into the per-frame velocity assignment.
+    const updateRefForTouch = () => {
+        const p = game.player;
+        if (p.dashTimer > 0) return;
+        let speed = 4;
+        if (p.trait && p.trait.id === 'adhd') speed = 5;
+        if (p.traits && p.traits.some(t => t.id === 'chronic')) speed = Math.min(speed, 3);
+        if (touchHeld.left)  { p.vx = -speed; p.facingX = -1; }
+        if (touchHeld.right) { p.vx =  speed; p.facingX =  1; }
+    };
+    const prevUpdate = update;
+    update = (dt) => { updateRefForTouch(); prevUpdate(dt); };
+
+    // iOS requires a user gesture to start audio. Resume on first interaction.
+    const unlockAudio = () => {
+        try { Audio.playStep(); } catch (e) { /* no-op */ }
+        document.removeEventListener('pointerdown', unlockAudio);
+        document.removeEventListener('keydown', unlockAudio);
+    };
+    document.addEventListener('pointerdown', unlockAudio, { once: true });
+    document.addEventListener('keydown', unlockAudio, { once: true });
+
+    // Prevent two-finger zoom / double-tap zoom on the canvas.
+    const canvasEl = document.getElementById('game-canvas');
+    canvasEl.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+    canvasEl.addEventListener('gesturestart', e => e.preventDefault());
 
     document.getElementById('victory-restart-btn').onclick = () => location.reload();
     document.getElementById('game-over-continue-btn').onclick = () => {
@@ -1616,6 +1895,8 @@ function setupControls() {
             kills: game.player.kills || 0,
             scrap: game.player.scrapEarned || 0
         });
+        // Persist before heir selection so the run is durable even if browser closes mid-pick.
+        saveGame();
         const heirs = generateHeirs();
         UI.showHeirSelection(heirs, (selectedHeir) => {
             applyHeir(selectedHeir);

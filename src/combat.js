@@ -12,6 +12,49 @@ function hasTrait(player, id) {
            (player.trait && player.trait.id === id);
 }
 
+// Cendric-style status effects: applied to enemies, decremented by tickStatus.
+// Burn: damage-over-time. Freeze: enemy moves at half rate. Shock: brief stun + chain.
+export function applyStatus(enemy, kind, duration, magnitude = 1) {
+    enemy.status = enemy.status || {};
+    const cur = enemy.status[kind];
+    if (!cur || cur.duration < duration) {
+        enemy.status[kind] = { duration, magnitude };
+    } else {
+        cur.magnitude = Math.max(cur.magnitude, magnitude);
+    }
+}
+
+export function tickStatus(game) {
+    for (let i = game.trolls.length - 1; i >= 0; i--) {
+        const e = game.trolls[i];
+        if (!e.status) continue;
+        for (const k of Object.keys(e.status)) {
+            const s = e.status[k];
+            s.duration -= 1;
+            if (k === 'burn') {
+                if (game.animFrame % 30 === 0) {
+                    e.health -= s.magnitude;
+                    game.floatingText.push({ x: e.x, y: e.y, text: `🔥${s.magnitude}`, life: 24, color: '#FF8C00' });
+                    game.particles.push({ x: e.x, y: e.y, vx: 0, vy: -0.3, life: 0.8, color: '#FF8C00' });
+                }
+            }
+            if (s.duration <= 0) delete e.status[k];
+        }
+        if (e.health <= 0) {
+            UI.addMessage(`${e.enemyType} burned out!`, 'victory');
+            game.trolls.splice(i, 1);
+            game.player.kills = (game.player.kills || 0) + 1;
+        }
+    }
+}
+
+export function isFrozen(enemy) {
+    return enemy.status && enemy.status.freeze && enemy.status.freeze.duration > 0;
+}
+export function isShocked(enemy) {
+    return enemy.status && enemy.status.shock && enemy.status.shock.duration > 0;
+}
+
 export function attackEnemy(game, dx, dy, type) {
     if (game.player.attackCooldown > 0 && type !== 'blast') return;
 
@@ -82,6 +125,31 @@ export function attackEnemy(game, dx, dy, type) {
 
     if (game.player.hasBrick) damage += 1;
     if (game.player.hasRage) damage *= 2;
+
+    // Apply status effects based on attack type / class.
+    if (type === 'power') {
+        // Heavy sword attack ignites the target — slow burn DOT.
+        applyStatus(enemy, 'burn', 180, 1);
+    }
+    if (type === 'blast') {
+        // Glitter bomb stuns + ignites everything caught in the AoE.
+        applyStatus(enemy, 'shock', 60, 1);
+        applyStatus(enemy, 'burn', 120, 1);
+    }
+    // Damage to a shocked enemy chains a tiny burst into its neighbors (Cendric-style elemental synergy).
+    if (isShocked(enemy)) {
+        damage += 1;
+        for (const other of game.trolls) {
+            if (other === enemy) continue;
+            const d = Math.abs(other.x - enemy.x) + Math.abs(other.y - enemy.y);
+            if (d <= 2 && Math.random() < 0.5) {
+                other.health -= 1;
+                game.floatingText.push({ x: other.x, y: other.y, text: '⚡-1', life: 22, color: '#FFD700' });
+            }
+        }
+    }
+    // Frozen enemies take +50% damage.
+    if (isFrozen(enemy)) damage = Math.ceil(damage * 1.5);
 
     enemy.health -= damage;
     UI.addMessage(`${crit ? 'CRIT! ' : ''}Hit ${enemy.enemyType} for ${damage}!`, 'combat');
