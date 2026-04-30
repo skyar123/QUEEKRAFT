@@ -238,6 +238,7 @@ function startDungeon() {
     game.historicalFigures = Object.keys(game.persistent.seenFigures).length;
     game.treasures = 0;
     game.seen = {};
+    lastPromptTile = null;
 
     generateMap(game);
     updateFOV();
@@ -438,7 +439,7 @@ function interact() {
         UI.addMessage(`Descending to level ${game.depth}...`);
         Audio.playStairs && Audio.playStairs();
         generateMap(game);
-        // place player at the spawn (room 0 already set by generateMap)
+        lastPromptTile = null;
         updateFOV();
         draw();
         return;
@@ -446,9 +447,9 @@ function interact() {
 
     const npc = game.npcs.find(n => entityNear(n));
     if (npc) {
-        if (!game.seen[npc.figureKey]) {
+        if (!game.persistent.seenFigures[npc.figureKey]) {
+            game.persistent.seenFigures[npc.figureKey] = true;
             game.historicalFigures++;
-            game.seen[npc.figureKey] = true;
         }
         DialogueUI.start(game, npc.figureKey);
         game.npcs = game.npcs.filter(n => n !== npc);
@@ -567,6 +568,13 @@ function pointSolid(px, py) {
     return !isPassable(Math.floor(px), Math.floor(py));
 }
 
+function isGrounded(p) {
+    const feet = p.y + PLAYER_H + 0.02;
+    return pointSolid(p.x + 0.05, feet) ||
+           pointSolid(p.x + PLAYER_W - 0.05, feet) ||
+           pointSolid(p.x + PLAYER_W * 0.5, feet);
+}
+
 function moveX(dx) {
     if (dx === 0) return;
     const p = game.player;
@@ -594,10 +602,6 @@ function moveY(dy) {
             pointSolid(p.x + PLAYER_W * 0.5, feet)) {
             p.y = Math.floor(feet) - PLAYER_H - 0.0001;
             p.vy = 0;
-            if (!p.onGround) Audio.playStep && Audio.playStep();
-            p.onGround = true;
-            p.coyoteTimer = (p.trait && p.trait.id === 'insomnia') ? COYOTE_FRAMES * 2 : COYOTE_FRAMES;
-            p.jumpsLeft = (p.traits && p.traits.some(t => t.id === 'nostalgia')) ? 2 : 1;
         } else {
             p.y = target;
         }
@@ -660,8 +664,8 @@ function update(dt) {
     if (p.powerCooldown > 0) p.powerCooldown--;
     if (p.powerActive > 0) p.powerActive--;
 
-    // Resolve buffered jump
-    if (p.jumpBuffer > 0 && (p.coyoteTimer > 0 || p.jumpsLeft > 0)) {
+    // Resolve buffered jump (only if it succeeds, consume it)
+    if (p.jumpBuffer > 0 && (p.coyoteTimer > 0 || (p.jumpsLeft > 0 && !p.onGround))) {
         if (tryJump()) p.jumpBuffer = 0;
     }
 
@@ -679,7 +683,7 @@ function update(dt) {
         spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, ['#FF71CE','#01CDFE','#FFD700','#39FF14'][game.animFrame % 4]);
     }
 
-    // Gravity
+    // Gravity (apply only when airborne)
     if (!p.onGround) p.vy += GRAVITY;
     if (p.vy > TERMINAL_VY) p.vy = TERMINAL_VY;
 
@@ -693,10 +697,20 @@ function update(dt) {
     // Sub-step movement to avoid tunneling at high speeds
     const STEPS = 4;
     for (let s = 0; s < STEPS; s++) {
-        // Assume not grounded each frame; moveY will set true if floor hit
-        if (s === 0) p.onGround = false;
         moveX(effectiveVx * 0.1 / STEPS);
         moveY(p.vy * 0.1 / STEPS);
+    }
+
+    // Authoritative grounded check. Drives coyote/jump refresh and landing FX.
+    const wasGrounded = p.onGround;
+    p.onGround = isGrounded(p);
+    if (p.onGround) {
+        p.coyoteTimer = (p.trait && p.trait.id === 'insomnia') ? COYOTE_FRAMES * 2 : COYOTE_FRAMES;
+        p.jumpsLeft = (p.traits && p.traits.some(t => t.id === 'nostalgia')) ? 2 : 1;
+        if (!wasGrounded && p.vy >= 1.5) {
+            Audio.playStep();
+            spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 4, '#FFFFFF');
+        }
     }
 
     // Friction (only when not dashing)
@@ -1322,8 +1336,10 @@ function setupControls() {
         if (UI.modals.zine.style.display === 'flex' || UI.modals.conversation.style.display === 'flex') return;
 
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-            game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
-            tryJump();
+            if (!tryJump()) {
+                // Out of jumps right now — buffer so a slightly-early press still lands.
+                game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
+            }
         }
 
         if (e.code === 'KeyQ') {
@@ -1362,7 +1378,7 @@ function setupControls() {
     };
 
     // On-screen controls
-    document.getElementById('up').onclick = () => { game.player.jumpBuffer = JUMP_BUFFER_FRAMES; tryJump(); };
+    document.getElementById('up').onclick = () => { if (!tryJump()) game.player.jumpBuffer = JUMP_BUFFER_FRAMES; };
     document.getElementById('left').onclick = () => { game.player.vx = -4; game.player.facingX = -1; };
     document.getElementById('right').onclick = () => { game.player.vx = 4; game.player.facingX = 1; };
     document.getElementById('down').onclick = () => tryDash();
