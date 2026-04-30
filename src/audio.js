@@ -34,5 +34,23 @@ export const Audio = {
     },
     playStep: () => {
         playTone(100, 'triangle', 0.05, 0.05);
+    },
+    playJump: () => {
+        playTone(400, 'square', 0.1, 0.08);
+        setTimeout(() => playTone(700, 'square', 0.07, 0.06), 30);
+    },
+    playDash: () => {
+        playTone(900, 'sawtooth', 0.06, 0.07);
+        setTimeout(() => playTone(500, 'sawtooth', 0.06, 0.07), 30);
+    },
+    playPower: () => {
+        playTone(220, 'square', 0.1, 0.12);
+        setTimeout(() => playTone(330, 'square', 0.12, 0.12), 100);
+        setTimeout(() => playTone(550, 'sine', 0.15, 0.12), 220);
+    },
+    playStairs: () => {
+        playTone(500, 'triangle', 0.1, 0.08);
+        setTimeout(() => playTone(700, 'triangle', 0.1, 0.08), 80);
+        setTimeout(() => playTone(900, 'triangle', 0.15, 0.08), 160);
     }
 };

@@ -83,8 +83,12 @@ export function generateMap(game) {
     }
     
     if (rooms.length > 0) {
-        game.player.x = Math.floor(rooms[0].x + rooms[0].w/2);
-        game.player.y = Math.floor(rooms[0].y + rooms[0].h/2);
+        // Spawn slightly inset so platformer collision doesn't catch on tile edges
+        game.player.x = Math.floor(rooms[0].x + rooms[0].w/2) + 0.15;
+        game.player.y = Math.floor(rooms[0].y + rooms[0].h/2) + 0.05;
+        game.player.vx = 0;
+        game.player.vy = 0;
+        game.player.onGround = false;
     }
     
     if (game.depth < 8 && rooms.length > 1) {
@@ -137,33 +141,33 @@ export function generateMap(game) {
         }
     }
 
-    // Place Random Enemies
-    const enemyTypes = ['troll', 'wraith', 'concern', 'police'];
-    for (const room of rooms.slice(1)) {
-        // Boss room generation hook
-        if (game.depth % 5 === 0 && room === rooms[rooms.length - 1]) {
-            // Boss room handled below
-            continue;
-        }
+    // Place Random Enemies — pool grows with depth
+    const baseTypes = ['troll', 'wraith', 'concern', 'police'];
+    const advancedTypes = ['swarm', 'bigot'];
+    const enemyPool = game.depth >= 3 ? baseTypes.concat(advancedTypes) : baseTypes;
 
-        const numEnemies = Math.floor(Math.random() * 3); // 0 to 2 enemies per room
+    for (const room of rooms.slice(1)) {
+        if (game.depth % 5 === 0 && room === rooms[rooms.length - 1]) continue;
+
+        // Density rises with depth, capped
+        const baseCount = Math.min(4, 1 + Math.floor(game.depth / 2));
+        const numEnemies = Math.floor(Math.random() * baseCount);
         for (let i = 0; i < numEnemies; i++) {
             const rx = room.x + 1 + Math.floor(Math.random() * (room.w - 2));
             const ry = room.y + 1 + Math.floor(Math.random() * (room.h - 2));
-            
-            // Check overlap
+
             if (game.map[`${rx},${ry}`] === '>' || game.items.some(it => it.x === rx && it.y === ry)) continue;
-            
-            const eType = pick(enemyTypes);
-            let hp = 2;
-            let mDelay = 3;
-            let alertRad = 4;
+            if (game.trolls.some(t => t.x === rx && t.y === ry)) continue;
+
+            const eType = pick(enemyPool);
+            let hp = 2, mDelay = 3, alertRad = 4;
 
             if (eType === 'wraith')    { hp = 1; mDelay = 1; alertRad = 8; }
             if (eType === 'concern')   { hp = 3; mDelay = 2; alertRad = 6; }
             if (eType === 'police')    { hp = 3; mDelay = 1; alertRad = 9; }
-            
-            // Scale with depth
+            if (eType === 'swarm')     { hp = 1; mDelay = 1; alertRad = 7; }
+            if (eType === 'bigot')     { hp = 2; mDelay = 4; alertRad = 6; }
+
             hp = Math.max(1, hp + Math.floor(game.depth / 3));
 
             game.trolls.push({
