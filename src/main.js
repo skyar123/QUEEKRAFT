@@ -58,10 +58,17 @@ const game = {
     mapHeight: 30,
     turnCounter: 0,
     camera: { width: 24, height: 18 },
+    // Smooth camera state — lerps toward target with look-ahead based on facing/velocity.
+    camX: 0, camY: 0,
+    camInitialized: false,
     particles: [],
     floatingText: [],
     attackAnim: null,
-    animFrame: 0
+    animFrame: 0,
+    // Full-screen red flash on hurt; combat.js bumps this to 1.0.
+    damageFlash: 0,
+    // Subtle screen shake intensity (decays each frame).
+    screenShake: 0
 };
 
 const TRAITS = [
@@ -542,17 +549,51 @@ function drawTile(ctx, sx, sy, color, isWall, glowColor, pattern) {
     }
 }
 
-// Animation & Physics loop
+// Animation & Physics loop with fixed timestep (SuperTux-style — physics stays
+// stable across variable refresh rates; rendering still runs every rAF).
 let lastTime = 0;
+let physicsAccumulator = 0;
+const FIXED_DT = 1 / 60;
+const MAX_FRAME_DT = 0.1; // clamp huge tab-switch hitches so we don't death-spiral
+let paused = false;
+
 function gameLoop(time) {
-    const dt = (time - lastTime) / 1000;
+    const real = (time - lastTime) / 1000;
     lastTime = time;
-    
-    update(dt);
+
+    if (!paused) {
+        physicsAccumulator += Math.min(MAX_FRAME_DT, real || 0);
+        // Cap to 4 sub-steps per frame to avoid catch-up storms (250ms ceiling).
+        let steps = 0;
+        while (physicsAccumulator >= FIXED_DT && steps < 4) {
+            update(FIXED_DT);
+            physicsAccumulator -= FIXED_DT;
+            steps++;
+        }
+        if (physicsAccumulator > FIXED_DT * 4) physicsAccumulator = 0;
+    }
+
     draw();
     requestAnimationFrame(gameLoop);
 }
 requestAnimationFrame(gameLoop);
+
+// Parallax neon starfield — generated once, rendered every frame at varying depth.
+const stars = [];
+(function buildStarfield() {
+    const colors = ['#FF71CE','#01CDFE','#FFD700','#39FF14','#FFFFFF','#B967DB'];
+    for (let i = 0; i < 90; i++) {
+        stars.push({
+            x: Math.random(),
+            y: Math.random(),
+            size: Math.random() * 1.6 + 0.5,
+            phase: Math.random() * Math.PI * 2,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            // Three depth tiers: distant (slow), mid, near (fast).
+            layer: 0.08 + Math.floor(Math.random() * 3) * 0.18
+        });
+    }
+})();
 
 // === Platformer physics constants ===
 const PLAYER_W = 0.7;
@@ -748,6 +789,43 @@ function update(dt) {
         }
     }
 
+    // Stomp-to-kill: falling onto an enemy from above damages it and bounces
+    // the player. Bosses and gatekeepers are too sturdy to stomp.
+    if (p.vy >= 2.0) {
+        const feetY = p.y + PLAYER_H;
+        for (const troll of game.trolls) {
+            if (troll.enemyType === 'boss' || troll.enemyType === 'gatekeeper') continue;
+            const dx = (troll.x + 0.5) - (p.x + PLAYER_W / 2);
+            const dy = troll.y - feetY;
+            if (Math.abs(dx) < 0.85 && dy >= -0.55 && dy <= 0.35) {
+                troll.health -= 2;
+                p.vy = -8.5; // bounce
+                p.jumpsLeft = Math.max(p.jumpsLeft, 1); // refund a jump as a reward
+                UI.addMessage(`Stomp! ${troll.enemyType} -2`, 'combat');
+                Audio.playHit();
+                game.screenShake = Math.max(game.screenShake, 0.6);
+                for (let i = 0; i < 12; i++) {
+                    game.particles.push({
+                        x: troll.x + 0.5, y: troll.y,
+                        vx: (Math.random() - 0.5) * 0.4,
+                        vy: -Math.random() * 0.3,
+                        life: 1.0,
+                        color: ['#FFD700','#FF71CE','#FFFFFF'][i % 3]
+                    });
+                }
+                if (troll.health <= 0) {
+                    UI.addMessage(`Stomped ${troll.enemyType}!`, 'victory');
+                    game.trolls = game.trolls.filter(t => t !== troll);
+                    p.kills = (p.kills || 0) + 1;
+                    if (Math.random() < 0.30) {
+                        game.items.push({ x: troll.x, y: troll.y, type: 'treasure', name: 'Salvaged Scrap' });
+                    }
+                }
+                break;
+            }
+        }
+    }
+
     // Friction (only when not dashing)
     if (p.dashTimer <= 0) p.vx *= 0.78;
     if (Math.abs(p.vx) < 0.05) p.vx = 0;
@@ -761,13 +839,54 @@ function update(dt) {
 function draw() {
     ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
+
     const px = tileX();
     const py = tileY();
 
     // Vertigo trait → tilt the canvas slightly based on horizontal velocity
     const isVertigo = game.player.traits && game.player.traits.some(t => t.id === 'vertigo');
     const isGreyscale = game.player.traits && game.player.traits.some(t => t.id === 'colorblind');
+
+    // Smooth camera with horizontal look-ahead (SuperTux-inspired: the camera
+    // leads the player in their facing direction so you can see what's coming).
+    const lookAhead = (game.player.facingX || 1) * 2.2 * T;
+    const targetX = canvas.width / 2 - (game.player.x + PLAYER_W / 2) * T - lookAhead;
+    const targetY = canvas.height / 2 - (game.player.y + PLAYER_H / 2) * T - 1.0 * T;
+    if (!game.camInitialized) {
+        game.camX = targetX;
+        game.camY = targetY;
+        game.camInitialized = true;
+    } else {
+        game.camX += (targetX - game.camX) * 0.10;
+        game.camY += (targetY - game.camY) * 0.12;
+    }
+
+    // Screen-shake offset (decays toward 0 each frame).
+    let shakeX = 0, shakeY = 0;
+    if (game.screenShake > 0.05) {
+        shakeX = (Math.random() - 0.5) * game.screenShake * 12;
+        shakeY = (Math.random() - 0.5) * game.screenShake * 12;
+        game.screenShake *= 0.85;
+    } else {
+        game.screenShake = 0;
+    }
+
+    // Parallax starfield BEHIND the world (each layer scrolls at its own depth).
+    for (const s of stars) {
+        const wrapW = canvas.width + 40;
+        const wrapH = canvas.height + 40;
+        const x = ((s.x * wrapW + game.camX * s.layer) % wrapW + wrapW) % wrapW - 20;
+        const y = ((s.y * wrapH + game.camY * s.layer) % wrapH + wrapH) % wrapH - 20;
+        const tw = 0.35 + Math.sin(game.animFrame * 0.04 + s.phase) * 0.25;
+        ctx.globalAlpha = tw * s.layer * 3.5;
+        ctx.fillStyle = s.color;
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = s.color;
+        ctx.fillRect(x, y, s.size, s.size);
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+
     if (isVertigo) {
         ctx.save();
         ctx.translate(canvas.width / 2, canvas.height / 2);
@@ -775,9 +894,8 @@ function draw() {
         ctx.translate(-canvas.width / 2, -canvas.height / 2);
     }
 
-    // Smooth camera following the float position
-    const camX = Math.floor(canvas.width / 2 - game.player.x * T - T / 2);
-    const camY = Math.floor(canvas.height / 2 - game.player.y * T - T / 2);
+    const camX = Math.floor(game.camX + shakeX);
+    const camY = Math.floor(game.camY + shakeY);
 
     const renderables = [];
     const VIEW_W = Math.ceil(canvas.width / T) + 2;
@@ -1320,6 +1438,35 @@ function draw() {
         ctx.arc(canvas.width / 2, canvas.height - 30, 12, -Math.PI/2, -Math.PI/2 + angle);
         ctx.stroke();
     }
+
+    // Screen-space damage flash — drawn over everything for unmissable hurt feedback.
+    if (game.damageFlash > 0.01) {
+        ctx.fillStyle = `rgba(255,40,80,${game.damageFlash * 0.45})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        game.damageFlash *= 0.86;
+    } else {
+        game.damageFlash = 0;
+    }
+
+    // Pause overlay on top of HUD.
+    if (paused) {
+        ctx.fillStyle = 'rgba(5,5,12,0.78)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 56px VT323';
+        ctx.shadowBlur = 18; ctx.shadowColor = '#FF71CE';
+        ctx.fillStyle = '#FF71CE';
+        ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2 - 10);
+        ctx.shadowBlur = 8; ctx.shadowColor = '#01CDFE';
+        ctx.font = '18px VT323';
+        ctx.fillStyle = '#01CDFE';
+        ctx.fillText('P / Esc to resume', canvas.width / 2, canvas.height / 2 + 24);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '14px VT323';
+        ctx.fillText('WASD/Arrows · Space jump · Q quick · E power · Shift dash · R class', canvas.width / 2, canvas.height / 2 + 50);
+        ctx.shadowBlur = 0;
+        ctx.textAlign = 'left';
+    }
 }
 
 function tryDash() {
@@ -1377,7 +1524,23 @@ function setupControls() {
         if (e.repeat) return;
         keys[e.code] = true;
 
+        // Pause toggle works even when a modal is open (so Esc can close us out of stuck state).
+        if (e.code === 'Escape' || e.code === 'KeyP') {
+            const modalOpen = UI.modals.zine.style.display === 'flex' ||
+                              UI.modals.conversation.style.display === 'flex' ||
+                              UI.modals.gameOver.style.display === 'flex' ||
+                              UI.modals.victory.style.display === 'flex' ||
+                              UI.modals.heirSelect.style.display === 'flex' ||
+                              UI.modals.camp.style.display === 'flex';
+            if (!modalOpen) {
+                paused = !paused;
+                e.preventDefault();
+                return;
+            }
+        }
+
         if (UI.modals.zine.style.display === 'flex' || UI.modals.conversation.style.display === 'flex') return;
+        if (paused) return;
 
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
             // Holding Down + jump drops through the one-way platform you're standing on.
@@ -1404,7 +1567,14 @@ function setupControls() {
         }
     });
 
-    document.addEventListener('keyup', e => { keys[e.code] = false; });
+    document.addEventListener('keyup', e => {
+        keys[e.code] = false;
+        // Variable jump height: releasing the jump button while still rising
+        // truncates upward velocity, so taps = small hop, holds = full leap.
+        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+            if (game.player.vy < -3.5) game.player.vy *= 0.45;
+        }
+    });
 
     // Wrap update for held-key horizontal movement
     const originalUpdate = update;

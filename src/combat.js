@@ -167,6 +167,9 @@ export function takeDamage(game, amount = 1) {
     UI.addMessage("Hit!", 'death');
     UI.shakeScreen();
     Audio.playDamage();
+    // Full-screen flash + shake intensity scaled to damage taken.
+    game.damageFlash = Math.min(1.0, (game.damageFlash || 0) + 0.6 + amount * 0.15);
+    game.screenShake = Math.max(game.screenShake || 0, 0.6 + amount * 0.2);
 
     // Chronic pain doubles i-frames; insomnia leaves you alert with shorter recovery
     let iframes = 3;
