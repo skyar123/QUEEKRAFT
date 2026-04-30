@@ -28,7 +28,10 @@ const game = {
         hasBrick: false, hasRage: false,
         trait: null,
         colorPalette: 0,
-        onGround: false
+        colorPalette: 0,
+        onGround: false,
+        coyoteTime: 0,
+        jumpBuffer: 0
     },
     depth: 1,
     zines: 0,
@@ -46,7 +49,8 @@ const game = {
     particles: [],
     floatingText: [],
     attackAnim: null,
-    animFrame: 0
+    animFrame: 0,
+    lastTime: 0
 };
 
 const TRAITS = [
@@ -192,13 +196,16 @@ function startDungeon() {
 }
 
 function updateFOV() {
-    let fovRadius = 4;
-    if (game.player.trait && game.player.trait.id === 'dysphoria') fovRadius = 2;
+    let fovRadius = 8; // Increased for better visibility
+    if (game.player.trait && game.player.trait.id === 'dysphoria') fovRadius = 4;
     
+    const px = Math.floor(game.player.x);
+    const py = Math.floor(game.player.y);
+
     for (let dy = -fovRadius; dy <= fovRadius; dy++) {
         for (let dx = -fovRadius; dx <= fovRadius; dx++) {
-            const x = game.player.x + dx;
-            const y = game.player.y + dy;
+            const x = px + dx;
+            const y = py + dy;
             if (x >= 0 && y >= 0 && x < game.mapWidth && y < game.mapHeight) {
                 game.seen[`${x},${y}`] = true;
             }
@@ -474,10 +481,10 @@ function drawTile(ctx, sx, sy, color, isWall, glowColor, pattern) {
 }
 
 // Animation & Physics loop
-let lastTime = 0;
 function gameLoop(time) {
-    const dt = (time - lastTime) / 1000;
-    lastTime = time;
+    if (!game.lastTime) game.lastTime = time;
+    const dt = Math.min((time - game.lastTime) / 1000, 0.1); // Cap dt to avoid huge jumps
+    game.lastTime = time;
     
     update(dt);
     draw();
@@ -490,35 +497,89 @@ function update(dt) {
     
     if (!game.player.alive) return;
     
-    // Gravity
-    game.player.vy += 0.5; // Gravity constant
+    // Horizontal Movement
+    const moveAccel = 80;
+    const maxSpeed = 15;
     
-    // Apply velocity
-    const nextY = game.player.y + game.player.vy * 0.1;
-    if (isPassable(Math.floor(game.player.x), Math.floor(nextY + 0.8)) && 
-        isPassable(Math.floor(game.player.x + 0.8), Math.floor(nextY + 0.8))) {
-        game.player.y = nextY;
-        game.player.onGround = false;
+    // Apply acceleration from input (keys are handled in the update loop via setupControls wrapper)
+    // game.player.ax is set in the setupControls update wrapper
+    if (game.player.ax !== 0) {
+        game.player.vx += game.player.ax * dt;
+        // Cap speed
+        if (Math.abs(game.player.vx) > maxSpeed) {
+            game.player.vx = Math.sign(game.player.vx) * maxSpeed;
+        }
     } else {
-        if (game.player.vy > 0) {
+        // Friction only when no input
+        if (Math.abs(game.player.vx) > 0.1) {
+            game.player.vx *= Math.pow(0.0001, dt);
+        } else {
+            game.player.vx = 0;
+        }
+    }
+
+    // Gravity
+    game.player.vy += 60 * dt; 
+    
+    // Jump Buffer & Coyote Time decay
+    if (game.player.jumpBuffer > 0) game.player.jumpBuffer -= dt;
+    if (game.player.coyoteTime > 0) game.player.coyoteTime -= dt;
+
+    // Apply velocity to position
+    const nextY = game.player.y + game.player.vy * dt;
+    const feetY = nextY + 0.95; // Close to bottom
+    const headY = nextY + 0.05; // Close to top
+    const leftX = game.player.x + 0.3;
+    const rightX = game.player.x + 0.7;
+
+    // Vertical collision
+    if (isPassable(Math.floor(leftX), Math.floor(feetY)) && 
+        isPassable(Math.floor(rightX), Math.floor(feetY)) &&
+        isPassable(Math.floor(leftX), Math.floor(headY)) && 
+        isPassable(Math.floor(rightX), Math.floor(headY))) {
+        game.player.y = nextY;
+    } else {
+        if (game.player.vy >= 0) {
             game.player.onGround = true;
+            game.player.coyoteTime = 0.15; // Give 150ms of coyote time
             game.player.y = Math.floor(game.player.y);
+            
+            // Trigger buffered jump
+            if (game.player.jumpBuffer > 0) {
+                game.player.vy = -20;
+                game.player.onGround = false;
+                game.player.jumpBuffer = 0;
+                game.player.coyoteTime = 0;
+                Audio.playStep();
+            }
+        } else {
+            // Hit head
+            game.player.y = Math.ceil(game.player.y);
         }
         game.player.vy = 0;
     }
     
-    const nextX = game.player.x + game.player.vx * 0.1;
-    if (isPassable(Math.floor(nextX), Math.floor(game.player.y)) && 
-        isPassable(Math.floor(nextX + 0.8), Math.floor(game.player.y)) &&
-        isPassable(Math.floor(nextX), Math.floor(game.player.y + 0.8)) && 
-        isPassable(Math.floor(nextX + 0.8), Math.floor(game.player.y + 0.8))) {
+    // Final ground check for coyote time when walking off ledges
+    const checkFeetY = game.player.y + 1.05;
+    if (!isPassable(Math.floor(leftX), Math.floor(checkFeetY)) || 
+        !isPassable(Math.floor(rightX), Math.floor(checkFeetY))) {
+        game.player.onGround = true;
+        game.player.coyoteTime = 0.15;
+    } else {
+        if (game.player.coyoteTime <= 0) {
+            game.player.onGround = false;
+        }
+    }
+
+    const nextX = game.player.x + game.player.vx * dt;
+    if (isPassable(Math.floor(nextX + 0.3), Math.floor(game.player.y + 0.1)) && 
+        isPassable(Math.floor(nextX + 0.7), Math.floor(game.player.y + 0.1)) &&
+        isPassable(Math.floor(nextX + 0.3), Math.floor(game.player.y + 0.9)) && 
+        isPassable(Math.floor(nextX + 0.7), Math.floor(game.player.y + 0.9))) {
         game.player.x = nextX;
     } else {
         game.player.vx = 0;
     }
-    
-    // Friction
-    game.player.vx *= 0.8;
     
     // Enemy AI & Cooldowns tick periodically (simulating "turns" in real-time)
     if (game.animFrame % 10 === 0) {
@@ -534,269 +595,126 @@ function draw() {
     const camX = Math.floor(canvas.width / 2 - game.player.x * T - T / 2);
     const camY = Math.floor(canvas.height / 2 - game.player.y * T - T / 2);
 
-    const renderables = [];
     const VIEW_W = Math.ceil(canvas.width / T) + 2;
     const VIEW_H = Math.ceil(canvas.height / T) + 2;
-    const startX = Math.max(0, game.player.x - Math.ceil(VIEW_W / 2));
-    const startY = Math.max(0, game.player.y - Math.ceil(VIEW_H / 2));
+    const startX = Math.max(0, Math.floor(game.player.x - VIEW_W / 2));
+    const startY = Math.max(0, Math.floor(game.player.y - VIEW_H / 2));
     const endX = Math.min(game.mapWidth, startX + VIEW_W);
     const endY = Math.min(game.mapHeight, startY + VIEW_H);
     
+    // 1. Draw Tiles (First layer, no objects created)
     for (let y = startY; y < endY; y++) {
         for (let x = startX; x < endX; x++) {
             const tile = game.map[`${x},${y}`];
             if (!tile) continue;
-            const dx = x - game.player.x;
-            const dy = y - game.player.y;
-            const isVisible = (dx * dx + dy * dy) <= 50;
+            
+            const isVisible = (x - game.player.x)**2 + (y - game.player.y)**2 <= 64;
             const isExplored = game.seen[`${x},${y}`];
+            
             if (isVisible || isExplored) {
-                renderables.push({ type: 'tile', tile, x, y, z: 0, isVisible });
+                const sx = x * T + camX;
+                const sy = y * T + camY;
+                
+                ctx.globalAlpha = isVisible ? 1.0 : 0.3;
+                
+                if (tile === '#') {
+                    ctx.fillStyle = patterns.wall || '#222';
+                    ctx.fillRect(sx, sy, T, T);
+                    // Minimalist neon edge instead of expensive shadow
+                    if (isVisible) {
+                        ctx.strokeStyle = '#FF71CE';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(sx + 0.5, sy + 0.5, T - 1, T - 1);
+                    }
+                } else {
+                    ctx.fillStyle = (isVisible && patterns.floor) ? patterns.floor : '#111';
+                    ctx.fillRect(sx, sy, T, T);
+                    if (tile === '>') {
+                        ctx.fillStyle = '#01CDFE';
+                        ctx.beginPath(); ctx.arc(sx + T/2, sy + T/2, 8, 0, Math.PI*2); ctx.fill();
+                    }
+                }
             }
         }
     }
     
-    game.items.forEach(item => { if (game.seen[`${item.x},${item.y}`]) renderables.push({ type: 'item', entity: item, x: item.x, y: item.y, z: 1 }); });
-    game.npcs.forEach(npc => { if (game.seen[`${npc.x},${npc.y}`]) renderables.push({ type: 'npc', entity: npc, x: npc.x, y: npc.y, z: 1 }); });
-    game.trolls.forEach(troll => { 
-        const d = (troll.x - game.player.x)**2 + (troll.y - game.player.y)**2;
-        if (d <= 50) renderables.push({ type: 'troll', entity: troll, x: troll.x, y: troll.y, z: 2 });
-    });
-    if (game.player.alive) {
-        renderables.push({ type: 'player', entity: game.player, x: game.player.x, y: game.player.y, z: 3 });
-    }
+    ctx.globalAlpha = 1.0;
 
-    renderables.sort((a, b) => a.z - b.z);
-
-    renderables.forEach(r => {
-        const sx = r.x * T + camX;
-        const sy = r.y * T + camY;
+    // 2. Draw Entities (Items, NPCs, Enemies, Player)
+    game.items.forEach(item => {
+        if (!game.seen[`${item.x},${item.y}`]) return;
+        const sx = item.x * T + camX + T/2;
+        const sy = item.y * T + camY + T;
+        const bob = Math.sin(game.animFrame * 0.1) * 3;
         
-        ctx.globalAlpha = 1.0;
-        
-        if (r.type === 'tile') {
-            ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
-            if (r.tile === '#') {
-                const glow = r.isVisible ? 'rgba(255,113,206,0.3)' : null;
-                drawTile(ctx, sx, sy, '#0a0a0a', true, glow, patterns.wall);
-            } else {
-                const floorColor = r.isVisible ? '#0a0a0a' : '#030303';
-                const glowColor = r.isVisible ? 'rgba(1,205,254,0.15)' : null;
-                drawTile(ctx, sx, sy, floorColor, false, glowColor, r.isVisible ? patterns.floor : null);
-                if (r.tile === '>') {
-                    ctx.globalAlpha = 1.0;
-                    ctx.fillStyle = '#01CDFE';
-                    ctx.shadowBlur = 20; ctx.shadowColor = '#01CDFE';
-                    ctx.beginPath(); ctx.arc(sx + T/2, sy + T/2, 8, 0, Math.PI*2); ctx.fill();
-                    ctx.shadowBlur = 0;
-                }
-            }
+        if (item.type === 'gender-reveal') {
+            ctx.fillStyle = (game.animFrame % 10 < 5) ? '#FF71CE' : '#5BCEFA';
+            ctx.beginPath(); ctx.arc(sx, sy - 8 + bob, 8, 0, Math.PI*2); ctx.fill();
+        } else if (item.type === 'zine') {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(sx - 6, sy - 14 + bob, 12, 14);
         } else {
-            ctx.globalAlpha = 1.0;
-            const drawX = sx + T / 2;
-            const drawY = sy + T;
-            
-            ctx.shadowBlur = 20;
-            
-            if (r.type === 'item') {
-                if (r.entity.type === 'gender-reveal') {
-                    const pulse = Math.sin(game.animFrame * 0.5) * 3;
-                    ctx.fillStyle = (game.animFrame % 4 < 2) ? '#FF71CE' : '#5BCEFA';
-                    ctx.shadowColor = ctx.fillStyle;
-                    ctx.beginPath(); ctx.arc(drawX, drawY - 8 + pulse, 8, 0, Math.PI*2); ctx.fill();
-                } else if (r.entity.type === 'zine') {
-                    ctx.fillStyle = '#FFFFFF'; ctx.shadowColor = '#FFFFFF';
-                    const bob = Math.sin(game.animFrame * 0.3) * 2;
-                    ctx.fillRect(drawX - 6, drawY - 14 + bob, 12, 14);
-                    ctx.fillStyle = '#FF71CE';
-                    ctx.fillRect(drawX - 4, drawY - 12 + bob, 8, 2);
-                    ctx.fillRect(drawX - 4, drawY - 8 + bob, 8, 2);
-                } else if (r.entity.type === 'healing') {
-                    const bob = Math.sin(game.animFrame * 0.4) * 2;
-                    ctx.fillStyle = '#39FF14'; ctx.shadowColor = '#39FF14';
-                    // Draw a cross/plus
-                    ctx.fillRect(drawX - 2, drawY - 12 + bob, 4, 10);
-                    ctx.fillRect(drawX - 5, drawY - 8 + bob, 10, 4);
-                } else {
-                    const bob = Math.sin(game.animFrame * 0.3) * 1;
-                    ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700';
-                    // Mini chest shape
-                    ctx.fillRect(drawX - 8, drawY - 10 + bob, 16, 10);
-                    ctx.fillStyle = '#FF71CE';
-                    ctx.fillRect(drawX - 1, drawY - 8 + bob, 2, 6);
-                }
-            } else if (r.type === 'npc') {
-                // Animated NPC — glowing purple figure with bob
-                const bob = Math.sin(game.animFrame * 0.3) * 2;
-                ctx.fillStyle = '#B967DB'; ctx.shadowColor = '#B967DB';
-                // Body
-                ctx.beginPath();
-                ctx.roundRect(drawX - 8, drawY - 28 + bob, 16, 20, 4);
-                ctx.fill();
-                // Head
-                ctx.beginPath();
-                ctx.arc(drawX, drawY - 32 + bob, 7, 0, Math.PI*2);
-                ctx.fill();
-                // Neon flower crown
-                ctx.fillStyle = '#FF71CE'; ctx.shadowColor = '#FF71CE';
-                for (let f = 0; f < 5; f++) {
-                    const fa = (f / 5) * Math.PI;
-                    ctx.beginPath();
-                    ctx.arc(drawX + Math.cos(fa) * 6, drawY - 38 + bob + Math.sin(fa) * -2, 2, 0, Math.PI*2);
-                    ctx.fill();
-                }
-            } else if (r.type === 'troll') {
-                const bob = Math.sin(game.animFrame * 0.4 + r.x) * 2;
-                const et = r.entity.enemyType || 'troll';
-                let size = 20, h = 24;
-                
-                if (et === 'troll') {
-                    ctx.fillStyle = '#FF0000'; ctx.shadowColor = '#FF0000';
-                    ctx.fillRect(drawX - 10, drawY - h + bob, size, h);
-                    ctx.fillStyle = '#FFF';
-                    ctx.fillRect(drawX - 6, drawY - h + 4 + bob, 4, 4);
-                    ctx.fillRect(drawX + 2, drawY - h + 4 + bob, 4, 4);
-                } else if (et === 'wraith') {
-                    // Ghostly triangle shape that flickers
-                    ctx.globalAlpha = 0.6 + Math.sin(game.animFrame * 0.8) * 0.3;
-                    ctx.fillStyle = '#39FF14'; ctx.shadowColor = '#39FF14';
-                    ctx.beginPath();
-                    ctx.moveTo(drawX, drawY - 30 + bob);
-                    ctx.lineTo(drawX + 12, drawY + bob);
-                    ctx.lineTo(drawX - 12, drawY + bob);
-                    ctx.closePath(); ctx.fill();
-                    ctx.fillStyle = '#000';
-                    ctx.beginPath(); ctx.arc(drawX - 3, drawY - 18 + bob, 2, 0, Math.PI*2); ctx.fill();
-                    ctx.beginPath(); ctx.arc(drawX + 3, drawY - 18 + bob, 2, 0, Math.PI*2); ctx.fill();
-                    ctx.globalAlpha = 1;
-                } else if (et === 'gatekeeper') {
-                    size = 28; h = 30;
-                    ctx.fillStyle = '#FFB000'; ctx.shadowColor = '#FFB000';
-                    ctx.fillRect(drawX - 14, drawY - h + bob, size, h);
-                    // Shield
-                    ctx.fillStyle = '#8B4513';
-                    ctx.fillRect(drawX - 16, drawY - 20 + bob, 6, 16);
-                    ctx.fillStyle = '#FFF';
-                    ctx.fillRect(drawX - 8, drawY - h + 6 + bob, 5, 5);
-                    ctx.fillRect(drawX + 4, drawY - h + 6 + bob, 5, 5);
-                } else if (et === 'concern') {
-                    ctx.fillStyle = '#8A2BE2'; ctx.shadowColor = '#8A2BE2';
-                    ctx.beginPath();
-                    ctx.roundRect(drawX - 10, drawY - 24 + bob, 20, 24, 10);
-                    ctx.fill();
-                    // "?" on face
-                    ctx.fillStyle = '#FFF'; ctx.font = 'bold 14px VT323';
-                    ctx.fillText('?', drawX - 4, drawY - 8 + bob);
-                } else if (et === 'police') {
-                    ctx.fillStyle = '#0000FF'; ctx.shadowColor = '#0000FF';
-                    ctx.fillRect(drawX - 10, drawY - 26 + bob, 20, 26);
-                    // Badge
-                    ctx.fillStyle = '#FFD700';
-                    ctx.beginPath(); ctx.arc(drawX, drawY - 16 + bob, 4, 0, Math.PI*2); ctx.fill();
-                    // Red eyes
-                    ctx.fillStyle = '#FF0000';
-                    ctx.fillRect(drawX - 6, drawY - 24 + bob, 4, 3);
-                    ctx.fillRect(drawX + 2, drawY - 24 + bob, 4, 3);
-                } else if (et === 'boss') {
-                    size = 40; h = 44;
-                    const pulse = Math.sin(game.animFrame * 0.3) * 4;
-                    ctx.fillStyle = '#FF00FF'; ctx.shadowColor = '#FF00FF';
-                    ctx.shadowBlur = 20 + pulse;
-                    ctx.fillRect(drawX - 20, drawY - h + bob, size, h);
-                    // Horns
-                    ctx.beginPath();
-                    ctx.moveTo(drawX - 16, drawY - h + bob);
-                    ctx.lineTo(drawX - 10, drawY - h - 12 + bob);
-                    ctx.lineTo(drawX - 4, drawY - h + bob);
-                    ctx.fill();
-                    ctx.beginPath();
-                    ctx.moveTo(drawX + 4, drawY - h + bob);
-                    ctx.lineTo(drawX + 10, drawY - h - 12 + bob);
-                    ctx.lineTo(drawX + 16, drawY - h + bob);
-                    ctx.fill();
-                    // Glowing eyes
-                    ctx.fillStyle = '#FFF';
-                    ctx.fillRect(drawX - 12, drawY - h + 10 + bob, 8, 6);
-                    ctx.fillRect(drawX + 4, drawY - h + 10 + bob, 8, 6);
-                }
-                
-                // Health Bar for all enemies
-                const barW = Math.max(size, 20);
-                ctx.shadowBlur = 0;
-                ctx.fillStyle = '#333';
-                ctx.fillRect(drawX - barW/2, drawY - h - 10 + bob, barW, 4);
-                ctx.fillStyle = '#FF71CE';
-                ctx.fillRect(drawX - barW/2, drawY - h - 10 + bob, barW * (r.entity.health / r.entity.maxHealth), 4);
-            } else if (r.type === 'player') {
-                if (r.entity.hurtCooldown % 2 === 0) {
-                    const bob = Math.sin(game.animFrame * 0.4) * 2;
-                    const pal = PALETTES[r.entity.colorPalette || 0];
-                    
-                    // Get body and accent colors (cycle for rainbow)
-                    let bodyColor, accentColor;
-                    if (pal.colors) {
-                        // Progress pride: cycle through all flag colors
-                        bodyColor = pal.colors[game.animFrame % pal.colors.length];
-                        accentColor = pal.colors[(game.animFrame + 3) % pal.colors.length];
-                    } else {
-                        bodyColor = pal.body;
-                        accentColor = pal.accent;
-                    }
-                    
-                    // Ground glow circle for POP
-                    ctx.fillStyle = pal.glow;
-                    ctx.globalAlpha = 0.2;
-                    ctx.shadowBlur = 30;
-                    ctx.shadowColor = pal.glow;
-                    ctx.beginPath();
-                    ctx.ellipse(drawX, drawY, 14, 7, 0, 0, Math.PI*2);
-                    ctx.fill();
-                    ctx.globalAlpha = 1.0;
-                    
-                    // Punk protagonist body
-                    ctx.fillStyle = bodyColor; ctx.shadowColor = bodyColor;
-                    ctx.shadowBlur = 25;
-                    ctx.beginPath();
-                    ctx.roundRect(drawX - 9, drawY - 30 + bob, 18, 22, 5);
-                    ctx.fill();
-                    // Head
-                    ctx.beginPath();
-                    ctx.arc(drawX, drawY - 34 + bob, 8, 0, Math.PI*2);
-                    ctx.fill();
-                    // Mohawk
-                    ctx.fillStyle = accentColor; ctx.shadowColor = accentColor;
-                    for (let s = 0; s < 5; s++) {
-                        ctx.fillRect(drawX - 4 + s * 2, drawY - 43 + bob - s, 2, 7 + s);
-                    }
-                    // Visor/glasses
-                    ctx.fillStyle = accentColor;
-                    ctx.fillRect(drawX - 7 + (r.entity.facingX * 3), drawY - 36 + bob + (r.entity.facingY * 1), 14, 3);
-                    // Arms + Hands
-                    ctx.fillStyle = bodyColor;
-                    ctx.shadowBlur = 10;
-                    const armSwing = Math.sin(game.animFrame * 0.5) * 4;
-                    // Left arm
-                    ctx.fillRect(drawX - 14, drawY - 26 + bob + armSwing, 5, 14);
-                    // Left hand
-                    ctx.fillStyle = accentColor;
-                    ctx.beginPath(); ctx.arc(drawX - 12, drawY - 11 + bob + armSwing, 3, 0, Math.PI*2); ctx.fill();
-                    // Right arm
-                    ctx.fillStyle = bodyColor;
-                    ctx.fillRect(drawX + 9, drawY - 26 + bob - armSwing, 5, 14);
-                    // Right hand
-                    ctx.fillStyle = accentColor;
-                    ctx.beginPath(); ctx.arc(drawX + 12, drawY - 11 + bob - armSwing, 3, 0, Math.PI*2); ctx.fill();
-                    // Legs
-                    ctx.fillStyle = bodyColor;
-                    const legSpread = Math.sin(game.animFrame * 0.6) * 3;
-                    ctx.fillRect(drawX - 6 - legSpread, drawY - 8 + bob, 5, 10);
-                    ctx.fillRect(drawX + 1 + legSpread, drawY - 8 + bob, 5, 10);
-                }
-            }
-            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#FFD700';
+            ctx.fillRect(sx - 8, sy - 10 + bob, 16, 10);
         }
     });
 
+    game.npcs.forEach(npc => {
+        if (!game.seen[`${npc.x},${npc.y}`]) return;
+        const sx = npc.x * T + camX + T/2;
+        const sy = npc.y * T + camY + T;
+        const bob = Math.sin(game.animFrame * 0.1) * 2;
+        ctx.fillStyle = '#B967DB';
+        ctx.beginPath(); ctx.arc(sx, sy - 24 + bob, 10, 0, Math.PI*2); ctx.fill();
+        ctx.fillRect(sx - 8, sy - 20 + bob, 16, 20);
+    });
+
+    game.trolls.forEach(troll => {
+        if ((troll.x - game.player.x)**2 + (troll.y - game.player.y)**2 > 100) return;
+        const sx = troll.x * T + camX + T/2;
+        const sy = troll.y * T + camY + T;
+        const bob = Math.sin(game.animFrame * 0.15 + troll.x) * 2;
+        
+        ctx.fillStyle = '#FF0000';
+        if (troll.enemyType === 'police') ctx.fillStyle = '#0000FF';
+        if (troll.enemyType === 'boss') ctx.fillStyle = '#FF00FF';
+        
+        ctx.fillRect(sx - 10, sy - 24 + bob, 20, 24);
+        
+        // Health bar (simple)
+        ctx.fillStyle = '#333';
+        ctx.fillRect(sx - 10, sy - 30 + bob, 20, 3);
+        ctx.fillStyle = '#FF71CE';
+        ctx.fillRect(sx - 10, sy - 30 + bob, 20 * (troll.health / troll.maxHealth), 3);
+    });
+
+    // 3. Draw Player
+    if (game.player.alive && game.player.hurtCooldown % 2 === 0) {
+        const sx = game.player.x * T + camX + T/2;
+        const sy = game.player.y * T + camY + T;
+        const bob = Math.sin(game.animFrame * 0.2) * 2;
+        const pal = PALETTES[game.player.colorPalette || 0];
+        const bodyColor = pal.colors ? pal.colors[game.animFrame % pal.colors.length] : pal.body;
+
+        // Faux-glow: draw a larger, semi-transparent rect behind
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(sx - 12, sy - 34 + bob, 24, 28);
+        ctx.globalAlpha = 1.0;
+
+        ctx.fillStyle = bodyColor;
+        ctx.beginPath();
+        ctx.roundRect(sx - 9, sy - 30 + bob, 18, 22, 5);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(sx, sy - 34 + bob, 8, 0, Math.PI*2);
+        ctx.fill();
+        
+        // Mohawk
+        ctx.fillStyle = pal.accent || '#FFF';
+        ctx.fillRect(sx - 2, sy - 45 + bob, 4, 10);
+    }
+    
     // Draw Particles
     for (let i = game.particles.length - 1; i >= 0; i--) {
         const p = game.particles[i];
@@ -973,10 +891,14 @@ function setupControls() {
         if (UI.modals.zine.style.display === 'flex' || UI.modals.conversation.style.display === 'flex') return;
         
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-            if (game.player.onGround) {
-                game.player.vy = -12;
+            if (game.player.onGround || game.player.coyoteTime > 0) {
+                game.player.vy = -20;
                 game.player.onGround = false;
+                game.player.coyoteTime = 0;
+                game.player.jumpBuffer = 0;
                 Audio.playStep();
+            } else {
+                game.player.jumpBuffer = 0.15; // Buffer for 150ms
             }
         }
         
@@ -1004,19 +926,28 @@ function setupControls() {
     // Add horizontal movement to update loop
     const originalUpdate = update;
     update = (dt) => {
+        const moveAccel = 100;
+        game.player.ax = 0;
         if (keys['ArrowLeft'] || keys['KeyA']) {
-            game.player.vx = -4;
+            game.player.ax = -moveAccel;
             game.player.facingX = -1;
         } else if (keys['ArrowRight'] || keys['KeyD']) {
-            game.player.vx = 4;
+            game.player.ax = moveAccel;
             game.player.facingX = 1;
         }
         originalUpdate(dt);
     };
 
-    document.getElementById('up').onclick = () => { if(game.player.onGround) game.player.vy = -12; };
-    document.getElementById('left').onclick = () => { game.player.vx = -4; game.player.facingX = -1; };
-    document.getElementById('right').onclick = () => { game.player.vx = 4; game.player.facingX = 1; };
+    document.getElementById('up').onclick = () => { 
+        if(game.player.onGround || game.player.coyoteTime > 0) {
+            game.player.vy = -20;
+            game.player.onGround = false;
+            game.player.coyoteTime = 0;
+            Audio.playStep();
+        }
+    };
+    document.getElementById('left').onclick = () => { game.player.vx = -15; game.player.facingX = -1; };
+    document.getElementById('right').onclick = () => { game.player.vx = 15; game.player.facingX = 1; };
     document.getElementById('interact').onclick = interact;
     document.getElementById('quick-attack').onclick = () => attackEnemy(game, game.player.facingX, game.player.facingY, 'quick');
     document.getElementById('power-attack').onclick = () => attackEnemy(game, game.player.facingX, game.player.facingY, 'power');
