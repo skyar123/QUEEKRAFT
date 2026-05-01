@@ -677,6 +677,7 @@ let questLogVisible = false;
 let gameStarted = false;
 let showFps = false;
 const fpsSamples = [];
+const keys = {}; // Global keyboard state
 
 function gameLoop(time) {
     const real = (time - lastTime) / 1000;
@@ -1942,7 +1943,6 @@ function activateClassPower() {
 }
 
 function setupControls() {
-    const keys = {};
     document.addEventListener('keydown', e => {
         if (e.repeat) return;
         keys[e.code] = true;
