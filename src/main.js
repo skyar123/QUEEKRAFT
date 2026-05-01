@@ -278,6 +278,11 @@ function startDungeon() {
     UI.updateStatus(game);
     UI.addMessage("🏳️‍⚧️ You enter the wasteland!", "special");
     if (p.classObj) UI.addMessage(`Class: ${p.classObj.name}. Press R for ${p.classObj.power}.`, "special");
+    // Mark the game as live ONLY after generateMap has populated game.map.
+    // Until this flips, the rAF loop short-circuits — preventing the player
+    // from free-falling through an undefined map while the camp modal is open.
+    gameStarted = true;
+    physicsAccumulator = 0;
     draw();
 }
 
@@ -610,12 +615,19 @@ const FIXED_DT = 1 / 60;
 const MAX_FRAME_DT = 0.1; // clamp huge tab-switch hitches so we don't death-spiral
 let paused = false;
 let questLogVisible = false;
+// Set true the first time generateMap finishes so physics doesn't run against
+// an empty map (which would let the player free-fall through "nothing" while
+// the camp modal is still open). Without this, slow asset loads on a real
+// machine can produce the "fell through map / hovering in space" glitch.
+let gameStarted = false;
+let showFps = false;
+const fpsSamples = [];
 
 function gameLoop(time) {
     const real = (time - lastTime) / 1000;
     lastTime = time;
 
-    if (!paused) {
+    if (!paused && gameStarted) {
         physicsAccumulator += Math.min(MAX_FRAME_DT, real || 0);
         // Cap to 4 sub-steps per frame to avoid catch-up storms (250ms ceiling).
         let steps = 0;
@@ -625,9 +637,16 @@ function gameLoop(time) {
             steps++;
         }
         if (physicsAccumulator > FIXED_DT * 4) physicsAccumulator = 0;
+    } else {
+        // Eat any accumulated time so the first real frame doesn't catch-up storm.
+        physicsAccumulator = 0;
     }
 
-    draw();
+    if (gameStarted) draw();
+    if (real > 0) {
+        fpsSamples.push(real);
+        if (fpsSamples.length > 60) fpsSamples.shift();
+    }
     requestAnimationFrame(gameLoop);
 }
 requestAnimationFrame(gameLoop);
@@ -1738,6 +1757,25 @@ function draw() {
         ctx.stroke();
     }
 
+    // F1-toggled FPS / frame-time overlay — useful for diagnosing perf issues
+    // on real machines without browser devtools.
+    if (showFps && fpsSamples.length) {
+        let sum = 0;
+        for (const s of fpsSamples) sum += s;
+        const avgMs = (sum / fpsSamples.length) * 1000;
+        const fps = 1000 / Math.max(0.0001, avgMs);
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(8, 8, 110, 36);
+        ctx.font = 'bold 12px VT323';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = fps >= 50 ? '#39FF14' : fps >= 30 ? '#FFD700' : '#FF0040';
+        ctx.fillText(`FPS: ${fps.toFixed(0)}`, 14, 22);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText(`frame: ${avgMs.toFixed(1)}ms`, 14, 38);
+        ctx.restore();
+    }
+
     // Screen-space damage flash — drawn over everything for unmissable hurt feedback.
     if (game.damageFlash > 0.01) {
         ctx.fillStyle = `rgba(255,40,80,${game.damageFlash * 0.45})`;
@@ -1926,6 +1964,9 @@ function setupControls() {
             interact();
         } else if (e.code === 'KeyJ') {
             questLogVisible = !questLogVisible;
+        } else if (e.code === 'F1') {
+            showFps = !showFps;
+            e.preventDefault();
         }
     });
 
