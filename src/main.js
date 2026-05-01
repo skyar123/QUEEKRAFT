@@ -736,9 +736,9 @@ const stars = [];
 // === Platformer physics constants (Rogue Legacy inspired) ===
 const PLAYER_W = 0.65; // Slightly narrower for better platforming
 const PLAYER_H = 0.9;
-const GRAVITY = 0.48; // Lighter gravity for better air control
+const GRAVITY = 0.8; // Snappier gravity
 const TERMINAL_VY = 12;
-const JUMP_SPEED = -11.5; // Stronger jump
+const JUMP_SPEED = -8.5; // Tighter jump arc scaled for 10x10 rooms
 const COYOTE_FRAMES = 8;
 const JUMP_BUFFER_FRAMES = 8;
 const DASH_FRAMES = 8;

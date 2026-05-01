@@ -164,8 +164,9 @@ export function generateMap(game) {
         for (let ry = 0; ry < ROOMS_Y - 1; ry++) {
             const cx = roomCenterX(rx);
             const upperFloor = roomFloorY(ry);
-            game.map[`${cx},${upperFloor}`] = '=';
-            game.map[`${cx},${upperFloor + 1}`] = '.';
+            game.map[`${cx},${upperFloor}`] = '='; // The floor you stand on
+            game.map[`${cx},${upperFloor + 1}`] = '.'; // The bottom half of the thick floor
+            game.map[`${cx},${upperFloor + 2}`] = '.'; // The ceiling of the room below!
         }
     }
 
