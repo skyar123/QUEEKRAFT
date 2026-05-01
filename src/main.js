@@ -168,51 +168,39 @@ function generateHeirs() {
     return heirs;
 }
 
-// Image assets
-const images = {
-    player: new Image(),
-    enemy: new Image(),
-    zine: new Image(),
-    wall: new Image(),
-    floor: new Image(),
-    npc: new Image(),
-    item: new Image(),
-    tex_floor: new Image(),
-    tex_wall: new Image()
+// === Asset manifest ===
+// Drop a file at the listed path and it picks up automatically.
+// To swap in Cendric2 PNGs later: keep the keys, change the paths.
+const ASSET_PATHS = {
+    tex_floor: '/images/tex_floor.png',
+    tex_wall:  '/images/tex_wall.png',
+    boss:      '/images/spr_enemy.png',  // 1024x1024 transparent demon — boss only
+    chest:     '/images/spr_chest.png',  // transparent neon chest — treasure / gender-reveal
+    marsha:    '/images/spr_marsha.png'  // transparent Marsha — historical NPC
 };
 
-images.player.src = '/images/player.png';
-images.enemy.src = '/images/enemy.png';
-images.zine.src = '/images/zine.png';
-images.wall.src = '/images/wall.png';
-images.floor.src = '/images/floor.png';
-images.npc.src = '/images/npc.png';
-images.item.src = '/images/item.png';
-images.tex_floor.src = '/images/tex_floor.png';
-images.tex_wall.src = '/images/tex_wall.png';
+const images = {};
+for (const k of Object.keys(ASSET_PATHS)) images[k] = new Image();
 
-// New generated sprites
-const sprites = {
-    player: new Image(),
-    marsha: new Image(),
-    enemy: new Image(),
-    chest: new Image()
-};
-sprites.player.src = '/images/spr_player.png';
-sprites.marsha.src = '/images/spr_marsha.png';
-sprites.enemy.src = '/images/spr_enemy.png';
-sprites.chest.src = '/images/spr_chest.png';
+let pendingImages = Object.keys(ASSET_PATHS).length;
+let initStarted = false;
+function tickLoaded() {
+    pendingImages--;
+    if (pendingImages <= 0 && !initStarted) {
+        initStarted = true;
+        initGame();
+    }
+}
+for (const [k, path] of Object.entries(ASSET_PATHS)) {
+    images[k].onload  = tickLoaded;
+    images[k].onerror = () => { console.warn(`Asset failed: ${path}`); tickLoaded(); };
+    images[k].src = path;
+}
+// Failsafe — if asset loading hangs, start without textures after 5s.
+setTimeout(() => { if (!initStarted) { initStarted = true; initGame(); } }, 5000);
 
-let imagesLoaded = 0;
-const totalImages = Object.keys(images).length;
-Object.values(images).forEach(img => {
-    img.onload = () => {
-        imagesLoaded++;
-        if (imagesLoaded === totalImages) {
-            initGame();
-        }
-    };
-});
+// True when an image finished loading and is safe to drawImage().
+function imgReady(img) { return img && img.complete && img.naturalWidth > 0; }
 
 let patterns = {};
 function initGame() {
@@ -314,8 +302,9 @@ function updateFOV() {
 function isPassable(x, y) {
     if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return false;
     const tile = game.map[`${x},${y}`];
-    // For AI, FOV, attack target lookups: one-way platforms are passable.
-    return tile === '.' || tile === '>' || tile === '=';
+    // For AI, FOV, attack target lookups: one-way platforms + spikes are passable
+    // (enemies don't avoid spikes — they're a *player* hazard).
+    return tile === '.' || tile === '>' || tile === '=' || tile === '^' || tile === 'C';
 }
 
 // Legacy turn-based movement kept as a no-op shim — platformer physics handles motion now.
@@ -652,11 +641,13 @@ const DASH_SPEED = 0.55;
 
 // Returns true if (px, py) lies inside any solid wall.
 // One-way platforms are NOT considered solid by this — use isOneWayBlocking
-// to test whether falling feet should land on a `=` tile.
+// to test whether falling feet should land on a `=` or 'C' tile.
 function pointSolid(px, py) {
     const x = Math.floor(px), y = Math.floor(py);
     if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return true;
-    return game.map[`${x},${y}`] === '#';
+    const t = game.map[`${x},${y}`];
+    // Walls + ice + trampolines are full-height solids.
+    return t === '#' || t === '~' || t === 'T';
 }
 
 // True when feet at `feetY` should land on a one-way platform — the platform
@@ -666,7 +657,10 @@ function pointSolid(px, py) {
 function isOneWayBlocking(px, feetY, prevFeetY) {
     const x = Math.floor(px), y = Math.floor(feetY);
     if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return false;
-    if (game.map[`${x},${y}`] !== '=') return false;
+    const t = game.map[`${x},${y}`];
+    // '=' = standard one-way; 'C' = crumbling one-way (until it breaks).
+    if (t !== '=' && t !== 'C') return false;
+    if (t === 'C' && game.crumbleState && game.crumbleState[`${x},${y}`] && game.crumbleState[`${x},${y}`].broken) return false;
     // Drop-through grace period: ignore the platform briefly after Down+Jump.
     if (game.player.dropThrough > 0) return false;
     return prevFeetY <= y + 0.0001;
@@ -754,6 +748,69 @@ function tryJump() {
         return true;
     }
     return false;
+}
+
+// Reads tile under feet + body and applies hazard side-effects each frame.
+//   '^' spikes      → 1 dmg + small knockback (gated by hurtCooldown)
+//   '~' ice         → flag p.onIceTile so friction stays high
+//   'T' trampoline  → big bounce on contact
+//   'C' crumbling   → start a timer; break the tile after 30 frames of contact
+function applyHazards(p) {
+    p.onIceTile = false;
+
+    // Tile directly under the player's feet.
+    const footX = Math.floor(p.x + PLAYER_W / 2);
+    const footY = Math.floor(p.y + PLAYER_H + 0.05);
+    const below = game.map[`${footX},${footY}`];
+
+    if (p.onGround && below === 'T' && p.vy >= 0) {
+        // Trampoline! Force a sky-high bounce, refund a jump.
+        p.vy = -16;
+        p.onGround = false;
+        p.jumpsLeft = Math.max(p.jumpsLeft, 1);
+        Audio.playJump && Audio.playJump();
+        for (let i = 0; i < 16; i++) spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, i % 2 ? '#FFD700' : '#FF71CE');
+        UI.addMessage('BOING!', 'special');
+    }
+
+    if (p.onGround && below === '~') p.onIceTile = true;
+
+    // Crumbling tiles: track per-tile timer. 30 frames of contact → break.
+    if (!game.crumbleState) game.crumbleState = {};
+    if (p.onGround && below === 'C') {
+        const k = `${footX},${footY}`;
+        if (!game.crumbleState[k]) {
+            game.crumbleState[k] = { started: game.animFrame, broken: false, contact: 1 };
+        } else {
+            game.crumbleState[k].contact = game.animFrame;
+        }
+    }
+    for (const [k, st] of Object.entries(game.crumbleState)) {
+        if (st.broken) continue;
+        if (game.animFrame - st.started >= 30) {
+            st.broken = true;
+            const [bx, by] = k.split(',').map(Number);
+            game.map[k] = '.';
+            game.screenShake = Math.max(game.screenShake, 0.25);
+            for (let i = 0; i < 10; i++) spawnDust(bx + 0.5, by + 0.5, 1, '#888');
+        }
+    }
+
+    // Spike overlap — sample three points on the player's footprint.
+    const spikeAt = (cx, cy) => game.map[`${Math.floor(cx)},${Math.floor(cy)}`] === '^';
+    const overlap =
+        spikeAt(p.x + 0.05,            p.y + PLAYER_H - 0.05) ||
+        spikeAt(p.x + PLAYER_W - 0.05, p.y + PLAYER_H - 0.05) ||
+        spikeAt(p.x + PLAYER_W * 0.5,  p.y + PLAYER_H - 0.05) ||
+        spikeAt(p.x + PLAYER_W * 0.5,  p.y + PLAYER_H * 0.5);
+    if (overlap && p.hurtCooldown <= 0) {
+        takeDamage(game, 1);
+        p.vy = -7;
+        p.vx = (p.vx >= 0 ? -1 : 1) * 5;
+        p.onGround = false;
+        UI.addMessage('Ouch! Spikes!', 'death');
+        for (let i = 0; i < 8; i++) spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, '#FF0040');
+    }
 }
 
 function spawnDust(x, y, count, color) {
@@ -877,8 +934,12 @@ function update(dt) {
         }
     }
 
-    // Friction (only when not dashing)
-    if (p.dashTimer <= 0) p.vx *= 0.78;
+    // Hazard interactions: spikes hurt; trampolines bounce; crumbling tiles
+    // start to break; ice slips. Resolved before friction so ice can override it.
+    applyHazards(p);
+
+    // Friction (only when not dashing). Ice keeps almost all velocity.
+    if (p.dashTimer <= 0) p.vx *= p.onIceTile ? 0.97 : 0.78;
     if (Math.abs(p.vx) < 0.05) p.vx = 0;
 
     // Status effect ticking (DOTs, freeze duration, etc.)
@@ -996,6 +1057,39 @@ function draw() {
             if (r.tile === '#') {
                 const glow = r.isVisible ? 'rgba(255,113,206,0.3)' : null;
                 drawTile(ctx, sx, sy, '#0a0a0a', true, glow, patterns.wall);
+            } else if (r.tile === '~') {
+                // Ice — pale blue floor tile with a glossy highlight.
+                drawTile(ctx, sx, sy, '#1a3a4a', true, r.isVisible ? 'rgba(91,206,250,0.45)' : null, null);
+                if (r.isVisible) {
+                    ctx.globalAlpha = 0.55;
+                    ctx.fillStyle = '#5BCEFA';
+                    ctx.fillRect(sx + 1, sy + 1, T - 2, 6);
+                    ctx.globalAlpha = 0.85;
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(sx + 4, sy + 2, T - 14, 2);
+                }
+            } else if (r.tile === 'T') {
+                // Trampoline — pink/yellow pad with a glowing top stripe.
+                drawTile(ctx, sx, sy, '#1a0a14', true, null, null);
+                if (r.isVisible) {
+                    ctx.globalAlpha = 1.0;
+                    ctx.fillStyle = '#FF71CE';
+                    ctx.shadowBlur = 14; ctx.shadowColor = '#FF71CE';
+                    ctx.fillRect(sx + 2, sy + 4, T - 4, T - 12);
+                    ctx.fillStyle = '#FFD700';
+                    ctx.shadowColor = '#FFD700';
+                    ctx.fillRect(sx + 2, sy + 4, T - 4, 3);
+                    ctx.shadowBlur = 0;
+                    // Springs
+                    ctx.strokeStyle = '#FFD700';
+                    ctx.lineWidth = 1;
+                    for (let s = 0; s < 3; s++) {
+                        ctx.beginPath();
+                        ctx.moveTo(sx + 6 + s * 8, sy + T - 8);
+                        ctx.lineTo(sx + 6 + s * 8, sy + T - 2);
+                        ctx.stroke();
+                    }
+                }
             } else {
                 const floorColor = r.isVisible ? '#0a0a0a' : '#030303';
                 const glowColor = r.isVisible ? 'rgba(1,205,254,0.15)' : null;
@@ -1015,6 +1109,45 @@ function draw() {
                     ctx.fillStyle = '#FFFFFF';
                     ctx.fillRect(sx + 1, sy, T - 2, 1);
                     ctx.shadowBlur = 0;
+                } else if (r.tile === 'C') {
+                    // Crumbling platform — fades from cyan to red as it cracks.
+                    const st = game.crumbleState && game.crumbleState[`${r.x},${r.y}`];
+                    const aged = st ? Math.min(1, (game.animFrame - st.started) / 30) : 0;
+                    ctx.globalAlpha = 1.0;
+                    const col = aged > 0
+                        ? `rgb(${255}, ${Math.floor(215 * (1 - aged))}, ${Math.floor(64 * (1 - aged))})`
+                        : '#01CDFE';
+                    ctx.fillStyle = col;
+                    ctx.shadowBlur = aged > 0 ? 14 : 10;
+                    ctx.shadowColor = col;
+                    ctx.fillRect(sx + 1, sy, T - 2, 4);
+                    // Cracks scribbled across the platform when aging.
+                    if (aged > 0.2) {
+                        ctx.strokeStyle = '#000';
+                        ctx.lineWidth = 1;
+                        ctx.shadowBlur = 0;
+                        ctx.beginPath();
+                        ctx.moveTo(sx + 4, sy + 1); ctx.lineTo(sx + 8, sy + 3);
+                        ctx.lineTo(sx + 14, sy + 1); ctx.lineTo(sx + 22, sy + 3);
+                        ctx.stroke();
+                    }
+                    ctx.shadowBlur = 0;
+                } else if (r.tile === '^') {
+                    // Spikes — pointed teeth glowing red along the top of the tile.
+                    ctx.globalAlpha = 1.0;
+                    ctx.fillStyle = '#C0C0C0';
+                    ctx.shadowBlur = 10; ctx.shadowColor = '#FF0040';
+                    const teeth = 4;
+                    const tw = (T - 4) / teeth;
+                    for (let s = 0; s < teeth; s++) {
+                        ctx.beginPath();
+                        ctx.moveTo(sx + 2 + s * tw,        sy + T);
+                        ctx.lineTo(sx + 2 + s * tw + tw/2, sy + 4);
+                        ctx.lineTo(sx + 2 + (s + 1) * tw,  sy + T);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                    ctx.shadowBlur = 0;
                 }
             }
         } else {
@@ -1026,10 +1159,18 @@ function draw() {
             
             if (r.type === 'item') {
                 if (r.entity.type === 'gender-reveal') {
-                    const pulse = Math.sin(game.animFrame * 0.5) * 3;
-                    ctx.fillStyle = (game.animFrame % 4 < 2) ? '#FF71CE' : '#5BCEFA';
-                    ctx.shadowColor = ctx.fillStyle;
-                    ctx.beginPath(); ctx.arc(drawX, drawY - 8 + pulse, 8, 0, Math.PI*2); ctx.fill();
+                    // Pulsing chest — cycles pink/blue glow each beat. Use spr_chest if loaded.
+                    const pulse = Math.sin(game.animFrame * 0.18) * 3;
+                    const flick = (game.animFrame % 8 < 4) ? '#FF71CE' : '#5BCEFA';
+                    if (imgReady(images.chest)) {
+                        ctx.shadowColor = flick;
+                        ctx.shadowBlur = 18;
+                        ctx.drawImage(images.chest, drawX - 18, drawY - 28 + pulse, 36, 28);
+                        ctx.shadowBlur = 0;
+                    } else {
+                        ctx.fillStyle = flick; ctx.shadowColor = flick;
+                        ctx.beginPath(); ctx.arc(drawX, drawY - 8 + pulse, 8, 0, Math.PI*2); ctx.fill();
+                    }
                 } else if (r.entity.type === 'zine') {
                     ctx.fillStyle = '#FFFFFF'; ctx.shadowColor = '#FFFFFF';
                     const bob = Math.sin(game.animFrame * 0.3) * 2;
@@ -1044,32 +1185,53 @@ function draw() {
                     ctx.fillRect(drawX - 2, drawY - 12 + bob, 4, 10);
                     ctx.fillRect(drawX - 5, drawY - 8 + bob, 10, 4);
                 } else {
+                    // Treasure / Salvaged Scrap → small neon chest sprite when available.
                     const bob = Math.sin(game.animFrame * 0.3) * 1;
-                    ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700';
-                    // Mini chest shape
-                    ctx.fillRect(drawX - 8, drawY - 10 + bob, 16, 10);
-                    ctx.fillStyle = '#FF71CE';
-                    ctx.fillRect(drawX - 1, drawY - 8 + bob, 2, 6);
+                    if (imgReady(images.chest)) {
+                        ctx.shadowColor = '#FFD700';
+                        ctx.shadowBlur = 12;
+                        ctx.drawImage(images.chest, drawX - 12, drawY - 20 + bob, 24, 20);
+                        ctx.shadowBlur = 0;
+                    } else {
+                        ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700';
+                        ctx.fillRect(drawX - 8, drawY - 10 + bob, 16, 10);
+                        ctx.fillStyle = '#FF71CE';
+                        ctx.fillRect(drawX - 1, drawY - 8 + bob, 2, 6);
+                    }
                 }
             } else if (r.type === 'npc') {
-                // Animated NPC — glowing purple figure with bob
                 const bob = Math.sin(game.animFrame * 0.3) * 2;
-                ctx.fillStyle = '#B967DB'; ctx.shadowColor = '#B967DB';
-                // Body
-                ctx.beginPath();
-                ctx.roundRect(drawX - 8, drawY - 28 + bob, 16, 20, 4);
-                ctx.fill();
-                // Head
-                ctx.beginPath();
-                ctx.arc(drawX, drawY - 32 + bob, 7, 0, Math.PI*2);
-                ctx.fill();
-                // Neon flower crown
-                ctx.fillStyle = '#FF71CE'; ctx.shadowColor = '#FF71CE';
-                for (let f = 0; f < 5; f++) {
-                    const fa = (f / 5) * Math.PI;
+                if (imgReady(images.marsha)) {
+                    // Cendric-style portrait sprite (transparent PNG of Marsha P. Johnson).
+                    const sw = 44, sh = 56;
+                    ctx.shadowColor = '#FF71CE';
+                    ctx.shadowBlur = 16;
+                    ctx.drawImage(images.marsha, drawX - sw/2, drawY - sh + bob, sw, sh);
+                    ctx.shadowBlur = 0;
+                    // Floating "!" beacon so player knows it's interactable.
+                    ctx.fillStyle = '#FFD700';
+                    ctx.shadowColor = '#FFD700';
+                    ctx.shadowBlur = 8;
+                    ctx.font = 'bold 14px VT323';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('!', drawX, drawY - sh - 4 + bob);
+                    ctx.textAlign = 'left';
+                    ctx.shadowBlur = 0;
+                } else {
+                    ctx.fillStyle = '#B967DB'; ctx.shadowColor = '#B967DB';
                     ctx.beginPath();
-                    ctx.arc(drawX + Math.cos(fa) * 6, drawY - 38 + bob + Math.sin(fa) * -2, 2, 0, Math.PI*2);
+                    ctx.roundRect(drawX - 8, drawY - 28 + bob, 16, 20, 4);
                     ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(drawX, drawY - 32 + bob, 7, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.fillStyle = '#FF71CE'; ctx.shadowColor = '#FF71CE';
+                    for (let f = 0; f < 5; f++) {
+                        const fa = (f / 5) * Math.PI;
+                        ctx.beginPath();
+                        ctx.arc(drawX + Math.cos(fa) * 6, drawY - 38 + bob + Math.sin(fa) * -2, 2, 0, Math.PI*2);
+                        ctx.fill();
+                    }
                 }
             } else if (r.type === 'troll') {
                 const bob = Math.sin(game.animFrame * 0.4 + r.x) * 2;
@@ -1150,26 +1312,22 @@ function draw() {
                     ctx.fillRect(drawX - 6, drawY - 24 + bob, 4, 3);
                     ctx.fillRect(drawX + 2, drawY - 24 + bob, 4, 3);
                 } else if (et === 'boss') {
-                    size = 40; h = 44;
+                    size = 64; h = 72;
                     const pulse = Math.sin(game.animFrame * 0.3) * 4;
-                    ctx.fillStyle = '#FF00FF'; ctx.shadowColor = '#FF00FF';
-                    ctx.shadowBlur = 20 + pulse;
-                    ctx.fillRect(drawX - 20, drawY - h + bob, size, h);
-                    // Horns
-                    ctx.beginPath();
-                    ctx.moveTo(drawX - 16, drawY - h + bob);
-                    ctx.lineTo(drawX - 10, drawY - h - 12 + bob);
-                    ctx.lineTo(drawX - 4, drawY - h + bob);
-                    ctx.fill();
-                    ctx.beginPath();
-                    ctx.moveTo(drawX + 4, drawY - h + bob);
-                    ctx.lineTo(drawX + 10, drawY - h - 12 + bob);
-                    ctx.lineTo(drawX + 16, drawY - h + bob);
-                    ctx.fill();
-                    // Glowing eyes
-                    ctx.fillStyle = '#FFF';
-                    ctx.fillRect(drawX - 12, drawY - h + 10 + bob, 8, 6);
-                    ctx.fillRect(drawX + 4, drawY - h + 10 + bob, 8, 6);
+                    if (imgReady(images.boss)) {
+                        // Spr_enemy.png is a transparent boss-quality demon sprite.
+                        ctx.shadowColor = '#FF00FF';
+                        ctx.shadowBlur = 18 + pulse;
+                        ctx.drawImage(images.boss, drawX - size/2, drawY - h + bob, size, h);
+                        ctx.shadowBlur = 0;
+                    } else {
+                        ctx.fillStyle = '#FF00FF'; ctx.shadowColor = '#FF00FF';
+                        ctx.shadowBlur = 20 + pulse;
+                        ctx.fillRect(drawX - size/2, drawY - h + bob, size, h);
+                        ctx.fillStyle = '#FFF';
+                        ctx.fillRect(drawX - 12, drawY - h + 10 + bob, 8, 6);
+                        ctx.fillRect(drawX + 4, drawY - h + 10 + bob, 8, 6);
+                    }
                 }
                 
                 // Health Bar for all enemies

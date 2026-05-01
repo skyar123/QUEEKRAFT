@@ -9,6 +9,10 @@ export function pick(arr) {
 //   '.' empty space         (passable)
 //   '=' one-way platform    (solid only when falling onto it from above)
 //   '>' stairs down         (passable; triggers descent on USE)
+//   '^' spikes              (passable; touching it damages the player)
+//   '~' ice                 (solid floor; very low friction on top)
+//   'T' trampoline          (solid floor; landing on it bounces sky-high)
+//   'C' crumbling platform  (one-way; collapses ~0.5s after first contact)
 
 const ROOMS_X = 4;
 const ROOMS_Y = 3;
@@ -62,6 +66,56 @@ function populateRoomInterior(map, rx, ry) {
     }
 }
 
+// Drop hazards into a finished room. Depth gates each kind so early floors
+// stay fair. Hazards never block the room exits — those tiles are 1-from-wall.
+function decorateRoomWithHazards(map, rx, ry, depth) {
+    const floorTopY  = ry * ROOM_H + ROOM_H - 2;        // top tile of the 2-thick floor
+    const standingY  = floorTopY - 1;                   // row the player walks on
+    const innerStart = rx * ROOM_W + 2;
+    const innerEnd   = (rx + 1) * ROOM_W - 2;
+
+    // Spike pit (depth 2+): replace a stretch of the standing row with '^'.
+    if (depth >= 2 && Math.random() < 0.30) {
+        const span = 1 + Math.floor(Math.random() * 2);
+        const sx = innerStart + Math.floor(Math.random() * Math.max(1, innerEnd - innerStart - span));
+        for (let i = 0; i < span; i++) {
+            const k = `${sx + i},${standingY}`;
+            if (map[k] === '.') map[k] = '^';
+        }
+    }
+
+    // Ice patch (depth 3+): swap a stretch of floor-top to '~'.
+    if (depth >= 3 && Math.random() < 0.25) {
+        const span = 2 + Math.floor(Math.random() * 3);
+        const sx = innerStart + Math.floor(Math.random() * Math.max(1, innerEnd - innerStart - span));
+        for (let i = 0; i < span; i++) {
+            const k = `${sx + i},${floorTopY}`;
+            if (map[k] === '#') map[k] = '~';
+        }
+    }
+
+    // Trampoline (depth 3+): single floor-top swap.
+    if (depth >= 3 && Math.random() < 0.18) {
+        const tx = innerStart + Math.floor(Math.random() * Math.max(1, innerEnd - innerStart));
+        const k = `${tx},${floorTopY}`;
+        if (map[k] === '#') map[k] = 'T';
+    }
+
+    // Crumbling platforms (depth 2+): convert one of the room's '=' tiles to 'C'.
+    if (depth >= 2 && Math.random() < 0.35) {
+        const candidates = [];
+        for (let j = ry * ROOM_H + 1; j < floorTopY; j++) {
+            for (let i = rx * ROOM_W + 1; i < (rx + 1) * ROOM_W - 1; i++) {
+                if (map[`${i},${j}`] === '=') candidates.push([i, j]);
+            }
+        }
+        if (candidates.length > 0) {
+            const [cx, cy] = candidates[Math.floor(Math.random() * candidates.length)];
+            map[`${cx},${cy}`] = 'C';
+        }
+    }
+}
+
 function roomFloorY(ry)  { return ry * ROOM_H + ROOM_H - 2; } // top of solid floor
 function roomCenterX(rx) { return rx * ROOM_W + Math.floor(ROOM_W / 2); }
 
@@ -83,6 +137,14 @@ export function generateMap(game) {
             populateRoomInterior(game.map, rx, ry);
             roomList.push({ rx, ry });
         }
+    }
+
+    // Reset crumble timers (lives in game state, not the map dictionary).
+    game.crumbleState = {};
+    // Decorate every room except the spawn room with hazards (depth-gated).
+    for (let i = 1; i < roomList.length; i++) {
+        const { rx, ry } = roomList[i];
+        decorateRoomWithHazards(game.map, rx, ry, game.depth);
     }
 
     // Horizontal connections at floor level — open both adjacent walls
