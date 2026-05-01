@@ -264,17 +264,35 @@ body, html {
 }
 
 /* Apply the generated images! */
-.heir-box { 
-    max-width: 800px; 
+.heir-box {
+    max-width: 800px;
     border-color: var(--punk-cyan);
     box-shadow: 0 0 30px rgba(1, 205, 254, 0.4);
-    background: linear-gradient(rgba(0,0,0,0.8), rgba(0,0,0,0.9)), url('../../brain/15445957-ee31-499d-977d-00ffbad5f982/bg_heir_1777486838379.png');
+    background:
+        linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.92)),
+        repeating-linear-gradient(45deg,
+            rgba(1,205,254,0.06) 0,
+            rgba(1,205,254,0.06) 12px,
+            rgba(255,113,206,0.06) 12px,
+            rgba(255,113,206,0.06) 24px),
+        radial-gradient(circle at 30% 20%, rgba(1,205,254,0.18), transparent 60%),
+        radial-gradient(circle at 70% 80%, rgba(255,113,206,0.18), transparent 60%),
+        #050510;
     background-size: cover;
     background-position: center;
 }
-.camp-box { 
-    max-width: 800px; 
-    background: linear-gradient(rgba(0,0,0,0.8), rgba(0,0,0,0.9)), url('../../brain/15445957-ee31-499d-977d-00ffbad5f982/bg_camp_1777486815661.png');
+.camp-box {
+    max-width: 800px;
+    background:
+        linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.92)),
+        repeating-linear-gradient(0deg,
+            rgba(57,255,20,0.05) 0,
+            rgba(57,255,20,0.05) 1px,
+            transparent 1px,
+            transparent 4px),
+        radial-gradient(circle at 50% 0%, rgba(255,176,0,0.18), transparent 60%),
+        radial-gradient(circle at 20% 100%, rgba(185,103,219,0.18), transparent 60%),
+        #060206;
     background-size: cover;
     background-position: center;
 }

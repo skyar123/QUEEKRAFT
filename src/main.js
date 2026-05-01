@@ -366,10 +366,31 @@ function processTurn() {
             return;
         }
 
-        // BOSS: always aggressive, spawns minions
+        // BOSS: always aggressive, spawns minions. Enters phase 2 at <50% HP:
+        //   - movement speed doubles (halves the per-tick delay)
+        //   - spawn chance climbs and the cap doubles
+        //   - contact damage rises from 2 to 3
         if (troll.enemyType === 'boss') {
-            if (dist === 1) { takeDamage(game, 2); return; }
-            if (troll.health < troll.maxHealth / 2 && Math.random() < 0.25 && game.trolls.length < 12) {
+            if (troll.bossPhase !== 2 && troll.health < troll.maxHealth / 2) {
+                troll.bossPhase = 2;
+                troll.maxMoveDelay = Math.max(1, Math.floor(troll.maxMoveDelay / 2));
+                Audio.playBossRoar && Audio.playBossRoar();
+                game.screenShake = Math.max(game.screenShake, 1.0);
+                UI.addMessage("👹 BOSS ENRAGED!", "death");
+                game.floatingText.push({ x: troll.x, y: troll.y - 1, text: 'RAGE', life: 60, color: '#FF0040' });
+                for (let i = 0; i < 30; i++) game.particles.push({
+                    x: troll.x + 0.5, y: troll.y,
+                    vx: (Math.random() - 0.5) * 0.6,
+                    vy: -Math.random() * 0.5,
+                    life: 1.0, color: i % 2 ? '#FF00FF' : '#FF0040'
+                });
+            }
+            const enraged = troll.bossPhase === 2;
+            const contactDmg = enraged ? 3 : 2;
+            const spawnChance = enraged ? 0.45 : 0.25;
+            const spawnCap = enraged ? 18 : 12;
+            if (dist === 1) { takeDamage(game, contactDmg); return; }
+            if (troll.health < troll.maxHealth / 2 && Math.random() < spawnChance && game.trolls.length < spawnCap) {
                 const tdx = (Math.random() < 0.5 ? -1 : 1);
                 const tdy = (Math.random() < 0.5 ? -1 : 1);
                 if (isPassable(troll.x + tdx, troll.y + tdy)) {
@@ -380,6 +401,7 @@ function processTurn() {
                 }
             } else {
                 stepToward();
+                if (enraged) stepToward();   // double-step in phase 2
             }
             return;
         }
@@ -768,12 +790,18 @@ function applyHazards(p) {
         p.vy = -16;
         p.onGround = false;
         p.jumpsLeft = Math.max(p.jumpsLeft, 1);
-        Audio.playJump && Audio.playJump();
+        (Audio.playBoing || Audio.playJump) && (Audio.playBoing ? Audio.playBoing() : Audio.playJump());
         for (let i = 0; i < 16; i++) spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, i % 2 ? '#FFD700' : '#FF71CE');
         UI.addMessage('BOING!', 'special');
     }
 
-    if (p.onGround && below === '~') p.onIceTile = true;
+    if (p.onGround && below === '~') {
+        if (!p.wasOnIce) Audio.playSlip && Audio.playSlip();
+        p.onIceTile = true;
+        p.wasOnIce = true;
+    } else {
+        p.wasOnIce = false;
+    }
 
     // Crumbling tiles: track per-tile timer. 30 frames of contact → break.
     if (!game.crumbleState) game.crumbleState = {};
@@ -792,6 +820,7 @@ function applyHazards(p) {
             const [bx, by] = k.split(',').map(Number);
             game.map[k] = '.';
             game.screenShake = Math.max(game.screenShake, 0.25);
+            Audio.playCrumble && Audio.playCrumble();
             for (let i = 0; i < 10; i++) spawnDust(bx + 0.5, by + 0.5, 1, '#888');
         }
     }
@@ -808,6 +837,7 @@ function applyHazards(p) {
         p.vy = -7;
         p.vx = (p.vx >= 0 ? -1 : 1) * 5;
         p.onGround = false;
+        Audio.playSpike && Audio.playSpike();
         UI.addMessage('Ouch! Spikes!', 'death');
         for (let i = 0; i < 8; i++) spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, '#FF0040');
     }
@@ -1313,12 +1343,22 @@ function draw() {
                     ctx.fillRect(drawX + 2, drawY - 24 + bob, 4, 3);
                 } else if (et === 'boss') {
                     size = 64; h = 72;
-                    const pulse = Math.sin(game.animFrame * 0.3) * 4;
+                    const enraged = r.entity.bossPhase === 2;
+                    const pulse = Math.sin(game.animFrame * (enraged ? 0.55 : 0.3)) * (enraged ? 7 : 4);
                     if (imgReady(images.boss)) {
                         // Spr_enemy.png is a transparent boss-quality demon sprite.
-                        ctx.shadowColor = '#FF00FF';
-                        ctx.shadowBlur = 18 + pulse;
+                        ctx.shadowColor = enraged ? '#FF0040' : '#FF00FF';
+                        ctx.shadowBlur = (enraged ? 26 : 18) + pulse;
                         ctx.drawImage(images.boss, drawX - size/2, drawY - h + bob, size, h);
+                        if (enraged) {
+                            // Red rage overlay — multiplied so the demon stays readable.
+                            ctx.save();
+                            ctx.globalCompositeOperation = 'multiply';
+                            ctx.globalAlpha = 0.45;
+                            ctx.fillStyle = '#FF0040';
+                            ctx.fillRect(drawX - size/2, drawY - h + bob, size, h);
+                            ctx.restore();
+                        }
                         ctx.shadowBlur = 0;
                     } else {
                         ctx.fillStyle = '#FF00FF'; ctx.shadowColor = '#FF00FF';
