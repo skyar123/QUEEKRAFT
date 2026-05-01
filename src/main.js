@@ -1,6 +1,6 @@
 import { UI, DialogueUI } from './ui.js';
 import { generateMap } from './map.js';
-import { attackEnemy, takeDamage } from './combat.js';
+import { attackEnemy, takeDamage, tickStatus, applyStatus, isFrozen } from './combat.js';
 import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES } from './data.js';
 import { Audio } from './audio.js';
 
@@ -19,16 +19,34 @@ const game = {
         seenZines: {},
         seenFigures: {}
     },
-    player: { 
-        x: 5, y: 5, 
+    player: {
+        x: 5, y: 5,
         vx: 0, vy: 0,
         health: 3, maxHealth: 3, baseDamage: 1,
         alive: true, hurtCooldown: 0, attackCooldown: 0,
         facingX: 1, facingY: 0,
         hasBrick: false, hasRage: false,
-        trait: null,
+        trait: null, traits: [],
+        classObj: null,
         colorPalette: 0,
-        onGround: false
+        onGround: false,
+        // Platformer physics state
+        coyoteTimer: 0,         // frames since left ground
+        jumpBuffer: 0,          // buffered jump press
+        jumpsLeft: 1,           // for double jump
+        dashTimer: 0,           // active dash duration
+        dashCooldown: 0,        // ticks until next dash allowed
+        dashDir: 1,
+        dropThrough: 0,         // grace frames where one-way platforms are intangible
+        // Class power state
+        powerCooldown: 0,
+        powerActive: 0,         // active duration of current power
+        powerType: null,        // 'rage' | 'slow' | 'aura' | 'bump' | 'bomb' | null
+        // Charge attack state — hold E to build power, release to unleash a heavy strike.
+        chargeAttack: 0,        // 0..120 (frames held)
+        chargeReady: false,     // true once charge meter exceeds threshold
+        // Lineage stat tracking
+        kills: 0, depthReached: 1, scrapEarned: 0
     },
     depth: 1,
     zines: 0,
@@ -43,24 +61,84 @@ const game = {
     mapHeight: 30,
     turnCounter: 0,
     camera: { width: 24, height: 18 },
+    // Smooth camera state — lerps toward target with look-ahead based on facing/velocity.
+    camX: 0, camY: 0,
+    camInitialized: false,
     particles: [],
     floatingText: [],
     attackAnim: null,
-    animFrame: 0
+    animFrame: 0,
+    // Full-screen red flash on hurt; combat.js bumps this to 1.0.
+    damageFlash: 0,
+    // Subtle screen shake intensity (decays each frame).
+    screenShake: 0
 };
 
 const TRAITS = [
-    { id: 'none', name: 'Standard Issue', desc: 'Just a regular, completely normal trans person.' },
-    { id: 'euphoria', name: 'Gender Euphoria', desc: 'Riding the high! Moves fast, attacks fast. 🏳️‍⚧️✨' },
-    { id: 'dysphoria', name: 'Dysphoria Day', desc: 'Everything feels wrong. Fog of war is extremely tight.' },
-    { id: 'clocked', name: 'Clocked', desc: 'You stand out. Enemies spot you from much further away.' },
-    { id: 'stealth', name: 'Stealth Mode', desc: 'Passing privileges. Enemies only notice if you bump them.' },
-    { id: 't4t', name: 'T4T', desc: 'We take care of our own. Healing items heal double.' },
-    { id: 'gatekept', name: 'Gatekept', desc: 'The medical establishment hates you. Upgrades cost +2.' }
+    { id: 'none',      name: 'Standard Issue',  desc: 'Just a regular, completely normal trans person.' },
+    { id: 'euphoria',  name: 'Gender Euphoria', desc: 'Riding the high! +1 dmg, attacks reset cooldown. 🏳️‍⚧️✨' },
+    { id: 'dysphoria', name: 'Dysphoria Day',   desc: 'Everything feels wrong. View distance halved.' },
+    { id: 'clocked',   name: 'Clocked',         desc: 'You stand out. Enemies spot you from much further away.' },
+    { id: 'stealth',   name: 'Stealth Mode',    desc: 'Passing privileges. Enemies only react when adjacent.' },
+    { id: 't4t',       name: 'T4T',             desc: 'We take care of our own. Healing items heal double.' },
+    { id: 'gatekept',  name: 'Gatekept',        desc: 'The medical establishment hates you. Upgrades cost +2.' },
+    { id: 'adhd',      name: 'A.D.H.D.',        desc: 'Hyperfocused! Move 25% faster. Squirrel!' },
+    { id: 'autism',    name: 'Pattern Master',  desc: 'You see the system. Crit chance +20%.' },
+    { id: 'gigantism', name: 'Tall Energy',     desc: 'Huge frame. +1 max HP, but bigger hitbox.' },
+    { id: 'dwarfism',  name: 'Compact Mode',    desc: 'Smaller hitbox. Take less damage from blows.' },
+    { id: 'vertigo',   name: 'Vertigo',         desc: 'The room spins. Camera tilts when you move.' },
+    { id: 'colorblind',name: 'Greyscale',       desc: 'World is black & white. +1 DMG out of spite.' },
+    { id: 'nostalgia', name: 'Vibes Of The 90s',desc: 'CRT scanlines bloom. +1 jump in your step.' },
+    { id: 'bipolar',   name: 'Big Mood',        desc: 'Damage swings wildly between 0.5x and 2.5x.' },
+    { id: 'insomnia',  name: 'No Sleep',        desc: 'Always alert. Coyote time doubled.' },
+    { id: 'chronic',   name: 'Chronic Pain',    desc: 'Every step hurts. Slower, but extra invuln frames.' },
+    { id: 'glitter',   name: 'Glitter Trail',   desc: 'You leave sparkles wherever you walk. Pure aesthetic.' }
 ];
 
-const CLASSES = ['Anarchist', 'Gender Terrorist', 'Library Archivist', 'Glitter Brawler', 'Hormone Dealer', 'Mutual Aid Worker'];
-const NAMES = ['Ash', 'River', 'Rowan', 'Sage', 'Onyx', 'Quinn', 'Zephyr', 'Nova'];
+const CLASSES = [
+    { id: 'anarchist',  name: 'Anarchist',         power: 'BLACK BLOC',     desc: 'R: Rage burst — 2x dmg for 3s.' },
+    { id: 'terrorist',  name: 'Gender Terrorist',  power: 'GLITTER BOMB',   desc: 'R: Throw a bomb that hits everything nearby.' },
+    { id: 'archivist',  name: 'Library Archivist', power: 'TIME DILATION',  desc: 'R: Slow enemies for 4s.' },
+    { id: 'brawler',    name: 'Glitter Brawler',   power: 'PRIDE DASH',     desc: 'R: Dash + invuln. Auto-kills weak foes.' },
+    { id: 'dealer',     name: 'Hormone Dealer',    power: 'HRT BUMP',       desc: 'R: Heal 2 HP and gain temp damage boost.' },
+    { id: 'aidworker',  name: 'Mutual Aid Worker', power: 'SOLIDARITY',     desc: 'R: Healing aura. Restores 1 HP every 2s for 8s.' }
+];
+const NAMES = ['Ash', 'River', 'Rowan', 'Sage', 'Onyx', 'Quinn', 'Zephyr', 'Nova', 'Vesper', 'Wren', 'Indigo', 'Marlow', 'Sky', 'Phoenix', 'August'];
+
+// Lineage history of all past characters (persistent across runs)
+const lineage = [];
+
+// Save/load persistent state to localStorage so progress carries between sessions.
+const SAVE_KEY = 'queekraft-save-v1';
+function saveGame() {
+    try {
+        const payload = {
+            persistent: game.persistent,
+            lineage,
+            colorPalette: game.player.colorPalette || 0,
+            ts: Date.now()
+        };
+        localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+    } catch (e) {
+        // localStorage may be disabled (private mode); silently no-op.
+    }
+}
+function loadGame() {
+    try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (data.persistent) Object.assign(game.persistent, data.persistent);
+        if (Array.isArray(data.lineage)) {
+            lineage.length = 0;
+            data.lineage.forEach(l => lineage.push(l));
+        }
+        if (typeof data.colorPalette === 'number') game.player.colorPalette = data.colorPalette;
+    } catch (e) {
+        // Corrupted save — ignore and start fresh.
+    }
+}
+loadGame();
 
 const PALETTES = [
     { id: 'trans-blue', name: '🏳️‍⚧️ Trans Blue', body: '#5BCEFA', accent: '#F5A9B8', glow: '#5BCEFA' },
@@ -72,60 +150,57 @@ const PALETTES = [
 function generateHeirs() {
     const heirs = [];
     for (let i = 0; i < 3; i++) {
+        const cls = CLASSES[Math.floor(Math.random() * CLASSES.length)];
+        // Some heirs roll a second trait — chaotic, like genetics should be
+        const traits = [TRAITS[Math.floor(Math.random() * TRAITS.length)]];
+        if (Math.random() < 0.35) {
+            const second = TRAITS[Math.floor(Math.random() * TRAITS.length)];
+            if (second.id !== traits[0].id) traits.push(second);
+        }
         heirs.push({
             name: NAMES[Math.floor(Math.random() * NAMES.length)],
-            className: CLASSES[Math.floor(Math.random() * CLASSES.length)],
-            trait: TRAITS[Math.floor(Math.random() * TRAITS.length)]
+            classObj: cls,
+            className: cls.name,
+            traits,
+            trait: traits[0]
         });
     }
     return heirs;
 }
 
-// Image assets
-const images = {
-    player: new Image(),
-    enemy: new Image(),
-    zine: new Image(),
-    wall: new Image(),
-    floor: new Image(),
-    npc: new Image(),
-    item: new Image(),
-    tex_floor: new Image(),
-    tex_wall: new Image()
+// === Asset manifest ===
+// Drop a file at the listed path and it picks up automatically.
+// To swap in Cendric2 PNGs later: keep the keys, change the paths.
+const ASSET_PATHS = {
+    tex_floor: '/images/tex_floor.png',
+    tex_wall:  '/images/tex_wall.png',
+    boss:      '/images/spr_enemy.png',  // 1024x1024 transparent demon — boss only
+    chest:     '/images/spr_chest.png',  // transparent neon chest — treasure / gender-reveal
+    marsha:    '/images/spr_marsha.png'  // transparent Marsha — historical NPC
 };
 
-images.player.src = '/images/player.png';
-images.enemy.src = '/images/enemy.png';
-images.zine.src = '/images/zine.png';
-images.wall.src = '/images/wall.png';
-images.floor.src = '/images/floor.png';
-images.npc.src = '/images/npc.png';
-images.item.src = '/images/item.png';
-images.tex_floor.src = '/images/tex_floor.png';
-images.tex_wall.src = '/images/tex_wall.png';
+const images = {};
+for (const k of Object.keys(ASSET_PATHS)) images[k] = new Image();
 
-// New generated sprites
-const sprites = {
-    player: new Image(),
-    marsha: new Image(),
-    enemy: new Image(),
-    chest: new Image()
-};
-sprites.player.src = '/images/spr_player.png';
-sprites.marsha.src = '/images/spr_marsha.png';
-sprites.enemy.src = '/images/spr_enemy.png';
-sprites.chest.src = '/images/spr_chest.png';
+let pendingImages = Object.keys(ASSET_PATHS).length;
+let initStarted = false;
+function tickLoaded() {
+    pendingImages--;
+    if (pendingImages <= 0 && !initStarted) {
+        initStarted = true;
+        initGame();
+    }
+}
+for (const [k, path] of Object.entries(ASSET_PATHS)) {
+    images[k].onload  = tickLoaded;
+    images[k].onerror = () => { console.warn(`Asset failed: ${path}`); tickLoaded(); };
+    images[k].src = path;
+}
+// Failsafe — if asset loading hangs, start without textures after 5s.
+setTimeout(() => { if (!initStarted) { initStarted = true; initGame(); } }, 5000);
 
-let imagesLoaded = 0;
-const totalImages = Object.keys(images).length;
-Object.values(images).forEach(img => {
-    img.onload = () => {
-        imagesLoaded++;
-        if (imagesLoaded === totalImages) {
-            initGame();
-        }
-    };
-});
+// True when an image finished loading and is safe to drawImage().
+function imgReady(img) { return img && img.complete && img.naturalWidth > 0; }
 
 let patterns = {};
 function initGame() {
@@ -142,63 +217,81 @@ function initGame() {
 function startCamp() {
     UI.showCamp(
         game,
-        () => { startDungeon(); }, // On Enter Dungeon
-        () => { // On Upgrade Health
+        () => { startDungeon(); },
+        () => {
             const penalty = (game.player.trait && game.player.trait.id === 'gatekept') ? 2 : 0;
             const cost = game.persistent.healthCost + penalty;
             if (game.persistent.treasures >= cost) {
                 game.persistent.treasures -= cost;
                 game.persistent.healthUpgrades++;
                 game.persistent.healthCost += 2;
+                saveGame();
                 return true;
             }
             return false;
         },
-        () => { // On Upgrade Damage
+        () => {
             const penalty = (game.player.trait && game.player.trait.id === 'gatekept') ? 2 : 0;
             const cost = game.persistent.damageCost + penalty;
             if (game.persistent.treasures >= cost) {
                 game.persistent.treasures -= cost;
                 game.persistent.damageUpgrades++;
                 game.persistent.damageCost += 3;
+                saveGame();
                 return true;
             }
             return false;
-        }
+        },
+        lineage
     );
 }
 
 function startDungeon() {
     // Reset transient dungeon state but apply persistent upgrades
-    game.player.alive = true;
-    game.player.maxHealth = 3 + game.persistent.healthUpgrades;
-    game.player.health = game.player.maxHealth;
-    game.player.baseDamage = 1 + game.persistent.damageUpgrades;
-    game.player.hasBrick = false;
-    game.player.hasRage = false;
-    game.player.hurtCooldown = 0;
-    
+    const p = game.player;
+    p.alive = true;
+    let maxHp = 3 + game.persistent.healthUpgrades;
+    if (p.traits && p.traits.some(t => t.id === 'gigantism')) maxHp += 1;
+    p.maxHealth = maxHp;
+    p.health = p.maxHealth;
+    p.baseDamage = 1 + game.persistent.damageUpgrades;
+    if (p.trait && p.trait.id === 'colorblind') p.baseDamage += 1;
+    p.hasBrick = false;
+    p.hasRage = false;
+    p.hurtCooldown = 0;
+    p.vx = 0; p.vy = 0;
+    p.dashTimer = 0; p.dashCooldown = 0;
+    p.powerCooldown = 0; p.powerActive = 0; p.powerType = null;
+    p.jumpsLeft = 1;
+    p.coyoteTimer = 0;
+    p.kills = 0; p.scrapEarned = 0; p.depthReached = 1;
+
     game.depth = 1;
-    game.zines = Object.keys(game.persistent.seenZines).length; // Start with persistent zines
+    game.zines = Object.keys(game.persistent.seenZines).length;
     game.historicalFigures = Object.keys(game.persistent.seenFigures).length;
-    game.treasures = 0; // Current run treasures
+    game.treasures = 0;
     game.seen = {};
-    
+    lastPromptTile = null;
+
     generateMap(game);
     updateFOV();
     UI.updateStatus(game);
-    UI.addMessage("🏳️‍⚧️ You enter the dungeon!", "special");
+    UI.addMessage("🏳️‍⚧️ You enter the wasteland!", "special");
+    if (p.classObj) UI.addMessage(`Class: ${p.classObj.name}. Press R for ${p.classObj.power}.`, "special");
     draw();
 }
 
 function updateFOV() {
-    let fovRadius = 4;
-    if (game.player.trait && game.player.trait.id === 'dysphoria') fovRadius = 2;
-    
+    let fovRadius = 9;
+    if (game.player.trait && game.player.trait.id === 'dysphoria') fovRadius = 5;
+    if (game.player.traits && game.player.traits.some(t => t.id === 'autism')) fovRadius += 2;
+
+    const px = tileX(), py = tileY();
     for (let dy = -fovRadius; dy <= fovRadius; dy++) {
         for (let dx = -fovRadius; dx <= fovRadius; dx++) {
-            const x = game.player.x + dx;
-            const y = game.player.y + dy;
+            if (dx*dx + dy*dy > fovRadius*fovRadius) continue;
+            const x = px + dx;
+            const y = py + dy;
             if (x >= 0 && y >= 0 && x < game.mapWidth && y < game.mapHeight) {
                 game.seen[`${x},${y}`] = true;
             }
@@ -209,61 +302,58 @@ function updateFOV() {
 function isPassable(x, y) {
     if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return false;
     const tile = game.map[`${x},${y}`];
-    return tile === '.' || tile === '>';
+    // For AI, FOV, attack target lookups: one-way platforms + spikes are passable
+    // (enemies don't avoid spikes — they're a *player* hazard).
+    return tile === '.' || tile === '>' || tile === '=' || tile === '^' || tile === 'C';
 }
 
-function movePlayer(dx, dy) {
-    if (!game.player.alive) return;
-    
-    // Update facing direction
-    game.player.facingX = dx;
-    game.player.facingY = dy;
-    
-    const newX = game.player.x + dx;
-    const newY = game.player.y + dy;
-    
-    const troll = game.trolls.find(t => t.x === newX && t.y === newY);
-    if (troll) {
-        // Bump attack into enemy
-        attackEnemy(game, dx, dy, 'quick');
-        processTurn();
-        return;
-    }
-    
-    if (!isPassable(newX, newY)) {
-        return; // silently blocked — no wall spam
-    }
-    
-    game.player.x = newX;
-    game.player.y = newY;
-    game.player.facingX = dx;
-    game.player.facingY = dy;
-    
-    Audio.playStep();
-    processTurn();
-}
+// Legacy turn-based movement kept as a no-op shim — platformer physics handles motion now.
+function movePlayer(_dx, _dy) { /* deprecated by platformer physics */ }
 
 function processTurn() {
     // Decrement attack cooldown each turn (for power attack delay)
     if (game.player.attackCooldown > 0) game.player.attackCooldown--;
     if (game.player.hurtCooldown > 0) game.player.hurtCooldown--;
 
+    const px = tileX();
+    const py = tileY();
+
+    // Time-dilation power slows enemies to half tick rate
+    const slowed = game.player.powerType === 'slow' && game.player.powerActive > 0;
+    if (slowed && game.animFrame % 2 !== 0) return;
+
     game.trolls.forEach(troll => {
-        troll.moveDelay++;
+        // Frozen enemies move at half rate.
+        const frozen = troll.status && troll.status.freeze && troll.status.freeze.duration > 0;
+        const shocked = troll.status && troll.status.shock && troll.status.shock.duration > 0;
+        if (shocked) return; // shocked = stunned, skip turn entirely
+        troll.moveDelay += frozen ? 0.5 : 1;
         if (troll.moveDelay < troll.maxMoveDelay) return;
         troll.moveDelay = 0;
 
         if (troll.enemyType === 'gatekeeper') {
             // Gatekeepers don't move but DO attack if adjacent
-            const dist = Math.abs(game.player.x - troll.x) + Math.abs(game.player.y - troll.y);
+            const dist = Math.abs(px - troll.x) + Math.abs(py - troll.y);
             if (dist === 1) takeDamage(game, 2);
             return;
         }
 
-        const dist = Math.abs(game.player.x - troll.x) + Math.abs(game.player.y - troll.y);
+        const dist = Math.abs(px - troll.x) + Math.abs(py - troll.y);
         let alertRadius = troll.alertRadius;
         if (game.player.trait && game.player.trait.id === 'clocked') alertRadius += 3;
         if (game.player.trait && game.player.trait.id === 'stealth') alertRadius = 1;
+
+        const stepToward = () => {
+            const tdx = px > troll.x ? 1 : px < troll.x ? -1 : 0;
+            const tdy = py > troll.y ? 1 : py < troll.y ? -1 : 0;
+            if (isPassable(troll.x + tdx, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x + tdx && t.y === troll.y + tdy)) {
+                troll.x += tdx; troll.y += tdy;
+            } else if (isPassable(troll.x + tdx, troll.y) && !game.trolls.find(t => t !== troll && t.x === troll.x + tdx && t.y === troll.y)) {
+                troll.x += tdx;
+            } else if (isPassable(troll.x, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x && t.y === troll.y + tdy)) {
+                troll.y += tdy;
+            }
+        };
 
         // CONCERN TROLL: drains HP when adjacent, moves slowly toward player
         if (troll.enemyType === 'concern') {
@@ -271,21 +361,36 @@ function processTurn() {
                 takeDamage(game, 1);
                 UI.addMessage("Concern Troll whispers 'Are you SURE about this?'", 'death');
             } else if (dist <= alertRadius) {
-                const tdx = game.player.x > troll.x ? 1 : game.player.x < troll.x ? -1 : 0;
-                const tdy = game.player.y > troll.y ? 1 : game.player.y < troll.y ? -1 : 0;
-                if (isPassable(troll.x + tdx, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x + tdx && t.y === troll.y + tdy)) {
-                    troll.x += tdx; troll.y += tdy;
-                }
+                stepToward();
             }
             return;
         }
 
-        // BOSS: always aggressive, spawns minions
+        // BOSS: always aggressive, spawns minions. Enters phase 2 at <50% HP:
+        //   - movement speed doubles (halves the per-tick delay)
+        //   - spawn chance climbs and the cap doubles
+        //   - contact damage rises from 2 to 3
         if (troll.enemyType === 'boss') {
-            // Attack if adjacent
-            if (dist === 1) { takeDamage(game, 2); return; }
-            // Spawn minion 25% of turns when health < half
-            if (troll.health < troll.maxHealth / 2 && Math.random() < 0.25 && game.trolls.length < 12) {
+            if (troll.bossPhase !== 2 && troll.health < troll.maxHealth / 2) {
+                troll.bossPhase = 2;
+                troll.maxMoveDelay = Math.max(1, Math.floor(troll.maxMoveDelay / 2));
+                Audio.playBossRoar && Audio.playBossRoar();
+                game.screenShake = Math.max(game.screenShake, 1.0);
+                UI.addMessage("👹 BOSS ENRAGED!", "death");
+                game.floatingText.push({ x: troll.x, y: troll.y - 1, text: 'RAGE', life: 60, color: '#FF0040' });
+                for (let i = 0; i < 30; i++) game.particles.push({
+                    x: troll.x + 0.5, y: troll.y,
+                    vx: (Math.random() - 0.5) * 0.6,
+                    vy: -Math.random() * 0.5,
+                    life: 1.0, color: i % 2 ? '#FF00FF' : '#FF0040'
+                });
+            }
+            const enraged = troll.bossPhase === 2;
+            const contactDmg = enraged ? 3 : 2;
+            const spawnChance = enraged ? 0.45 : 0.25;
+            const spawnCap = enraged ? 18 : 12;
+            if (dist === 1) { takeDamage(game, contactDmg); return; }
+            if (troll.health < troll.maxHealth / 2 && Math.random() < spawnChance && game.trolls.length < spawnCap) {
                 const tdx = (Math.random() < 0.5 ? -1 : 1);
                 const tdy = (Math.random() < 0.5 ? -1 : 1);
                 if (isPassable(troll.x + tdx, troll.y + tdy)) {
@@ -295,11 +400,8 @@ function processTurn() {
                     UI.addMessage("⚡ BOSS spawned a Wraith!", "death");
                 }
             } else {
-                const tdx = game.player.x > troll.x ? 1 : game.player.x < troll.x ? -1 : 0;
-                const tdy = game.player.y > troll.y ? 1 : game.player.y < troll.y ? -1 : 0;
-                if (isPassable(troll.x + tdx, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x+tdx && t.y === troll.y+tdy)) {
-                    troll.x += tdx; troll.y += tdy;
-                }
+                stepToward();
+                if (enraged) stepToward();   // double-step in phase 2
             }
             return;
         }
@@ -307,17 +409,9 @@ function processTurn() {
         // WRAITH: teleports, high dodge — attack if adjacent
         if (troll.enemyType === 'wraith') {
             if (dist === 1) { takeDamage(game, 1); return; }
-            if (dist <= alertRadius) {
-                if (Math.random() < 0.6) {
-                    // Aggressive teleport toward player
-                    const tdx = game.player.x > troll.x ? 1 : game.player.x < troll.x ? -1 : 0;
-                    const tdy = game.player.y > troll.y ? 1 : game.player.y < troll.y ? -1 : 0;
-                    const nx = troll.x + tdx, ny = troll.y + tdy;
-                    if (isPassable(nx, ny) && !game.trolls.find(t => t !== troll && t.x === nx && t.y === ny)) {
-                        for (let i = 0; i < 5; i++) game.particles.push({x: troll.x, y: troll.y, vx: 0, vy: -0.4, life: 1, color: '#39FF14'});
-                        troll.x = nx; troll.y = ny;
-                    }
-                }
+            if (dist <= alertRadius && Math.random() < 0.6) {
+                for (let i = 0; i < 5; i++) game.particles.push({x: troll.x, y: troll.y, vx: 0, vy: -0.4, life: 1, color: '#39FF14'});
+                stepToward();
             }
             return;
         }
@@ -325,26 +419,36 @@ function processTurn() {
         // POLICE: fast, aggressive, 2 damage
         if (troll.enemyType === 'police') {
             if (dist === 1) { takeDamage(game, 2); return; }
-            if (dist <= alertRadius) {
-                const tdx = game.player.x > troll.x ? 1 : game.player.x < troll.x ? -1 : 0;
-                const tdy = game.player.y > troll.y ? 1 : game.player.y < troll.y ? -1 : 0;
-                if (isPassable(troll.x + tdx, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x+tdx && t.y === troll.y+tdy)) {
-                    troll.x += tdx; troll.y += tdy;
-                }
+            if (dist <= alertRadius) stepToward();
+            return;
+        }
+
+        // SWARM (new): tiny, fast, 1 dmg, can stack
+        if (troll.enemyType === 'swarm') {
+            if (dist === 1) { takeDamage(game, 1); return; }
+            if (dist <= alertRadius) { stepToward(); stepToward(); }
+            return;
+        }
+
+        // BIGOT (new): far-range projectile thrower (logical adjacency = 2)
+        if (troll.enemyType === 'bigot') {
+            if (dist <= 4 && Math.random() < 0.3) {
+                takeDamage(game, 1);
+                UI.addMessage("Bigot threw a slur at you.", 'death');
+                game.floatingText.push({ x: troll.x, y: troll.y, text: '!', life: 30, color: '#FF0000' });
+                return;
             }
+            if (dist === 1) { takeDamage(game, 1); return; }
+            if (dist <= alertRadius) stepToward();
             return;
         }
 
         // DEFAULT TROLL: chase forever once alerted, 1 damage on contact
         if (dist === 1) { takeDamage(game, 1); return; }
         if (dist <= alertRadius) {
-            troll.chasingTurns = 99; // chase indefinitely
-            const tdx = game.player.x > troll.x ? 1 : game.player.x < troll.x ? -1 : 0;
-            const tdy = game.player.y > troll.y ? 1 : game.player.y < troll.y ? -1 : 0;
-            if (isPassable(troll.x + tdx, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x+tdx && t.y === troll.y+tdy)) {
-                troll.x += tdx; troll.y += tdy;
-                return;
-            }
+            troll.chasingTurns = 99;
+            stepToward();
+            return;
         }
 
         // Idle wander
@@ -357,46 +461,57 @@ function processTurn() {
             }
         }
     });
-    
-    // Check if player is caught
-    const caught = game.trolls.find(t => t.x === game.player.x && t.y === game.player.y);
+
+    // Body-check: if any troll occupies the player's tile
+    const caught = game.trolls.find(t => t.x === px && t.y === py);
     if (caught) {
         let dmg = 1;
         if (caught.enemyType === 'police') dmg = 2;
         if (caught.enemyType === 'boss') dmg = 3;
+        if (game.player.traits && game.player.traits.some(t => t.id === 'dwarfism')) dmg = Math.max(1, dmg - 1);
+        if (game.player.traits && game.player.traits.some(t => t.id === 'chronic')) game.player.hurtCooldown = 8;
         takeDamage(game, dmg);
-        
-        // Push the player back slightly if possible
-        const pushX = game.player.x + (game.player.x > caught.x ? 1 : -1);
-        const pushY = game.player.y + (game.player.y > caught.y ? 1 : -1);
-        if (isPassable(pushX, pushY)) {
-            game.player.x = pushX;
-            game.player.y = pushY;
-        }
+
+        // Knockback the player away
+        const dirX = (game.player.x + PLAYER_W/2) > caught.x ? 1 : -1;
+        game.player.vx = dirX * 6;
+        game.player.vy = -4;
+        game.player.onGround = false;
     }
     
     checkPickups();
     draw();
 }
 
+function tileX() { return Math.floor(game.player.x + PLAYER_W / 2); }
+function tileY() { return Math.floor(game.player.y + PLAYER_H / 2); }
+function entityNear(e) {
+    return Math.abs(e.x - tileX()) <= 1 && Math.abs(e.y - tileY()) <= 1;
+}
+
 function interact() {
     if (!game.player.alive) return;
-    
-    if (game.map[`${game.player.x},${game.player.y}`] === '>') {
+    const px = tileX();
+    const py = tileY();
+
+    if (game.map[`${px},${py}`] === '>') {
         game.depth++;
+        game.player.depthReached = Math.max(game.player.depthReached, game.depth);
         UI.addMessage(`Descending to level ${game.depth}...`);
-        Audio.playStairs();
+        Audio.playStairs && Audio.playStairs();
         generateMap(game);
+        lastPromptTile = null;
         updateFOV();
+        saveGame();
         draw();
         return;
     }
-    
-    const npc = game.npcs.find(n => n.x === game.player.x && n.y === game.player.y);
+
+    const npc = game.npcs.find(n => entityNear(n));
     if (npc) {
-        if (!game.seen[npc.figureKey]) {
+        if (!game.persistent.seenFigures[npc.figureKey]) {
+            game.persistent.seenFigures[npc.figureKey] = true;
             game.historicalFigures++;
-            game.seen[npc.figureKey] = true;
         }
         DialogueUI.start(game, npc.figureKey);
         game.npcs = game.npcs.filter(n => n !== npc);
@@ -404,8 +519,8 @@ function interact() {
         draw();
         return;
     }
-    
-    const item = game.items.find(i => i.x === game.player.x && i.y === game.player.y);
+
+    const item = game.items.find(i => entityNear(i));
     if (item) {
         if (item.type === 'zine') {
             if (!game.persistent.seenZines[item.zineKey]) {
@@ -425,7 +540,8 @@ function interact() {
             Audio.playLoot();
         } else if (item.type === 'treasure') {
             game.treasures++;
-            game.persistent.treasures++; // Save permanently
+            game.persistent.treasures++;
+            game.player.scrapEarned = (game.player.scrapEarned || 0) + 1;
             UI.addMessage(`Picked up ${item.name}!`, "treasure");
             Audio.playLoot();
         } else if (item.type === 'gender-reveal') {
@@ -440,6 +556,7 @@ function interact() {
                 UI.addMessage(`🎉 The Gender Reveal Chest was full of HRT and treasures! 🎉`, 'special');
                 game.treasures += 3;
                 game.persistent.treasures += 3;
+                game.player.scrapEarned = (game.player.scrapEarned || 0) + 3;
                 game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
             }
         }
@@ -454,11 +571,23 @@ function interact() {
     }
 }
 
+let lastPromptTile = null;
 function checkPickups() {
-    const item = game.items.find(i => i.x === game.player.x && i.y === game.player.y);
-    if (item) UI.addMessage(`You see: ${item.name}. Press USE to interact.`);
-    const npc = game.npcs.find(n => n.x === game.player.x && n.y === game.player.y);
-    if (npc) UI.addMessage(`You see a historical figure. Press USE to speak.`);
+    const px = tileX(), py = tileY();
+    const key = `${px},${py}`;
+    if (key === lastPromptTile) return; // don't spam
+    const item = game.items.find(i => entityNear(i));
+    const npc = game.npcs.find(n => entityNear(n));
+    if (item) {
+        UI.addMessage(`You see: ${item.name}. Press USE/F to interact.`);
+        lastPromptTile = key;
+    } else if (npc) {
+        UI.addMessage(`You see a historical figure. Press USE/F to speak.`);
+        lastPromptTile = key;
+    } else if (game.map[key] === '>') {
+        UI.addMessage(`Stairs down. Press USE/F to descend.`);
+        lastPromptTile = key;
+    }
 }
 
 function drawTile(ctx, sx, sy, color, isWall, glowColor, pattern) {
@@ -473,54 +602,380 @@ function drawTile(ctx, sx, sy, color, isWall, glowColor, pattern) {
     }
 }
 
-// Animation & Physics loop
+// Animation & Physics loop with fixed timestep (SuperTux-style — physics stays
+// stable across variable refresh rates; rendering still runs every rAF).
 let lastTime = 0;
+let physicsAccumulator = 0;
+const FIXED_DT = 1 / 60;
+const MAX_FRAME_DT = 0.1; // clamp huge tab-switch hitches so we don't death-spiral
+let paused = false;
+let questLogVisible = false;
+
 function gameLoop(time) {
-    const dt = (time - lastTime) / 1000;
+    const real = (time - lastTime) / 1000;
     lastTime = time;
-    
-    update(dt);
+
+    if (!paused) {
+        physicsAccumulator += Math.min(MAX_FRAME_DT, real || 0);
+        // Cap to 4 sub-steps per frame to avoid catch-up storms (250ms ceiling).
+        let steps = 0;
+        while (physicsAccumulator >= FIXED_DT && steps < 4) {
+            update(FIXED_DT);
+            physicsAccumulator -= FIXED_DT;
+            steps++;
+        }
+        if (physicsAccumulator > FIXED_DT * 4) physicsAccumulator = 0;
+    }
+
     draw();
     requestAnimationFrame(gameLoop);
 }
 requestAnimationFrame(gameLoop);
 
+// Parallax neon starfield — generated once, rendered every frame at varying depth.
+const stars = [];
+(function buildStarfield() {
+    const colors = ['#FF71CE','#01CDFE','#FFD700','#39FF14','#FFFFFF','#B967DB'];
+    for (let i = 0; i < 90; i++) {
+        stars.push({
+            x: Math.random(),
+            y: Math.random(),
+            size: Math.random() * 1.6 + 0.5,
+            phase: Math.random() * Math.PI * 2,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            // Three depth tiers: distant (slow), mid, near (fast).
+            layer: 0.08 + Math.floor(Math.random() * 3) * 0.18
+        });
+    }
+})();
+
+// === Platformer physics constants ===
+const PLAYER_W = 0.7;
+const PLAYER_H = 0.9;
+const GRAVITY = 0.55;
+const TERMINAL_VY = 14;
+const JUMP_SPEED = -10.5;
+const COYOTE_FRAMES = 6;
+const JUMP_BUFFER_FRAMES = 6;
+const DASH_FRAMES = 8;
+const DASH_COOLDOWN = 30;
+const DASH_SPEED = 0.55;
+
+// Returns true if (px, py) lies inside any solid wall.
+// One-way platforms are NOT considered solid by this — use isOneWayBlocking
+// to test whether falling feet should land on a `=` or 'C' tile.
+function pointSolid(px, py) {
+    const x = Math.floor(px), y = Math.floor(py);
+    if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return true;
+    const t = game.map[`${x},${y}`];
+    // Walls + ice + trampolines are full-height solids.
+    return t === '#' || t === '~' || t === 'T';
+}
+
+// True when feet at `feetY` should land on a one-way platform — the platform
+// only catches feet that are arriving onto it from above. We treat the
+// platform's effective "top" as the integer Y of the tile; if previous-frame
+// feet were above that line, the platform catches them.
+function isOneWayBlocking(px, feetY, prevFeetY) {
+    const x = Math.floor(px), y = Math.floor(feetY);
+    if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return false;
+    const t = game.map[`${x},${y}`];
+    // '=' = standard one-way; 'C' = crumbling one-way (until it breaks).
+    if (t !== '=' && t !== 'C') return false;
+    if (t === 'C' && game.crumbleState && game.crumbleState[`${x},${y}`] && game.crumbleState[`${x},${y}`].broken) return false;
+    // Drop-through grace period: ignore the platform briefly after Down+Jump.
+    if (game.player.dropThrough > 0) return false;
+    return prevFeetY <= y + 0.0001;
+}
+
+function isGrounded(p) {
+    const feet = p.y + PLAYER_H + 0.02;
+    const prevFeet = p.y + PLAYER_H;
+    if (pointSolid(p.x + 0.05, feet) ||
+        pointSolid(p.x + PLAYER_W - 0.05, feet) ||
+        pointSolid(p.x + PLAYER_W * 0.5, feet)) return true;
+    if (isOneWayBlocking(p.x + 0.05, feet, prevFeet) ||
+        isOneWayBlocking(p.x + PLAYER_W - 0.05, feet, prevFeet) ||
+        isOneWayBlocking(p.x + PLAYER_W * 0.5, feet, prevFeet)) return true;
+    return false;
+}
+
+function moveX(dx) {
+    if (dx === 0) return;
+    const p = game.player;
+    const target = p.x + dx;
+    const lead = dx > 0 ? target + PLAYER_W : target;
+    // Horizontal motion only blocks on solid walls — you can walk past a
+    // one-way platform's edge column horizontally.
+    if (pointSolid(lead, p.y) ||
+        pointSolid(lead, p.y + PLAYER_H * 0.5) ||
+        pointSolid(lead, p.y + PLAYER_H - 0.001)) {
+        if (dx > 0) p.x = Math.floor(lead) - PLAYER_W - 0.0001;
+        else p.x = Math.floor(lead) + 1;
+        p.vx = 0;
+    } else {
+        p.x = target;
+    }
+}
+
+function moveY(dy) {
+    if (dy === 0) return;
+    const p = game.player;
+    const prevFeet = p.y + PLAYER_H;
+    const target = p.y + dy;
+    if (dy > 0) {
+        // Falling — land on solids OR on one-way platforms when arriving from above.
+        const feet = target + PLAYER_H;
+        const hitSolid = pointSolid(p.x + 0.05, feet) ||
+                         pointSolid(p.x + PLAYER_W - 0.05, feet) ||
+                         pointSolid(p.x + PLAYER_W * 0.5, feet);
+        const hitOneWay = isOneWayBlocking(p.x + 0.05, feet, prevFeet) ||
+                          isOneWayBlocking(p.x + PLAYER_W - 0.05, feet, prevFeet) ||
+                          isOneWayBlocking(p.x + PLAYER_W * 0.5, feet, prevFeet);
+        if (hitSolid || hitOneWay) {
+            p.y = Math.floor(feet) - PLAYER_H - 0.0001;
+            p.vy = 0;
+        } else {
+            p.y = target;
+        }
+    } else {
+        // Rising — only true walls block the head; jump up through one-ways.
+        const head = target;
+        if (pointSolid(p.x + 0.05, head) ||
+            pointSolid(p.x + PLAYER_W - 0.05, head)) {
+            p.y = Math.floor(head) + 1;
+            p.vy = 0;
+        } else {
+            p.y = target;
+        }
+    }
+}
+
+function tryJump() {
+    const p = game.player;
+    if (p.coyoteTimer > 0) {
+        p.vy = JUMP_SPEED;
+        p.coyoteTimer = 0;
+        p.onGround = false;
+        p.jumpsLeft -= 1;
+        Audio.playJump();
+        spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 6, '#FF71CE');
+        return true;
+    }
+    if (p.jumpsLeft > 0) {
+        p.vy = JUMP_SPEED * 0.92;
+        p.jumpsLeft -= 1;
+        for (let i = 0; i < 12; i++) spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, i % 2 ? '#01CDFE' : '#FF71CE');
+        Audio.playJump();
+        return true;
+    }
+    return false;
+}
+
+// Reads tile under feet + body and applies hazard side-effects each frame.
+//   '^' spikes      → 1 dmg + small knockback (gated by hurtCooldown)
+//   '~' ice         → flag p.onIceTile so friction stays high
+//   'T' trampoline  → big bounce on contact
+//   'C' crumbling   → start a timer; break the tile after 30 frames of contact
+function applyHazards(p) {
+    p.onIceTile = false;
+
+    // Tile directly under the player's feet.
+    const footX = Math.floor(p.x + PLAYER_W / 2);
+    const footY = Math.floor(p.y + PLAYER_H + 0.05);
+    const below = game.map[`${footX},${footY}`];
+
+    if (p.onGround && below === 'T' && p.vy >= 0) {
+        // Trampoline! Force a sky-high bounce, refund a jump.
+        p.vy = -16;
+        p.onGround = false;
+        p.jumpsLeft = Math.max(p.jumpsLeft, 1);
+        (Audio.playBoing || Audio.playJump) && (Audio.playBoing ? Audio.playBoing() : Audio.playJump());
+        for (let i = 0; i < 16; i++) spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, i % 2 ? '#FFD700' : '#FF71CE');
+        UI.addMessage('BOING!', 'special');
+    }
+
+    if (p.onGround && below === '~') {
+        if (!p.wasOnIce) Audio.playSlip && Audio.playSlip();
+        p.onIceTile = true;
+        p.wasOnIce = true;
+    } else {
+        p.wasOnIce = false;
+    }
+
+    // Crumbling tiles: track per-tile timer. 30 frames of contact → break.
+    if (!game.crumbleState) game.crumbleState = {};
+    if (p.onGround && below === 'C') {
+        const k = `${footX},${footY}`;
+        if (!game.crumbleState[k]) {
+            game.crumbleState[k] = { started: game.animFrame, broken: false, contact: 1 };
+        } else {
+            game.crumbleState[k].contact = game.animFrame;
+        }
+    }
+    for (const [k, st] of Object.entries(game.crumbleState)) {
+        if (st.broken) continue;
+        if (game.animFrame - st.started >= 30) {
+            st.broken = true;
+            const [bx, by] = k.split(',').map(Number);
+            game.map[k] = '.';
+            game.screenShake = Math.max(game.screenShake, 0.25);
+            Audio.playCrumble && Audio.playCrumble();
+            for (let i = 0; i < 10; i++) spawnDust(bx + 0.5, by + 0.5, 1, '#888');
+        }
+    }
+
+    // Spike overlap — sample three points on the player's footprint.
+    const spikeAt = (cx, cy) => game.map[`${Math.floor(cx)},${Math.floor(cy)}`] === '^';
+    const overlap =
+        spikeAt(p.x + 0.05,            p.y + PLAYER_H - 0.05) ||
+        spikeAt(p.x + PLAYER_W - 0.05, p.y + PLAYER_H - 0.05) ||
+        spikeAt(p.x + PLAYER_W * 0.5,  p.y + PLAYER_H - 0.05) ||
+        spikeAt(p.x + PLAYER_W * 0.5,  p.y + PLAYER_H * 0.5);
+    if (overlap && p.hurtCooldown <= 0) {
+        takeDamage(game, 1);
+        p.vy = -7;
+        p.vx = (p.vx >= 0 ? -1 : 1) * 5;
+        p.onGround = false;
+        Audio.playSpike && Audio.playSpike();
+        UI.addMessage('Ouch! Spikes!', 'death');
+        for (let i = 0; i < 8; i++) spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, '#FF0040');
+    }
+}
+
+function spawnDust(x, y, count, color) {
+    for (let i = 0; i < count; i++) {
+        game.particles.push({
+            x, y,
+            vx: (Math.random() - 0.5) * 0.4,
+            vy: -Math.random() * 0.3,
+            life: 0.8, color
+        });
+    }
+}
+
 function update(dt) {
     game.animFrame++;
-    
+
     if (!game.player.alive) return;
-    
-    // Gravity
-    game.player.vy += 0.5; // Gravity constant
-    
-    // Apply velocity
-    const nextY = game.player.y + game.player.vy * 0.1;
-    if (isPassable(Math.floor(game.player.x), Math.floor(nextY + 0.8)) && 
-        isPassable(Math.floor(game.player.x + 0.8), Math.floor(nextY + 0.8))) {
-        game.player.y = nextY;
-        game.player.onGround = false;
-    } else {
-        if (game.player.vy > 0) {
-            game.player.onGround = true;
-            game.player.y = Math.floor(game.player.y);
+
+    const p = game.player;
+
+    // Decrement timers
+    if (p.coyoteTimer > 0) p.coyoteTimer--;
+    if (p.jumpBuffer > 0) p.jumpBuffer--;
+    if (p.dashTimer > 0) p.dashTimer--;
+    if (p.dashCooldown > 0) p.dashCooldown--;
+    if (p.powerCooldown > 0) p.powerCooldown--;
+    if (p.powerActive > 0) p.powerActive--;
+    if (p.dropThrough > 0) p.dropThrough--;
+
+    // Charge meter ticks while E is held (capped at 120).
+    if (p.chargeAttack > 0 && p.chargeAttack < 120) p.chargeAttack++;
+    if (p.chargeAttack >= 60 && !p.chargeReady) {
+        p.chargeReady = true;
+        // Tiny visual confirmation when ready
+        spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H * 0.5, 6, '#FFD700');
+    }
+
+    // Resolve buffered jump (only if it succeeds, consume it)
+    if (p.jumpBuffer > 0 && (p.coyoteTimer > 0 || (p.jumpsLeft > 0 && !p.onGround))) {
+        if (tryJump()) p.jumpBuffer = 0;
+    }
+
+    // Mid-air aura tick (Mutual Aid Worker power)
+    if (p.powerType === 'aura' && p.powerActive > 0 && game.animFrame % 60 === 0) {
+        if (p.health < p.maxHealth) {
+            p.health = Math.min(p.maxHealth, p.health + 1);
+            game.floatingText.push({ x: p.x, y: p.y, text: '+1', life: 30, color: '#39FF14' });
+            UI.updateStatus(game);
         }
-        game.player.vy = 0;
     }
-    
-    const nextX = game.player.x + game.player.vx * 0.1;
-    if (isPassable(Math.floor(nextX), Math.floor(game.player.y)) && 
-        isPassable(Math.floor(nextX + 0.8), Math.floor(game.player.y)) &&
-        isPassable(Math.floor(nextX), Math.floor(game.player.y + 0.8)) && 
-        isPassable(Math.floor(nextX + 0.8), Math.floor(game.player.y + 0.8))) {
-        game.player.x = nextX;
-    } else {
-        game.player.vx = 0;
+
+    // Glitter trail
+    if (p.traits && p.traits.some(t => t.id === 'glitter') && game.animFrame % 4 === 0 && Math.abs(p.vx) > 0.5) {
+        spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, ['#FF71CE','#01CDFE','#FFD700','#39FF14'][game.animFrame % 4]);
     }
-    
-    // Friction
-    game.player.vx *= 0.8;
-    
-    // Enemy AI & Cooldowns tick periodically (simulating "turns" in real-time)
+
+    // Gravity (apply only when airborne)
+    if (!p.onGround) p.vy += GRAVITY;
+    if (p.vy > TERMINAL_VY) p.vy = TERMINAL_VY;
+
+    // Dash overrides horizontal velocity
+    let effectiveVx = p.vx;
+    if (p.dashTimer > 0) {
+        effectiveVx = p.dashDir * 9;
+        p.vy = Math.min(p.vy, 0.5); // float during dash
+    }
+
+    // Sub-step movement to avoid tunneling at high speeds
+    const STEPS = 4;
+    for (let s = 0; s < STEPS; s++) {
+        moveX(effectiveVx * 0.1 / STEPS);
+        moveY(p.vy * 0.1 / STEPS);
+    }
+
+    // Authoritative grounded check. Drives coyote/jump refresh and landing FX.
+    const wasGrounded = p.onGround;
+    p.onGround = isGrounded(p);
+    if (p.onGround) {
+        p.coyoteTimer = (p.trait && p.trait.id === 'insomnia') ? COYOTE_FRAMES * 2 : COYOTE_FRAMES;
+        p.jumpsLeft = (p.traits && p.traits.some(t => t.id === 'nostalgia')) ? 2 : 1;
+        if (!wasGrounded && p.vy >= 1.5) {
+            Audio.playStep();
+            spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 4, '#FFFFFF');
+        }
+    }
+
+    // Stomp-to-kill: falling onto an enemy from above damages it and bounces
+    // the player. Bosses and gatekeepers are too sturdy to stomp.
+    if (p.vy >= 2.0) {
+        const feetY = p.y + PLAYER_H;
+        for (const troll of game.trolls) {
+            if (troll.enemyType === 'boss' || troll.enemyType === 'gatekeeper') continue;
+            const dx = (troll.x + 0.5) - (p.x + PLAYER_W / 2);
+            const dy = troll.y - feetY;
+            if (Math.abs(dx) < 0.85 && dy >= -0.55 && dy <= 0.35) {
+                troll.health -= 2;
+                p.vy = -8.5; // bounce
+                p.jumpsLeft = Math.max(p.jumpsLeft, 1); // refund a jump as a reward
+                UI.addMessage(`Stomp! ${troll.enemyType} -2`, 'combat');
+                Audio.playHit();
+                game.screenShake = Math.max(game.screenShake, 0.6);
+                for (let i = 0; i < 12; i++) {
+                    game.particles.push({
+                        x: troll.x + 0.5, y: troll.y,
+                        vx: (Math.random() - 0.5) * 0.4,
+                        vy: -Math.random() * 0.3,
+                        life: 1.0,
+                        color: ['#FFD700','#FF71CE','#FFFFFF'][i % 3]
+                    });
+                }
+                if (troll.health <= 0) {
+                    UI.addMessage(`Stomped ${troll.enemyType}!`, 'victory');
+                    game.trolls = game.trolls.filter(t => t !== troll);
+                    p.kills = (p.kills || 0) + 1;
+                    if (Math.random() < 0.30) {
+                        game.items.push({ x: troll.x, y: troll.y, type: 'treasure', name: 'Salvaged Scrap' });
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    // Hazard interactions: spikes hurt; trampolines bounce; crumbling tiles
+    // start to break; ice slips. Resolved before friction so ice can override it.
+    applyHazards(p);
+
+    // Friction (only when not dashing). Ice keeps almost all velocity.
+    if (p.dashTimer <= 0) p.vx *= p.onIceTile ? 0.97 : 0.78;
+    if (Math.abs(p.vx) < 0.05) p.vx = 0;
+
+    // Status effect ticking (DOTs, freeze duration, etc.)
+    tickStatus(game);
+
+    // Enemy AI / cooldown tick (turn-style every ~10 frames)
     if (game.animFrame % 10 === 0) {
         processTurn();
     }
@@ -529,38 +984,91 @@ function update(dt) {
 function draw() {
     ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Side-view camera: center on player
-    const camX = Math.floor(canvas.width / 2 - game.player.x * T - T / 2);
-    const camY = Math.floor(canvas.height / 2 - game.player.y * T - T / 2);
+
+    const px = tileX();
+    const py = tileY();
+
+    // Vertigo trait → tilt the canvas slightly based on horizontal velocity
+    const isVertigo = game.player.traits && game.player.traits.some(t => t.id === 'vertigo');
+    const isGreyscale = game.player.traits && game.player.traits.some(t => t.id === 'colorblind');
+
+    // Smooth camera with horizontal look-ahead (SuperTux-inspired: the camera
+    // leads the player in their facing direction so you can see what's coming).
+    const lookAhead = (game.player.facingX || 1) * 2.2 * T;
+    const targetX = canvas.width / 2 - (game.player.x + PLAYER_W / 2) * T - lookAhead;
+    const targetY = canvas.height / 2 - (game.player.y + PLAYER_H / 2) * T - 1.0 * T;
+    if (!game.camInitialized) {
+        game.camX = targetX;
+        game.camY = targetY;
+        game.camInitialized = true;
+    } else {
+        game.camX += (targetX - game.camX) * 0.10;
+        game.camY += (targetY - game.camY) * 0.12;
+    }
+
+    // Screen-shake offset (decays toward 0 each frame).
+    let shakeX = 0, shakeY = 0;
+    if (game.screenShake > 0.05) {
+        shakeX = (Math.random() - 0.5) * game.screenShake * 12;
+        shakeY = (Math.random() - 0.5) * game.screenShake * 12;
+        game.screenShake *= 0.85;
+    } else {
+        game.screenShake = 0;
+    }
+
+    // Parallax starfield BEHIND the world (each layer scrolls at its own depth).
+    for (const s of stars) {
+        const wrapW = canvas.width + 40;
+        const wrapH = canvas.height + 40;
+        const x = ((s.x * wrapW + game.camX * s.layer) % wrapW + wrapW) % wrapW - 20;
+        const y = ((s.y * wrapH + game.camY * s.layer) % wrapH + wrapH) % wrapH - 20;
+        const tw = 0.35 + Math.sin(game.animFrame * 0.04 + s.phase) * 0.25;
+        ctx.globalAlpha = tw * s.layer * 3.5;
+        ctx.fillStyle = s.color;
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = s.color;
+        ctx.fillRect(x, y, s.size, s.size);
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+
+    if (isVertigo) {
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate(game.player.vx * 0.012);
+        ctx.translate(-canvas.width / 2, -canvas.height / 2);
+    }
+
+    const camX = Math.floor(game.camX + shakeX);
+    const camY = Math.floor(game.camY + shakeY);
 
     const renderables = [];
     const VIEW_W = Math.ceil(canvas.width / T) + 2;
     const VIEW_H = Math.ceil(canvas.height / T) + 2;
-    const startX = Math.max(0, game.player.x - Math.ceil(VIEW_W / 2));
-    const startY = Math.max(0, game.player.y - Math.ceil(VIEW_H / 2));
+    const startX = Math.max(0, px - Math.ceil(VIEW_W / 2));
+    const startY = Math.max(0, py - Math.ceil(VIEW_H / 2));
     const endX = Math.min(game.mapWidth, startX + VIEW_W);
     const endY = Math.min(game.mapHeight, startY + VIEW_H);
-    
+
     for (let y = startY; y < endY; y++) {
         for (let x = startX; x < endX; x++) {
             const tile = game.map[`${x},${y}`];
             if (!tile) continue;
-            const dx = x - game.player.x;
-            const dy = y - game.player.y;
-            const isVisible = (dx * dx + dy * dy) <= 50;
+            const dx = x - px;
+            const dy = y - py;
+            const isVisible = (dx * dx + dy * dy) <= 60;
             const isExplored = game.seen[`${x},${y}`];
             if (isVisible || isExplored) {
                 renderables.push({ type: 'tile', tile, x, y, z: 0, isVisible });
             }
         }
     }
-    
+
     game.items.forEach(item => { if (game.seen[`${item.x},${item.y}`]) renderables.push({ type: 'item', entity: item, x: item.x, y: item.y, z: 1 }); });
     game.npcs.forEach(npc => { if (game.seen[`${npc.x},${npc.y}`]) renderables.push({ type: 'npc', entity: npc, x: npc.x, y: npc.y, z: 1 }); });
-    game.trolls.forEach(troll => { 
-        const d = (troll.x - game.player.x)**2 + (troll.y - game.player.y)**2;
-        if (d <= 50) renderables.push({ type: 'troll', entity: troll, x: troll.x, y: troll.y, z: 2 });
+    game.trolls.forEach(troll => {
+        const d = (troll.x - px)**2 + (troll.y - py)**2;
+        if (d <= 60) renderables.push({ type: 'troll', entity: troll, x: troll.x, y: troll.y, z: 2 });
     });
     if (game.player.alive) {
         renderables.push({ type: 'player', entity: game.player, x: game.player.x, y: game.player.y, z: 3 });
@@ -579,6 +1087,39 @@ function draw() {
             if (r.tile === '#') {
                 const glow = r.isVisible ? 'rgba(255,113,206,0.3)' : null;
                 drawTile(ctx, sx, sy, '#0a0a0a', true, glow, patterns.wall);
+            } else if (r.tile === '~') {
+                // Ice — pale blue floor tile with a glossy highlight.
+                drawTile(ctx, sx, sy, '#1a3a4a', true, r.isVisible ? 'rgba(91,206,250,0.45)' : null, null);
+                if (r.isVisible) {
+                    ctx.globalAlpha = 0.55;
+                    ctx.fillStyle = '#5BCEFA';
+                    ctx.fillRect(sx + 1, sy + 1, T - 2, 6);
+                    ctx.globalAlpha = 0.85;
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(sx + 4, sy + 2, T - 14, 2);
+                }
+            } else if (r.tile === 'T') {
+                // Trampoline — pink/yellow pad with a glowing top stripe.
+                drawTile(ctx, sx, sy, '#1a0a14', true, null, null);
+                if (r.isVisible) {
+                    ctx.globalAlpha = 1.0;
+                    ctx.fillStyle = '#FF71CE';
+                    ctx.shadowBlur = 14; ctx.shadowColor = '#FF71CE';
+                    ctx.fillRect(sx + 2, sy + 4, T - 4, T - 12);
+                    ctx.fillStyle = '#FFD700';
+                    ctx.shadowColor = '#FFD700';
+                    ctx.fillRect(sx + 2, sy + 4, T - 4, 3);
+                    ctx.shadowBlur = 0;
+                    // Springs
+                    ctx.strokeStyle = '#FFD700';
+                    ctx.lineWidth = 1;
+                    for (let s = 0; s < 3; s++) {
+                        ctx.beginPath();
+                        ctx.moveTo(sx + 6 + s * 8, sy + T - 8);
+                        ctx.lineTo(sx + 6 + s * 8, sy + T - 2);
+                        ctx.stroke();
+                    }
+                }
             } else {
                 const floorColor = r.isVisible ? '#0a0a0a' : '#030303';
                 const glowColor = r.isVisible ? 'rgba(1,205,254,0.15)' : null;
@@ -588,6 +1129,54 @@ function draw() {
                     ctx.fillStyle = '#01CDFE';
                     ctx.shadowBlur = 20; ctx.shadowColor = '#01CDFE';
                     ctx.beginPath(); ctx.arc(sx + T/2, sy + T/2, 8, 0, Math.PI*2); ctx.fill();
+                    ctx.shadowBlur = 0;
+                } else if (r.tile === '=') {
+                    // One-way platform: a thin neon ledge along the top of the tile.
+                    ctx.globalAlpha = 1.0;
+                    ctx.fillStyle = '#FF71CE';
+                    ctx.shadowBlur = 12; ctx.shadowColor = '#FF71CE';
+                    ctx.fillRect(sx + 1, sy, T - 2, 4);
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(sx + 1, sy, T - 2, 1);
+                    ctx.shadowBlur = 0;
+                } else if (r.tile === 'C') {
+                    // Crumbling platform — fades from cyan to red as it cracks.
+                    const st = game.crumbleState && game.crumbleState[`${r.x},${r.y}`];
+                    const aged = st ? Math.min(1, (game.animFrame - st.started) / 30) : 0;
+                    ctx.globalAlpha = 1.0;
+                    const col = aged > 0
+                        ? `rgb(${255}, ${Math.floor(215 * (1 - aged))}, ${Math.floor(64 * (1 - aged))})`
+                        : '#01CDFE';
+                    ctx.fillStyle = col;
+                    ctx.shadowBlur = aged > 0 ? 14 : 10;
+                    ctx.shadowColor = col;
+                    ctx.fillRect(sx + 1, sy, T - 2, 4);
+                    // Cracks scribbled across the platform when aging.
+                    if (aged > 0.2) {
+                        ctx.strokeStyle = '#000';
+                        ctx.lineWidth = 1;
+                        ctx.shadowBlur = 0;
+                        ctx.beginPath();
+                        ctx.moveTo(sx + 4, sy + 1); ctx.lineTo(sx + 8, sy + 3);
+                        ctx.lineTo(sx + 14, sy + 1); ctx.lineTo(sx + 22, sy + 3);
+                        ctx.stroke();
+                    }
+                    ctx.shadowBlur = 0;
+                } else if (r.tile === '^') {
+                    // Spikes — pointed teeth glowing red along the top of the tile.
+                    ctx.globalAlpha = 1.0;
+                    ctx.fillStyle = '#C0C0C0';
+                    ctx.shadowBlur = 10; ctx.shadowColor = '#FF0040';
+                    const teeth = 4;
+                    const tw = (T - 4) / teeth;
+                    for (let s = 0; s < teeth; s++) {
+                        ctx.beginPath();
+                        ctx.moveTo(sx + 2 + s * tw,        sy + T);
+                        ctx.lineTo(sx + 2 + s * tw + tw/2, sy + 4);
+                        ctx.lineTo(sx + 2 + (s + 1) * tw,  sy + T);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
                     ctx.shadowBlur = 0;
                 }
             }
@@ -600,10 +1189,18 @@ function draw() {
             
             if (r.type === 'item') {
                 if (r.entity.type === 'gender-reveal') {
-                    const pulse = Math.sin(game.animFrame * 0.5) * 3;
-                    ctx.fillStyle = (game.animFrame % 4 < 2) ? '#FF71CE' : '#5BCEFA';
-                    ctx.shadowColor = ctx.fillStyle;
-                    ctx.beginPath(); ctx.arc(drawX, drawY - 8 + pulse, 8, 0, Math.PI*2); ctx.fill();
+                    // Pulsing chest — cycles pink/blue glow each beat. Use spr_chest if loaded.
+                    const pulse = Math.sin(game.animFrame * 0.18) * 3;
+                    const flick = (game.animFrame % 8 < 4) ? '#FF71CE' : '#5BCEFA';
+                    if (imgReady(images.chest)) {
+                        ctx.shadowColor = flick;
+                        ctx.shadowBlur = 18;
+                        ctx.drawImage(images.chest, drawX - 18, drawY - 28 + pulse, 36, 28);
+                        ctx.shadowBlur = 0;
+                    } else {
+                        ctx.fillStyle = flick; ctx.shadowColor = flick;
+                        ctx.beginPath(); ctx.arc(drawX, drawY - 8 + pulse, 8, 0, Math.PI*2); ctx.fill();
+                    }
                 } else if (r.entity.type === 'zine') {
                     ctx.fillStyle = '#FFFFFF'; ctx.shadowColor = '#FFFFFF';
                     const bob = Math.sin(game.animFrame * 0.3) * 2;
@@ -618,32 +1215,53 @@ function draw() {
                     ctx.fillRect(drawX - 2, drawY - 12 + bob, 4, 10);
                     ctx.fillRect(drawX - 5, drawY - 8 + bob, 10, 4);
                 } else {
+                    // Treasure / Salvaged Scrap → small neon chest sprite when available.
                     const bob = Math.sin(game.animFrame * 0.3) * 1;
-                    ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700';
-                    // Mini chest shape
-                    ctx.fillRect(drawX - 8, drawY - 10 + bob, 16, 10);
-                    ctx.fillStyle = '#FF71CE';
-                    ctx.fillRect(drawX - 1, drawY - 8 + bob, 2, 6);
+                    if (imgReady(images.chest)) {
+                        ctx.shadowColor = '#FFD700';
+                        ctx.shadowBlur = 12;
+                        ctx.drawImage(images.chest, drawX - 12, drawY - 20 + bob, 24, 20);
+                        ctx.shadowBlur = 0;
+                    } else {
+                        ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700';
+                        ctx.fillRect(drawX - 8, drawY - 10 + bob, 16, 10);
+                        ctx.fillStyle = '#FF71CE';
+                        ctx.fillRect(drawX - 1, drawY - 8 + bob, 2, 6);
+                    }
                 }
             } else if (r.type === 'npc') {
-                // Animated NPC — glowing purple figure with bob
                 const bob = Math.sin(game.animFrame * 0.3) * 2;
-                ctx.fillStyle = '#B967DB'; ctx.shadowColor = '#B967DB';
-                // Body
-                ctx.beginPath();
-                ctx.roundRect(drawX - 8, drawY - 28 + bob, 16, 20, 4);
-                ctx.fill();
-                // Head
-                ctx.beginPath();
-                ctx.arc(drawX, drawY - 32 + bob, 7, 0, Math.PI*2);
-                ctx.fill();
-                // Neon flower crown
-                ctx.fillStyle = '#FF71CE'; ctx.shadowColor = '#FF71CE';
-                for (let f = 0; f < 5; f++) {
-                    const fa = (f / 5) * Math.PI;
+                if (imgReady(images.marsha)) {
+                    // Cendric-style portrait sprite (transparent PNG of Marsha P. Johnson).
+                    const sw = 44, sh = 56;
+                    ctx.shadowColor = '#FF71CE';
+                    ctx.shadowBlur = 16;
+                    ctx.drawImage(images.marsha, drawX - sw/2, drawY - sh + bob, sw, sh);
+                    ctx.shadowBlur = 0;
+                    // Floating "!" beacon so player knows it's interactable.
+                    ctx.fillStyle = '#FFD700';
+                    ctx.shadowColor = '#FFD700';
+                    ctx.shadowBlur = 8;
+                    ctx.font = 'bold 14px VT323';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('!', drawX, drawY - sh - 4 + bob);
+                    ctx.textAlign = 'left';
+                    ctx.shadowBlur = 0;
+                } else {
+                    ctx.fillStyle = '#B967DB'; ctx.shadowColor = '#B967DB';
                     ctx.beginPath();
-                    ctx.arc(drawX + Math.cos(fa) * 6, drawY - 38 + bob + Math.sin(fa) * -2, 2, 0, Math.PI*2);
+                    ctx.roundRect(drawX - 8, drawY - 28 + bob, 16, 20, 4);
                     ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(drawX, drawY - 32 + bob, 7, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.fillStyle = '#FF71CE'; ctx.shadowColor = '#FF71CE';
+                    for (let f = 0; f < 5; f++) {
+                        const fa = (f / 5) * Math.PI;
+                        ctx.beginPath();
+                        ctx.arc(drawX + Math.cos(fa) * 6, drawY - 38 + bob + Math.sin(fa) * -2, 2, 0, Math.PI*2);
+                        ctx.fill();
+                    }
                 }
             } else if (r.type === 'troll') {
                 const bob = Math.sin(game.animFrame * 0.4 + r.x) * 2;
@@ -687,6 +1305,32 @@ function draw() {
                     // "?" on face
                     ctx.fillStyle = '#FFF'; ctx.font = 'bold 14px VT323';
                     ctx.fillText('?', drawX - 4, drawY - 8 + bob);
+                } else if (et === 'swarm') {
+                    // Tiny scuttler — dark cloud with eyes
+                    size = 14; h = 14;
+                    ctx.fillStyle = '#330033'; ctx.shadowColor = '#FF00FF';
+                    ctx.beginPath();
+                    ctx.arc(drawX, drawY - 7 + bob, 7, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(drawX - 3, drawY - 8 + bob, 2, 2);
+                    ctx.fillRect(drawX + 1, drawY - 8 + bob, 2, 2);
+                } else if (et === 'bigot') {
+                    // Hostile face on a megaphone-shaped torso
+                    ctx.fillStyle = '#A52A2A'; ctx.shadowColor = '#FF4500';
+                    ctx.fillRect(drawX - 9, drawY - 24 + bob, 18, 24);
+                    // Megaphone
+                    ctx.fillStyle = '#444';
+                    ctx.beginPath();
+                    ctx.moveTo(drawX + 9, drawY - 18 + bob);
+                    ctx.lineTo(drawX + 18, drawY - 22 + bob);
+                    ctx.lineTo(drawX + 18, drawY - 8 + bob);
+                    ctx.lineTo(drawX + 9, drawY - 12 + bob);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.fillStyle = '#FF0000';
+                    ctx.fillRect(drawX - 6, drawY - 20 + bob, 3, 3);
+                    ctx.fillRect(drawX + 3, drawY - 20 + bob, 3, 3);
                 } else if (et === 'police') {
                     ctx.fillStyle = '#0000FF'; ctx.shadowColor = '#0000FF';
                     ctx.fillRect(drawX - 10, drawY - 26 + bob, 20, 26);
@@ -698,26 +1342,32 @@ function draw() {
                     ctx.fillRect(drawX - 6, drawY - 24 + bob, 4, 3);
                     ctx.fillRect(drawX + 2, drawY - 24 + bob, 4, 3);
                 } else if (et === 'boss') {
-                    size = 40; h = 44;
-                    const pulse = Math.sin(game.animFrame * 0.3) * 4;
-                    ctx.fillStyle = '#FF00FF'; ctx.shadowColor = '#FF00FF';
-                    ctx.shadowBlur = 20 + pulse;
-                    ctx.fillRect(drawX - 20, drawY - h + bob, size, h);
-                    // Horns
-                    ctx.beginPath();
-                    ctx.moveTo(drawX - 16, drawY - h + bob);
-                    ctx.lineTo(drawX - 10, drawY - h - 12 + bob);
-                    ctx.lineTo(drawX - 4, drawY - h + bob);
-                    ctx.fill();
-                    ctx.beginPath();
-                    ctx.moveTo(drawX + 4, drawY - h + bob);
-                    ctx.lineTo(drawX + 10, drawY - h - 12 + bob);
-                    ctx.lineTo(drawX + 16, drawY - h + bob);
-                    ctx.fill();
-                    // Glowing eyes
-                    ctx.fillStyle = '#FFF';
-                    ctx.fillRect(drawX - 12, drawY - h + 10 + bob, 8, 6);
-                    ctx.fillRect(drawX + 4, drawY - h + 10 + bob, 8, 6);
+                    size = 64; h = 72;
+                    const enraged = r.entity.bossPhase === 2;
+                    const pulse = Math.sin(game.animFrame * (enraged ? 0.55 : 0.3)) * (enraged ? 7 : 4);
+                    if (imgReady(images.boss)) {
+                        // Spr_enemy.png is a transparent boss-quality demon sprite.
+                        ctx.shadowColor = enraged ? '#FF0040' : '#FF00FF';
+                        ctx.shadowBlur = (enraged ? 26 : 18) + pulse;
+                        ctx.drawImage(images.boss, drawX - size/2, drawY - h + bob, size, h);
+                        if (enraged) {
+                            // Red rage overlay — multiplied so the demon stays readable.
+                            ctx.save();
+                            ctx.globalCompositeOperation = 'multiply';
+                            ctx.globalAlpha = 0.45;
+                            ctx.fillStyle = '#FF0040';
+                            ctx.fillRect(drawX - size/2, drawY - h + bob, size, h);
+                            ctx.restore();
+                        }
+                        ctx.shadowBlur = 0;
+                    } else {
+                        ctx.fillStyle = '#FF00FF'; ctx.shadowColor = '#FF00FF';
+                        ctx.shadowBlur = 20 + pulse;
+                        ctx.fillRect(drawX - size/2, drawY - h + bob, size, h);
+                        ctx.fillStyle = '#FFF';
+                        ctx.fillRect(drawX - 12, drawY - h + 10 + bob, 8, 6);
+                        ctx.fillRect(drawX + 4, drawY - h + 10 + bob, 8, 6);
+                    }
                 }
                 
                 // Health Bar for all enemies
@@ -727,6 +1377,30 @@ function draw() {
                 ctx.fillRect(drawX - barW/2, drawY - h - 10 + bob, barW, 4);
                 ctx.fillStyle = '#FF71CE';
                 ctx.fillRect(drawX - barW/2, drawY - h - 10 + bob, barW * (r.entity.health / r.entity.maxHealth), 4);
+
+                // Status effect glyphs floating above the health bar.
+                if (r.entity.status) {
+                    let ix = drawX - barW / 2;
+                    const iy = drawY - h - 22 + bob;
+                    if (r.entity.status.burn && r.entity.status.burn.duration > 0) {
+                        ctx.fillStyle = '#FF8C00'; ctx.shadowColor = '#FF8C00'; ctx.shadowBlur = 8;
+                        ctx.font = 'bold 12px VT323'; ctx.fillText('🔥', ix, iy); ix += 14;
+                    }
+                    if (r.entity.status.freeze && r.entity.status.freeze.duration > 0) {
+                        ctx.fillStyle = '#5BCEFA'; ctx.shadowColor = '#5BCEFA'; ctx.shadowBlur = 8;
+                        ctx.font = 'bold 12px VT323'; ctx.fillText('❄', ix, iy); ix += 14;
+                        // Frosty overlay on the sprite itself
+                        ctx.globalAlpha = 0.35;
+                        ctx.fillStyle = '#5BCEFA';
+                        ctx.fillRect(drawX - size/2, drawY - h + bob, size, h);
+                        ctx.globalAlpha = 1;
+                    }
+                    if (r.entity.status.shock && r.entity.status.shock.duration > 0) {
+                        ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 8;
+                        ctx.font = 'bold 12px VT323'; ctx.fillText('⚡', ix, iy);
+                    }
+                    ctx.shadowBlur = 0;
+                }
             } else if (r.type === 'player') {
                 if (r.entity.hurtCooldown % 2 === 0) {
                     const bob = Math.sin(game.animFrame * 0.4) * 2;
@@ -963,73 +1637,477 @@ function draw() {
     }
 
     ctx.globalAlpha = 1.0;
+
+    // Close vertigo wrapper
+    if (isVertigo) ctx.restore();
+
+    // === HUD OVERLAYS (drawn outside the vertigo wrapper so they stay still) ===
+
+    // Greyscale post-process
+    if (isGreyscale) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'saturation';
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+    }
+
+    // Low-HP vignette pulse
+    const hpRatio = game.player.health / Math.max(1, game.player.maxHealth);
+    if (hpRatio <= 0.34 && game.player.alive) {
+        const pulse = 0.35 + Math.sin(game.animFrame * 0.12) * 0.15;
+        const grad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, canvas.width*0.25,
+                                              canvas.width/2, canvas.height/2, canvas.width*0.7);
+        grad.addColorStop(0, 'rgba(255,0,40,0)');
+        grad.addColorStop(1, `rgba(255,0,40,${pulse})`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // CRT scanlines (always on for the aesthetic, slightly stronger with nostalgia trait)
+    const scanAlpha = (game.player.traits && game.player.traits.some(t => t.id === 'nostalgia')) ? 0.18 : 0.08;
+    ctx.fillStyle = `rgba(0,0,0,${scanAlpha})`;
+    for (let y = 0; y < canvas.height; y += 3) ctx.fillRect(0, y, canvas.width, 1);
+
+    // Charge attack meter — sits above the player on screen so it's always visible.
+    if (game.player.chargeAttack > 0) {
+        const chargeRatio = Math.min(1, game.player.chargeAttack / 120);
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2 - 60;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(cx - 32, cy, 64, 6);
+        const isOver = game.player.chargeAttack >= 110;
+        const isReady = game.player.chargeAttack >= 60;
+        ctx.fillStyle = isOver ? '#FF0040' : isReady ? '#FFD700' : '#01CDFE';
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = 10;
+        ctx.fillRect(cx - 32, cy, 64 * chargeRatio, 6);
+        ctx.shadowBlur = 0;
+        if (isReady) {
+            ctx.font = 'bold 11px VT323';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = isOver ? '#FF0040' : '#FFD700';
+            ctx.fillText(isOver ? 'OVERCHARGED!' : 'READY', cx, cy + 18);
+            ctx.textAlign = 'left';
+        }
+    }
+
+    // Class power HUD
+    if (game.player.classObj) {
+        const cls = game.player.classObj;
+        const w = 160, h = 16, x0 = canvas.width - w - 8, y0 = 8;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(x0 - 2, y0 - 2, w + 4, h + 4);
+        ctx.strokeStyle = '#01CDFE';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x0 - 2, y0 - 2, w + 4, h + 4);
+        const cdRatio = 1 - (game.player.powerCooldown / 600);
+        ctx.fillStyle = game.player.powerActive > 0 ? '#FF71CE' : '#01CDFE';
+        ctx.fillRect(x0, y0, w * cdRatio, h);
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 12px VT323';
+        ctx.fillText(`R: ${cls.power}${game.player.powerCooldown > 0 ? ` (${Math.ceil(game.player.powerCooldown/60)}s)` : ''}`, x0 + 4, y0 + 12);
+    }
+
+    // Mini-map in top-right corner (depth & explored layout)
+    const MM = 3; // 3px per tile
+    const mmW = game.mapWidth * MM, mmH = game.mapHeight * MM;
+    const mmX = canvas.width - mmW - 8, mmY = canvas.height - mmH - 8;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(mmX - 2, mmY - 2, mmW + 4, mmH + 4);
+    ctx.strokeStyle = '#FF71CE';
+    ctx.strokeRect(mmX - 2, mmY - 2, mmW + 4, mmH + 4);
+    for (let y = 0; y < game.mapHeight; y++) {
+        for (let x = 0; x < game.mapWidth; x++) {
+            if (!game.seen[`${x},${y}`]) continue;
+            const t = game.map[`${x},${y}`];
+            ctx.fillStyle = t === '#' ? '#444' : t === '>' ? '#01CDFE' : '#1a1a1a';
+            ctx.fillRect(mmX + x*MM, mmY + y*MM, MM, MM);
+        }
+    }
+    ctx.fillStyle = '#FF71CE';
+    ctx.fillRect(mmX + tileX()*MM - 1, mmY + tileY()*MM - 1, MM + 2, MM + 2);
+
+    // Dash cooldown ring under player position on map
+    if (game.player.dashCooldown > 0) {
+        ctx.strokeStyle = '#01CDFE';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const angle = (1 - game.player.dashCooldown / DASH_COOLDOWN) * Math.PI * 2;
+        ctx.arc(canvas.width / 2, canvas.height - 30, 12, -Math.PI/2, -Math.PI/2 + angle);
+        ctx.stroke();
+    }
+
+    // Screen-space damage flash — drawn over everything for unmissable hurt feedback.
+    if (game.damageFlash > 0.01) {
+        ctx.fillStyle = `rgba(255,40,80,${game.damageFlash * 0.45})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        game.damageFlash *= 0.86;
+    } else {
+        game.damageFlash = 0;
+    }
+
+    // Quest log overlay (J to toggle) — Cendric-style objective tracker.
+    if (questLogVisible) {
+        const w = 320, h = 220;
+        const x0 = canvas.width / 2 - w / 2;
+        const y0 = canvas.height / 2 - h / 2;
+        ctx.fillStyle = 'rgba(5,5,12,0.92)';
+        ctx.fillRect(x0, y0, w, h);
+        ctx.strokeStyle = '#FF71CE';
+        ctx.shadowColor = '#FF71CE';
+        ctx.shadowBlur = 12;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x0, y0, w, h);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#FF71CE';
+        ctx.font = 'bold 18px VT323';
+        ctx.textAlign = 'center';
+        ctx.fillText('📋 QUEST LOG', x0 + w / 2, y0 + 22);
+
+        ctx.textAlign = 'left';
+        ctx.font = '14px VT323';
+        const seenZ = Object.keys(game.persistent.seenZines || {}).length;
+        const seenF = Object.keys(game.persistent.seenFigures || {}).length;
+
+        let yy = y0 + 50;
+        const line = (label, color) => { ctx.fillStyle = color; ctx.fillText(label, x0 + 16, yy); yy += 20; };
+        line('▸ Recover the lost zines:', '#FFFFFF');
+        const zRatio = seenZ / 19;
+        ctx.fillStyle = '#1a1a1a'; ctx.fillRect(x0 + 30, yy - 12, 240, 8);
+        ctx.fillStyle = '#FF71CE'; ctx.fillRect(x0 + 30, yy - 12, 240 * zRatio, 8);
+        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenZ} / 19`, x0 + 280, yy - 4);
+        yy += 12;
+
+        ctx.font = '14px VT323';
+        line('▸ Meet the historical figures:', '#FFFFFF');
+        const fRatio = seenF / 9;
+        ctx.fillStyle = '#1a1a1a'; ctx.fillRect(x0 + 30, yy - 12, 240, 8);
+        ctx.fillStyle = '#01CDFE'; ctx.fillRect(x0 + 30, yy - 12, 240 * fRatio, 8);
+        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenF} / 9`, x0 + 280, yy - 4);
+        yy += 16;
+
+        ctx.font = '14px VT323';
+        line(`▸ Current depth: ${game.depth}  ·  Max reached: ${game.player.depthReached || game.depth}`, '#FFD700');
+        line(`▸ Scrap banked: ${game.persistent.treasures}`, '#39FF14');
+        line(`▸ Lineage size: ${lineage.length}`, '#B967DB');
+
+        ctx.fillStyle = '#888';
+        ctx.font = '12px VT323';
+        ctx.fillText('Press J to close', x0 + 16, y0 + h - 12);
+        ctx.textAlign = 'left';
+    }
+
+    // Pause overlay on top of HUD.
+    if (paused) {
+        ctx.fillStyle = 'rgba(5,5,12,0.78)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 56px VT323';
+        ctx.shadowBlur = 18; ctx.shadowColor = '#FF71CE';
+        ctx.fillStyle = '#FF71CE';
+        ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2 - 10);
+        ctx.shadowBlur = 8; ctx.shadowColor = '#01CDFE';
+        ctx.font = '18px VT323';
+        ctx.fillStyle = '#01CDFE';
+        ctx.fillText('P / Esc to resume', canvas.width / 2, canvas.height / 2 + 24);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '14px VT323';
+        ctx.fillText('WASD/Arrows · Space jump · Q quick · E power · Shift dash · R class', canvas.width / 2, canvas.height / 2 + 50);
+        ctx.shadowBlur = 0;
+        ctx.textAlign = 'left';
+    }
+}
+
+function tryDash() {
+    const p = game.player;
+    if (p.dashCooldown > 0) return;
+    p.dashTimer = DASH_FRAMES;
+    p.dashCooldown = DASH_COOLDOWN;
+    p.dashDir = p.facingX || 1;
+    p.hurtCooldown = Math.max(p.hurtCooldown, 4);
+    UI.addMessage("Dash!", "special");
+    for (let i = 0; i < 14; i++) spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H * 0.5, 1, '#01CDFE');
+    Audio.playDash();
+}
+
+function activateClassPower() {
+    const p = game.player;
+    if (p.powerCooldown > 0 || !p.classObj) return;
+    const cls = p.classObj.id;
+    p.powerCooldown = 600; // 10s @ 60fps
+    Audio.playPower();
+    if (cls === 'anarchist') {
+        p.powerType = 'rage'; p.powerActive = 180;
+        UI.addMessage("BLACK BLOC RAGE! ✊", "special"); UI.shakeScreen();
+        for (let i = 0; i < 30; i++) spawnDust(p.x, p.y + PLAYER_H, 1, '#FF0000');
+    } else if (cls === 'terrorist') {
+        UI.addMessage("GLITTER BOMB! 💣", "special"); UI.shakeScreen();
+        const dirs = [[0,0],[0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,-1],[1,-1],[-1,1]];
+        dirs.forEach(d => attackEnemy(game, d[0], d[1], 'blast'));
+        for (let i = 0; i < 60; i++) {
+            game.particles.push({ x: p.x + PLAYER_W/2, y: p.y + PLAYER_H/2,
+                vx: (Math.random()-0.5)*1.4, vy: (Math.random()-0.5)*1.4, life: 1.0,
+                color: ['#FF71CE','#01CDFE','#FFD700','#39FF14'][i%4] });
+        }
+    } else if (cls === 'archivist') {
+        p.powerType = 'slow'; p.powerActive = 240;
+        UI.addMessage("TIME DILATION ⏳", "special");
+        // Freeze every enemy in sight when activated.
+        const px2 = tileX(), py2 = tileY();
+        game.trolls.forEach(t => {
+            if (Math.abs(t.x - px2) + Math.abs(t.y - py2) <= 8) {
+                applyStatus(t, 'freeze', 240, 1);
+                game.particles.push({ x: t.x, y: t.y, vx: 0, vy: -0.2, life: 1, color: '#5BCEFA' });
+            }
+        });
+    } else if (cls === 'brawler') {
+        tryDash();
+        p.dashTimer = DASH_FRAMES * 2; p.hurtCooldown = 30;
+        UI.addMessage("PRIDE DASH! 🌈", "special");
+    } else if (cls === 'dealer') {
+        p.health = Math.min(p.maxHealth, p.health + 2);
+        p.powerType = 'bump'; p.powerActive = 240;
+        UI.addMessage("HRT BUMP — feeling powerful!", "healing");
+        UI.updateStatus(game);
+    } else if (cls === 'aidworker') {
+        p.powerType = 'aura'; p.powerActive = 480;
+        UI.addMessage("SOLIDARITY AURA — community heals.", "healing");
+    }
 }
 
 function setupControls() {
     const keys = {};
     document.addEventListener('keydown', e => {
+        if (e.repeat) return;
         keys[e.code] = true;
-        
+
+        // Pause toggle works even when a modal is open (so Esc can close us out of stuck state).
+        if (e.code === 'Escape' || e.code === 'KeyP') {
+            const modalOpen = UI.modals.zine.style.display === 'flex' ||
+                              UI.modals.conversation.style.display === 'flex' ||
+                              UI.modals.gameOver.style.display === 'flex' ||
+                              UI.modals.victory.style.display === 'flex' ||
+                              UI.modals.heirSelect.style.display === 'flex' ||
+                              UI.modals.camp.style.display === 'flex';
+            if (!modalOpen) {
+                paused = !paused;
+                e.preventDefault();
+                return;
+            }
+        }
+
         if (UI.modals.zine.style.display === 'flex' || UI.modals.conversation.style.display === 'flex') return;
-        
+        if (paused) return;
+
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-            if (game.player.onGround) {
-                game.player.vy = -12;
+            // Holding Down + jump drops through the one-way platform you're standing on.
+            if ((keys['ArrowDown'] || keys['KeyS']) && game.player.onGround) {
+                game.player.dropThrough = 8;
                 game.player.onGround = false;
-                Audio.playStep();
+                game.player.vy = 1.5;
+            } else if (!tryJump()) {
+                // Out of jumps right now — buffer so a slightly-early press still lands.
+                game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
             }
         }
-        
+
         if (e.code === 'KeyQ') {
-            attackEnemy(game, game.player.facingX, game.player.facingY, 'quick');
+            attackEnemy(game, game.player.facingX, 0, 'quick');
         } else if (e.code === 'KeyE') {
-            attackEnemy(game, game.player.facingX, game.player.facingY, 'power');
+            // Begin charging — holding builds the meter; release in keyup.
+            game.player.chargeAttack = 1;
+            game.player.chargeReady = false;
         } else if (e.code === 'KeyR') {
-            if (game.player.attackCooldown === 0) {
-                game.player.attackCooldown = 5;
-                UI.addMessage("NEON BLAST! 💥", "special");
-                UI.shakeScreen();
-                const dirs = [[0,1], [0,-1], [1,0], [-1,0], [1,1], [-1,-1], [1,-1], [-1,1]];
-                dirs.forEach(d => attackEnemy(game, d[0], d[1], 'blast'));
-            }
-        } else if (e.code === 'Enter') {
+            activateClassPower();
+        } else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+            tryDash();
+        } else if (e.code === 'Enter' || e.code === 'KeyF') {
             interact();
+        } else if (e.code === 'KeyJ') {
+            questLogVisible = !questLogVisible;
         }
-    });
-    
-    document.addEventListener('keyup', e => {
-        keys[e.code] = false;
     });
 
-    // Add horizontal movement to update loop
+    document.addEventListener('keyup', e => {
+        keys[e.code] = false;
+        // Variable jump height: releasing the jump button while still rising
+        // truncates upward velocity, so taps = small hop, holds = full leap.
+        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+            if (game.player.vy < -3.5) game.player.vy *= 0.45;
+        }
+        // Release charge attack — heavy if charged, regular power swing if barely held.
+        if (e.code === 'KeyE' && game.player.chargeAttack > 0) {
+            const charged = game.player.chargeAttack >= 60;
+            const overcharge = game.player.chargeAttack >= 110;
+            if (overcharge) {
+                // Overcharged release — hits in an arc and applies burn to all in front.
+                UI.addMessage("OVERCHARGED STRIKE! 🔥", 'special');
+                UI.shakeScreen();
+                game.screenShake = Math.max(game.screenShake, 0.8);
+                const fx = game.player.facingX || 1;
+                attackEnemy(game, fx, 0, 'power');
+                attackEnemy(game, fx, -1, 'power');
+                attackEnemy(game, fx, 1, 'power');
+            } else if (charged) {
+                attackEnemy(game, game.player.facingX || 1, 0, 'power');
+            } else {
+                attackEnemy(game, game.player.facingX || 1, 0, 'quick');
+            }
+            game.player.chargeAttack = 0;
+            game.player.chargeReady = false;
+        }
+    });
+
+    // Wrap update for held-key horizontal movement
     const originalUpdate = update;
     update = (dt) => {
-        if (keys['ArrowLeft'] || keys['KeyA']) {
-            game.player.vx = -4;
-            game.player.facingX = -1;
-        } else if (keys['ArrowRight'] || keys['KeyD']) {
-            game.player.vx = 4;
-            game.player.facingX = 1;
+        const p = game.player;
+        let speed = 4;
+        if (p.trait && p.trait.id === 'adhd') speed = 5;
+        if (p.traits && p.traits.some(t => t.id === 'chronic')) speed = Math.min(speed, 3);
+
+        if (p.dashTimer <= 0) {
+            if (keys['ArrowLeft'] || keys['KeyA']) {
+                p.vx = -speed;
+                p.facingX = -1;
+            } else if (keys['ArrowRight'] || keys['KeyD']) {
+                p.vx = speed;
+                p.facingX = 1;
+            }
         }
         originalUpdate(dt);
     };
 
-    document.getElementById('up').onclick = () => { if(game.player.onGround) game.player.vy = -12; };
-    document.getElementById('left').onclick = () => { game.player.vx = -4; game.player.facingX = -1; };
-    document.getElementById('right').onclick = () => { game.player.vx = 4; game.player.facingX = 1; };
-    document.getElementById('interact').onclick = interact;
-    document.getElementById('quick-attack').onclick = () => attackEnemy(game, game.player.facingX, game.player.facingY, 'quick');
-    document.getElementById('power-attack').onclick = () => attackEnemy(game, game.player.facingX, game.player.facingY, 'power');
-    
+    // On-screen / touch controls — held-state via pointer events so a finger
+    // resting on Left actually keeps walking left, not just one tap of motion.
+    function bindHold(id, onPress, onRelease) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const press = (e) => {
+            e.preventDefault();
+            el.classList.add('pressed');
+            onPress && onPress();
+        };
+        const release = (e) => {
+            e && e.preventDefault && e.preventDefault();
+            el.classList.remove('pressed');
+            onRelease && onRelease();
+        };
+        // Pointer events handle touch + mouse + pen uniformly on iOS Safari ≥13.
+        el.addEventListener('pointerdown', press);
+        el.addEventListener('pointerup', release);
+        el.addEventListener('pointercancel', release);
+        el.addEventListener('pointerleave', release);
+        // Belt-and-suspenders for older iOS that fire touch but not pointer.
+        el.addEventListener('touchstart', press, { passive: false });
+        el.addEventListener('touchend', release, { passive: false });
+    }
+
+    // Held-state flags drive the wrapped update loop.
+    const touchHeld = { left: false, right: false };
+    bindHold('left',  () => { touchHeld.left = true;  game.player.facingX = -1; },
+                      () => { touchHeld.left = false; });
+    bindHold('right', () => { touchHeld.right = true; game.player.facingX = 1; },
+                      () => { touchHeld.right = false; });
+    bindHold('up', () => {
+        if ((touchHeld.down || keys['ArrowDown'] || keys['KeyS']) && game.player.onGround) {
+            game.player.dropThrough = 8;
+            game.player.onGround = false;
+            game.player.vy = 1.5;
+        } else if (!tryJump()) {
+            game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
+        }
+    }, () => {
+        // Variable jump on touch release too.
+        if (game.player.vy < -3.5) game.player.vy *= 0.45;
+    });
+    bindHold('down', () => { touchHeld.down = true; tryDash(); }, () => { touchHeld.down = false; });
+
+    // Action buttons.
+    bindHold('interact', interact);
+    bindHold('quick-attack', () => attackEnemy(game, game.player.facingX || 1, 0, 'quick'));
+    // Power attack: hold to charge, release to fire (mirrors keyboard E).
+    bindHold('power-attack',
+        () => { game.player.chargeAttack = 1; game.player.chargeReady = false; },
+        () => {
+            if (game.player.chargeAttack <= 0) return;
+            const charged = game.player.chargeAttack >= 60;
+            const overcharge = game.player.chargeAttack >= 110;
+            const fx = game.player.facingX || 1;
+            if (overcharge) {
+                UI.addMessage("OVERCHARGED STRIKE! 🔥", 'special');
+                game.screenShake = Math.max(game.screenShake, 0.8);
+                attackEnemy(game, fx, 0, 'power');
+                attackEnemy(game, fx, -1, 'power');
+                attackEnemy(game, fx, 1, 'power');
+            } else if (charged) {
+                attackEnemy(game, fx, 0, 'power');
+            } else {
+                attackEnemy(game, fx, 0, 'quick');
+            }
+            game.player.chargeAttack = 0;
+            game.player.chargeReady = false;
+        });
+    bindHold('class-power', activateClassPower);
+
+    // Top-row UI buttons.
+    bindHold('pause-btn', () => { paused = !paused; });
+    bindHold('quest-btn', () => { questLogVisible = !questLogVisible; });
+
+    // Hook touch held-state into the per-frame velocity assignment.
+    const updateRefForTouch = () => {
+        const p = game.player;
+        if (p.dashTimer > 0) return;
+        let speed = 4;
+        if (p.trait && p.trait.id === 'adhd') speed = 5;
+        if (p.traits && p.traits.some(t => t.id === 'chronic')) speed = Math.min(speed, 3);
+        if (touchHeld.left)  { p.vx = -speed; p.facingX = -1; }
+        if (touchHeld.right) { p.vx =  speed; p.facingX =  1; }
+    };
+    const prevUpdate = update;
+    update = (dt) => { updateRefForTouch(); prevUpdate(dt); };
+
+    // iOS requires a user gesture to start audio. Resume on first interaction.
+    const unlockAudio = () => {
+        try { Audio.playStep(); } catch (e) { /* no-op */ }
+        document.removeEventListener('pointerdown', unlockAudio);
+        document.removeEventListener('keydown', unlockAudio);
+    };
+    document.addEventListener('pointerdown', unlockAudio, { once: true });
+    document.addEventListener('keydown', unlockAudio, { once: true });
+
+    // Prevent two-finger zoom / double-tap zoom on the canvas.
+    const canvasEl = document.getElementById('game-canvas');
+    canvasEl.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+    canvasEl.addEventListener('gesturestart', e => e.preventDefault());
+
     document.getElementById('victory-restart-btn').onclick = () => location.reload();
     document.getElementById('game-over-continue-btn').onclick = () => {
+        // Record fallen heir into lineage
+        lineage.push({
+            name: document.getElementById('player-name').textContent,
+            className: game.player.classObj ? game.player.classObj.name : '???',
+            traitName: game.player.trait ? game.player.trait.name : 'Standard Issue',
+            depth: game.player.depthReached || game.depth,
+            kills: game.player.kills || 0,
+            scrap: game.player.scrapEarned || 0
+        });
+        // Persist before heir selection so the run is durable even if browser closes mid-pick.
+        saveGame();
         const heirs = generateHeirs();
         UI.showHeirSelection(heirs, (selectedHeir) => {
-            game.player.trait = selectedHeir.trait;
-            document.getElementById('player-name').textContent = selectedHeir.name;
+            applyHeir(selectedHeir);
             startCamp();
         });
     };
+}
+
+function applyHeir(heir) {
+    game.player.trait = heir.trait;
+    game.player.traits = heir.traits || [heir.trait];
+    game.player.classObj = heir.classObj || null;
+    document.getElementById('player-name').textContent = heir.name;
 }
 
 // Ensure setupControls is called once on load, even though initGame does startCamp

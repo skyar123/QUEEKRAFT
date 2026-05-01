@@ -81,15 +81,20 @@ export const UI = {
         this.modals.gameOver.style.display = 'none';
         const optionsDiv = document.getElementById('heir-options');
         optionsDiv.innerHTML = '';
-        
-        heirs.forEach((heir, index) => {
+
+        heirs.forEach((heir) => {
             const card = document.createElement('div');
             card.className = 'heir-card';
+            const traitsHtml = (heir.traits || [heir.trait]).map(t => `
+                <div class="heir-trait">★ ${t.name}</div>
+                <div style="font-size: 12px; color: #aaa; margin-bottom: 6px;">${t.desc}</div>
+            `).join('');
+            const power = heir.classObj ? `<div style="color:#FFD700;font-size:14px;margin-top:6px;">Power: ${heir.classObj.power}</div><div style="font-size:11px;color:#888">${heir.classObj.desc}</div>` : '';
             card.innerHTML = `
                 <div class="heir-name">${heir.name}</div>
                 <div class="heir-class">${heir.className}</div>
-                <div class="heir-trait">Trait: ${heir.trait.name}</div>
-                <div style="font-size: 12px; margin-top: 10px; color: #888;">${heir.trait.desc}</div>
+                ${traitsHtml}
+                ${power}
             `;
             card.onclick = () => {
                 this.modals.heirSelect.style.display = 'none';
@@ -97,12 +102,51 @@ export const UI = {
             };
             optionsDiv.appendChild(card);
         });
-        
+
         this.modals.heirSelect.style.display = 'flex';
     },
 
-    showCamp(gameState, onEnterDungeon, onUpgradeHealth, onUpgradeDamage) {
+    renderLineage(lineage) {
+        let row = document.getElementById('lineage-row');
+        if (!row) {
+            row = document.createElement('div');
+            row.id = 'lineage-row';
+            row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:15px 0;max-height:160px;overflow-y:auto;border:2px dashed var(--punk-purple);padding:10px;';
+            const enterBtn = document.getElementById('enter-dungeon-btn');
+            const heading = document.createElement('div');
+            heading.id = 'lineage-heading';
+            heading.style.cssText = 'text-align:center;color:var(--punk-purple);font-size:18px;margin-top:10px;';
+            heading.textContent = '⚰️ FALLEN LINEAGE ⚰️';
+            enterBtn.parentNode.insertBefore(heading, enterBtn);
+            enterBtn.parentNode.insertBefore(row, enterBtn);
+        }
+        row.innerHTML = '';
+        if (!lineage || lineage.length === 0) {
+            row.innerHTML = '<div style="color:#666;padding:5px;">No fallen heroes yet. Be the first.</div>';
+            return;
+        }
+        lineage.slice(-12).reverse().forEach((entry, i) => {
+            const card = document.createElement('div');
+            card.style.cssText = `
+                border:1px solid var(--punk-cyan);
+                padding:6px 8px;
+                font-size:12px;
+                background:rgba(1,205,254,0.05);
+                min-width:140px;
+            `;
+            card.innerHTML = `
+                <div style="color:var(--punk-pink);font-weight:bold;">${entry.name}</div>
+                <div style="color:#aaa;">${entry.className}</div>
+                <div style="color:var(--punk-cyan);font-size:11px;">${entry.traitName}</div>
+                <div style="color:#666;font-size:11px;margin-top:3px;">D${entry.depth} · ${entry.kills} kills · ${entry.scrap} scrap</div>
+            `;
+            row.appendChild(card);
+        });
+    },
+
+    showCamp(gameState, onEnterDungeon, onUpgradeHealth, onUpgradeDamage, lineage) {
         this.modals.camp.style.display = 'flex';
+        if (lineage) this.renderLineage(lineage);
         
         const updateCampUI = () => {
             document.getElementById('camp-treasures').textContent = gameState.persistent.treasures;

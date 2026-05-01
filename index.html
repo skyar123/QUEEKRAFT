@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>QUEER HACK ++ 2033</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#050505">
+    <title>QUEEKRAFT</title>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style.css">
 </head>
@@ -26,17 +30,22 @@
 
         <div id="controls">
             <div class="dpad-container">
-                <button class="control-btn dpad-btn" id="up"><span>↑</span></button>
-                <button class="control-btn dpad-btn" id="left"><span>←</span></button>
-                <button class="control-btn dpad-btn" id="right"><span>→</span></button>
-                <button class="control-btn dpad-btn" id="down"><span>↓</span></button>
+                <button class="control-btn dpad-btn" id="up" aria-label="Jump"><span>↑</span></button>
+                <button class="control-btn dpad-btn" id="left" aria-label="Move Left"><span>←</span></button>
+                <button class="control-btn dpad-btn" id="right" aria-label="Move Right"><span>→</span></button>
+                <button class="control-btn dpad-btn" id="down" aria-label="Dash / Drop"><span>↓</span></button>
             </div>
             <div class="action-container">
-                <button class="control-btn" id="interact">USE</button>
-                <button class="control-btn" id="quick-attack" style="font-size: 14px">Q-ATK</button>
-                <button class="control-btn" id="power-attack" style="font-size: 14px">E-ATK</button>
+                <button class="control-btn" id="interact" aria-label="Interact">USE</button>
+                <button class="control-btn" id="quick-attack" aria-label="Quick attack">Q</button>
+                <button class="control-btn" id="power-attack" aria-label="Hold to charge heavy attack">E</button>
+                <button class="control-btn" id="class-power" aria-label="Class power">R</button>
             </div>
-            <div id="control-status">WASD/Arrows: Isometric Move | Q/E: Attack | SPACE: Interact</div>
+            <div id="top-buttons">
+                <button class="mini-btn" id="pause-btn" aria-label="Pause">⏸</button>
+                <button class="mini-btn" id="quest-btn" aria-label="Quest log">📋</button>
+            </div>
+            <div id="control-status">Tap dpad to move · ↑ Jump · ↓ Dash · Hold E to charge · R class · ⏸ pause · 📋 quests</div>
         </div>
     </div>
 

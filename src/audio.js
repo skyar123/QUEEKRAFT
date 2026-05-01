@@ -34,5 +34,61 @@ export const Audio = {
     },
     playStep: () => {
         playTone(100, 'triangle', 0.05, 0.05);
+    },
+    playJump: () => {
+        playTone(400, 'square', 0.1, 0.08);
+        setTimeout(() => playTone(700, 'square', 0.07, 0.06), 30);
+    },
+    playDash: () => {
+        playTone(900, 'sawtooth', 0.06, 0.07);
+        setTimeout(() => playTone(500, 'sawtooth', 0.06, 0.07), 30);
+    },
+    playPower: () => {
+        playTone(220, 'square', 0.1, 0.12);
+        setTimeout(() => playTone(330, 'square', 0.12, 0.12), 100);
+        setTimeout(() => playTone(550, 'sine', 0.15, 0.12), 220);
+    },
+    playStairs: () => {
+        playTone(500, 'triangle', 0.1, 0.08);
+        setTimeout(() => playTone(700, 'triangle', 0.1, 0.08), 80);
+        setTimeout(() => playTone(900, 'triangle', 0.15, 0.08), 160);
+    },
+
+    // Hazard SFX — paired with the new tile types in map.js / main.js.
+    playSpike: () => {
+        // Sharp metallic stab — short high burst then a low thud.
+        playTone(1200, 'square',   0.04, 0.18);
+        setTimeout(() => playTone(180, 'sawtooth', 0.12, 0.20), 30);
+    },
+    playBoing: () => {
+        // Cartoonish trampoline launch — rising sine with a wiggle.
+        const start = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(220, start);
+        osc.frequency.exponentialRampToValueAtTime(880, start + 0.18);
+        osc.frequency.exponentialRampToValueAtTime(440, start + 0.32);
+        gain.gain.setValueAtTime(0.18, start);
+        gain.gain.exponentialRampToValueAtTime(0.01, start + 0.34);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(start); osc.stop(start + 0.36);
+    },
+    playCrumble: () => {
+        // Two staggered noise-ish thuds — falling rubble.
+        playTone(120, 'square', 0.18, 0.12);
+        setTimeout(() => playTone(80,  'square', 0.22, 0.12), 90);
+        setTimeout(() => playTone(60,  'sawtooth', 0.18, 0.10), 200);
+    },
+    playSlip: () => {
+        // Short whoosh for stepping onto ice — used sparingly to avoid spam.
+        playTone(1800, 'sine', 0.06, 0.05);
+        setTimeout(() => playTone(900, 'sine', 0.08, 0.04), 40);
+    },
+    playBossRoar: () => {
+        // Phase-2 trigger: deep growl + dissonant overtone.
+        playTone(70,  'sawtooth', 0.6, 0.22);
+        playTone(110, 'square',   0.6, 0.10);
+        setTimeout(() => playTone(58, 'sawtooth', 0.4, 0.18), 200);
     }
 };
