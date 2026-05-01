@@ -1464,17 +1464,9 @@ function draw() {
                 }
             } else if (r.type === 'player') {
                 if (r.entity.hurtCooldown % 2 === 0) {
-                    // DRAW PLAYER
-                    if (imgReady(images.player)) {
-                        const bob = Math.sin(game.animFrame * 0.1) * 3;
-                        ctx.save();
-                        ctx.translate(drawX, drawY - 20 + bob);
-                        if (r.entity.facingX < 0) ctx.scale(-1, 1);
-                        ctx.drawImage(images.player, -24, -40, 48, 48);
-                        ctx.restore();
-                    } else {
-                        const bob = Math.sin(game.animFrame * 0.4) * 2;
-                        const pal = PALETTES[r.entity.colorPalette || 0];
+                    // DRAW PROCEDURAL PUNK PLAYER
+                    const bob = Math.sin(game.animFrame * 0.4) * 2;
+                    const pal = PALETTES[r.entity.colorPalette || 0];
                         
                         // Get body and accent colors (cycle for rainbow)
                         let bodyColor, accentColor;
@@ -1535,7 +1527,6 @@ function draw() {
                         const legSpread = Math.sin(game.animFrame * 0.6) * 3;
                         ctx.fillRect(drawX - 6 - legSpread, drawY - 8 + bob, 5, 10);
                         ctx.fillRect(drawX + 1 + legSpread, drawY - 8 + bob, 5, 10);
-                    }
                 }
             }
             ctx.shadowBlur = 0;
@@ -1973,6 +1964,10 @@ function setupControls() {
 
         if (UI.modals.zine.style.display === 'flex' || UI.modals.conversation.style.display === 'flex') return;
         if (paused) return;
+
+        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'ArrowDown' || e.code === 'KeyS') {
+            e.preventDefault(); // Prevent browser scrolling which looks like a game freeze!
+        }
 
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
             // Holding Down + jump drops through the one-way platform you're standing on.
