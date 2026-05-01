@@ -52,6 +52,9 @@ const game = {
     zines: 0,
     treasures: 0,
     historicalFigures: 0,
+    isPaused: false,
+    hitStop: 0, // Frame freeze counter
+    particles: [],
     map: {},
     items: [],
     npcs: [],
@@ -64,7 +67,6 @@ const game = {
     // Smooth camera state — lerps toward target with look-ahead based on facing/velocity.
     camX: 0, camY: 0,
     camInitialized: false,
-    particles: [],
     floatingText: [],
     attackAnim: null,
     animFrame: 0,
@@ -170,10 +172,11 @@ function generateHeirs() {
 
 // === Asset manifest ===
 // Drop a file at the listed path and it picks up automatically.
-// To swap in Cendric2 PNGs later: keep the keys, change the paths.
 const ASSET_PATHS = {
     tex_floor: '/images/tex_floor.png',
     tex_wall:  '/images/tex_wall.png',
+    player:    '/images/spr_player.png',
+    enemy:     '/images/spr_enemy.png',
     boss:      '/images/spr_enemy.png',  // 1024x1024 transparent demon — boss only
     chest:     '/images/spr_chest.png',  // transparent neon chest — treasure / gender-reveal
     marsha:    '/images/spr_marsha.png'  // transparent Marsha — historical NPC
@@ -207,11 +210,35 @@ function initGame() {
     canvas.width = game.camera.width * T;
     canvas.height = game.camera.height * T;
     
-    patterns.floor = ctx.createPattern(images.tex_floor, 'repeat');
-    patterns.wall = ctx.createPattern(images.tex_wall, 'repeat');
+    if (imgReady(images.tex_floor)) patterns.floor = ctx.createPattern(images.tex_floor, 'repeat');
+    if (imgReady(images.tex_wall)) patterns.wall = ctx.createPattern(images.tex_wall, 'repeat');
     
     // Start by showing the camp screen for the very first run, or directly start
     startCamp();
+}
+
+function spawnParticle(x, y, color, count = 5) {
+    for (let i = 0; i < count; i++) {
+        game.particles.push({
+            x, y,
+            vx: (Math.random() - 0.5) * 10,
+            vy: (Math.random() - 0.5) * 10 - 2,
+            life: 1.0,
+            color: color,
+            size: 2 + Math.random() * 3
+        });
+    }
+}
+
+function updateParticles() {
+    for (let i = game.particles.length - 1; i >= 0; i--) {
+        const p = game.particles[i];
+        p.x += p.vx * 0.1;
+        p.y += p.vy * 0.1;
+        p.vy += 0.4; // gravity
+        p.life -= 0.04;
+        if (p.life <= 0) game.particles.splice(i, 1);
+    }
 }
 
 function startCamp() {
@@ -244,6 +271,34 @@ function startCamp() {
         },
         lineage
     );
+}
+
+async function descend() {
+    UI.addMessage("Descending into the deeper archives...", "special");
+    
+    // Depth Transition Effect
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:black;z-index:9999;opacity:0;transition:opacity 0.5s;display:flex;align-items:center;justify-content:center;color:#5BCEFA;font-size:32px;text-shadow:0 0 20px #5BCEFA;';
+    overlay.textContent = `LEVEL ${game.depth + 1}`;
+    document.body.appendChild(overlay);
+    
+    // Fade in
+    await new Promise(r => {
+        overlay.offsetWidth; // reflow
+        overlay.style.opacity = '1';
+        setTimeout(r, 600);
+    });
+
+    game.depth++;
+    generateMap(game);
+    game.player.x = game.spawnX || 5;
+    game.player.y = game.spawnY || 5;
+    game.camInitialized = false;
+    UI.updateStatus(game);
+    
+    // Fade out
+    overlay.style.opacity = '0';
+    setTimeout(() => overlay.remove(), 600);
 }
 
 function startDungeon() {
@@ -500,15 +555,7 @@ function interact() {
     const py = tileY();
 
     if (game.map[`${px},${py}`] === '>') {
-        game.depth++;
-        game.player.depthReached = Math.max(game.player.depthReached, game.depth);
-        UI.addMessage(`Descending to level ${game.depth}...`);
-        Audio.playStairs && Audio.playStairs();
-        generateMap(game);
-        lastPromptTile = null;
-        updateFOV();
-        saveGame();
-        draw();
+        descend();
         return;
     }
 
@@ -547,7 +594,7 @@ function interact() {
             game.treasures++;
             game.persistent.treasures++;
             game.player.scrapEarned = (game.player.scrapEarned || 0) + 1;
-            UI.addMessage(`Picked up ${item.name}!`, "treasure");
+            UI.addMessage(`Picked up ${item.name}!`, 'treasure');
             Audio.playLoot();
         } else if (item.type === 'gender-reveal') {
             // EXPLORATION MECHANIC: Gender Reveal Chest
@@ -597,13 +644,21 @@ function checkPickups() {
 
 function drawTile(ctx, sx, sy, color, isWall, glowColor, pattern) {
     ctx.fillStyle = pattern || color;
-    if (glowColor) { ctx.shadowBlur = 6; ctx.shadowColor = glowColor; }
+    // Removed shadowBlur - performance killer!
     ctx.fillRect(sx, sy, T, T);
-    ctx.shadowBlur = 0;
     if (isWall) {
         ctx.strokeStyle = glowColor || '#333';
         ctx.lineWidth = 1;
         ctx.strokeRect(sx + 0.5, sy + 0.5, T - 1, T - 1);
+        
+        // Faux-glow: draw a semi-transparent stroke if visible
+        if (glowColor) {
+            ctx.globalAlpha = 0.2;
+            ctx.strokeStyle = glowColor;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(sx - 1, sy - 1, T + 2, T + 2);
+            ctx.globalAlpha = 1.0;
+        }
     }
 }
 
@@ -617,7 +672,7 @@ let paused = false;
 let questLogVisible = false;
 // Set true the first time generateMap finishes so physics doesn't run against
 // an empty map (which would let the player free-fall through "nothing" while
-// the camp modal is still open). Without this, slow asset loads on a real
+// the camp modal is open). Without this, slow asset loads on a real
 // machine can produce the "fell through map / hovering in space" glitch.
 let gameStarted = false;
 let showFps = false;
@@ -627,8 +682,16 @@ function gameLoop(time) {
     const real = (time - lastTime) / 1000;
     lastTime = time;
 
+    physicsAccumulator += Math.min(MAX_FRAME_DT, real);
+    
+    // Handle Hit Stop (frame freeze)
+    if (game.hitStop > 0) {
+        game.hitStop--;
+        requestAnimationFrame(gameLoop);
+        return;
+    }
+
     if (!paused && gameStarted) {
-        physicsAccumulator += Math.min(MAX_FRAME_DT, real || 0);
         // Cap to 4 sub-steps per frame to avoid catch-up storms (250ms ceiling).
         let steps = 0;
         while (physicsAccumulator >= FIXED_DT && steps < 4) {
@@ -647,6 +710,7 @@ function gameLoop(time) {
         fpsSamples.push(real);
         if (fpsSamples.length > 60) fpsSamples.shift();
     }
+    updateParticles();
     requestAnimationFrame(gameLoop);
 }
 requestAnimationFrame(gameLoop);
@@ -668,14 +732,14 @@ const stars = [];
     }
 })();
 
-// === Platformer physics constants ===
-const PLAYER_W = 0.7;
+// === Platformer physics constants (Rogue Legacy inspired) ===
+const PLAYER_W = 0.65; // Slightly narrower for better platforming
 const PLAYER_H = 0.9;
-const GRAVITY = 0.55;
-const TERMINAL_VY = 14;
-const JUMP_SPEED = -10.5;
-const COYOTE_FRAMES = 6;
-const JUMP_BUFFER_FRAMES = 6;
+const GRAVITY = 0.48; // Lighter gravity for better air control
+const TERMINAL_VY = 12;
+const JUMP_SPEED = -11.5; // Stronger jump
+const COYOTE_FRAMES = 8;
+const JUMP_BUFFER_FRAMES = 8;
 const DASH_FRAMES = 8;
 const DASH_COOLDOWN = 30;
 const DASH_SPEED = 0.55;
@@ -868,7 +932,8 @@ function spawnDust(x, y, count, color) {
             x, y,
             vx: (Math.random() - 0.5) * 0.4,
             vy: -Math.random() * 0.3,
-            life: 0.8, color
+            life: 0.8, color,
+            size: 2 + Math.random() * 2
         });
     }
 }
@@ -895,6 +960,12 @@ function update(dt) {
         p.chargeReady = true;
         // Tiny visual confirmation when ready
         spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H * 0.5, 6, '#FFD700');
+    }
+
+    // Variable Jump: If jump key is released while rising, cut the vertical velocity.
+    // This allows for short hops vs high jumps (Rogue Legacy feel).
+    if (p.vy < -3 && !keys['Space'] && !keys['ArrowUp'] && !keys['KeyW']) {
+        p.vy *= 0.5;
     }
 
     // Resolve buffered jump (only if it succeeds, consume it)
@@ -946,6 +1017,28 @@ function update(dt) {
         }
     }
 
+    // Combat logic
+    if (game.attackAnim) {
+        const anim = game.attackAnim;
+        for (const troll of game.trolls) {
+            const dist = Math.abs(troll.x - anim.x) + Math.abs(troll.y - anim.y);
+            if (dist < 1.0 && anim.life > 6 && anim.life < 12) {
+                troll.health -= game.player.baseDamage;
+                troll.vx += anim.dx * 12; // Knockback
+                troll.vy -= 4;
+                game.hitStop = 8;
+                game.screenShake = 0.8;
+                UI.shakeScreen();
+                Audio.playHit && Audio.playHit();
+                spawnParticle(troll.x, troll.y, '#FF0040', 8);
+                if (troll.health <= 0) {
+                    game.trolls = game.trolls.filter(t => t !== troll);
+                    game.player.kills++;
+                }
+            }
+        }
+    }
+
     // Stomp-to-kill: falling onto an enemy from above damages it and bounces
     // the player. Bosses and gatekeepers are too sturdy to stomp.
     if (p.vy >= 2.0) {
@@ -961,15 +1054,7 @@ function update(dt) {
                 UI.addMessage(`Stomp! ${troll.enemyType} -2`, 'combat');
                 Audio.playHit();
                 game.screenShake = Math.max(game.screenShake, 0.6);
-                for (let i = 0; i < 12; i++) {
-                    game.particles.push({
-                        x: troll.x + 0.5, y: troll.y,
-                        vx: (Math.random() - 0.5) * 0.4,
-                        vy: -Math.random() * 0.3,
-                        life: 1.0,
-                        color: ['#FFD700','#FF71CE','#FFFFFF'][i % 3]
-                    });
-                }
+                spawnParticle(troll.x, troll.y, '#FFD700', 12);
                 if (troll.health <= 0) {
                     UI.addMessage(`Stomped ${troll.enemyType}!`, 'victory');
                     game.trolls = game.trolls.filter(t => t !== troll);
@@ -1035,21 +1120,20 @@ function draw() {
         game.screenShake = 0;
     }
 
-    // Parallax starfield BEHIND the world (each layer scrolls at its own depth).
+    // Parallax starfield BEHIND the world
     for (const s of stars) {
         const wrapW = canvas.width + 40;
         const wrapH = canvas.height + 40;
         const x = ((s.x * wrapW + game.camX * s.layer) % wrapW + wrapW) % wrapW - 20;
         const y = ((s.y * wrapH + game.camY * s.layer) % wrapH + wrapH) % wrapH - 20;
         const tw = 0.35 + Math.sin(game.animFrame * 0.04 + s.phase) * 0.25;
+        
         ctx.globalAlpha = tw * s.layer * 3.5;
         ctx.fillStyle = s.color;
-        ctx.shadowBlur = 6;
-        ctx.shadowColor = s.color;
+        // Removed shadowBlur from stars - huge performance save
         ctx.fillRect(x, y, s.size, s.size);
     }
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
 
     if (isVertigo) {
         ctx.save();
@@ -1123,12 +1207,9 @@ function draw() {
                 if (r.isVisible) {
                     ctx.globalAlpha = 1.0;
                     ctx.fillStyle = '#FF71CE';
-                    ctx.shadowBlur = 14; ctx.shadowColor = '#FF71CE';
                     ctx.fillRect(sx + 2, sy + 4, T - 4, T - 12);
                     ctx.fillStyle = '#FFD700';
-                    ctx.shadowColor = '#FFD700';
                     ctx.fillRect(sx + 2, sy + 4, T - 4, 3);
-                    ctx.shadowBlur = 0;
                     // Springs
                     ctx.strokeStyle = '#FFD700';
                     ctx.lineWidth = 1;
@@ -1141,12 +1222,15 @@ function draw() {
                 }
             } else {
                 const floorColor = r.isVisible ? '#0a0a0a' : '#030303';
-                const glowColor = r.isVisible ? 'rgba(1,205,254,0.15)' : null;
+                const glowColor = r.isVisible ? 'rgba(1,205,254,0.3)' : null;
                 drawTile(ctx, sx, sy, floorColor, false, glowColor, r.isVisible ? patterns.floor : null);
                 if (r.tile === '>') {
                     ctx.globalAlpha = 1.0;
                     ctx.fillStyle = '#01CDFE';
-                    ctx.shadowBlur = 20; ctx.shadowColor = '#01CDFE';
+                    // Faux-glow arc
+                    ctx.globalAlpha = 0.3;
+                    ctx.beginPath(); ctx.arc(sx + T/2, sy + T/2, 12, 0, Math.PI*2); ctx.fill();
+                    ctx.globalAlpha = 1.0;
                     ctx.beginPath(); ctx.arc(sx + T/2, sy + T/2, 8, 0, Math.PI*2); ctx.fill();
                     ctx.shadowBlur = 0;
                 } else if (r.tile === '=') {
@@ -1185,7 +1269,6 @@ function draw() {
                     // Spikes — pointed teeth glowing red along the top of the tile.
                     ctx.globalAlpha = 1.0;
                     ctx.fillStyle = '#C0C0C0';
-                    ctx.shadowBlur = 10; ctx.shadowColor = '#FF0040';
                     const teeth = 4;
                     const tw = (T - 4) / teeth;
                     for (let s = 0; s < teeth; s++) {
@@ -1196,7 +1279,6 @@ function draw() {
                         ctx.closePath();
                         ctx.fill();
                     }
-                    ctx.shadowBlur = 0;
                 }
             }
         } else {
@@ -1204,24 +1286,19 @@ function draw() {
             const drawX = sx + T / 2;
             const drawY = sy + T;
             
-            ctx.shadowBlur = 20;
-            
             if (r.type === 'item') {
                 if (r.entity.type === 'gender-reveal') {
-                    // Pulsing chest — cycles pink/blue glow each beat. Use spr_chest if loaded.
+                    // Pulsing chest
                     const pulse = Math.sin(game.animFrame * 0.18) * 3;
                     const flick = (game.animFrame % 8 < 4) ? '#FF71CE' : '#5BCEFA';
                     if (imgReady(images.chest)) {
-                        ctx.shadowColor = flick;
-                        ctx.shadowBlur = 18;
                         ctx.drawImage(images.chest, drawX - 18, drawY - 28 + pulse, 36, 28);
-                        ctx.shadowBlur = 0;
                     } else {
-                        ctx.fillStyle = flick; ctx.shadowColor = flick;
+                        ctx.fillStyle = flick;
                         ctx.beginPath(); ctx.arc(drawX, drawY - 8 + pulse, 8, 0, Math.PI*2); ctx.fill();
                     }
                 } else if (r.entity.type === 'zine') {
-                    ctx.fillStyle = '#FFFFFF'; ctx.shadowColor = '#FFFFFF';
+                    ctx.fillStyle = '#FFFFFF';
                     const bob = Math.sin(game.animFrame * 0.3) * 2;
                     ctx.fillRect(drawX - 6, drawY - 14 + bob, 12, 14);
                     ctx.fillStyle = '#FF71CE';
@@ -1229,20 +1306,16 @@ function draw() {
                     ctx.fillRect(drawX - 4, drawY - 8 + bob, 8, 2);
                 } else if (r.entity.type === 'healing') {
                     const bob = Math.sin(game.animFrame * 0.4) * 2;
-                    ctx.fillStyle = '#39FF14'; ctx.shadowColor = '#39FF14';
+                    ctx.fillStyle = '#39FF14';
                     // Draw a cross/plus
                     ctx.fillRect(drawX - 2, drawY - 12 + bob, 4, 10);
                     ctx.fillRect(drawX - 5, drawY - 8 + bob, 10, 4);
                 } else {
-                    // Treasure / Salvaged Scrap → small neon chest sprite when available.
                     const bob = Math.sin(game.animFrame * 0.3) * 1;
                     if (imgReady(images.chest)) {
-                        ctx.shadowColor = '#FFD700';
-                        ctx.shadowBlur = 12;
                         ctx.drawImage(images.chest, drawX - 12, drawY - 20 + bob, 24, 20);
-                        ctx.shadowBlur = 0;
                     } else {
-                        ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700';
+                        ctx.fillStyle = '#FFD700';
                         ctx.fillRect(drawX - 8, drawY - 10 + bob, 16, 10);
                         ctx.fillStyle = '#FF71CE';
                         ctx.fillRect(drawX - 1, drawY - 8 + bob, 2, 6);
@@ -1251,30 +1324,22 @@ function draw() {
             } else if (r.type === 'npc') {
                 const bob = Math.sin(game.animFrame * 0.3) * 2;
                 if (imgReady(images.marsha)) {
-                    // Cendric-style portrait sprite (transparent PNG of Marsha P. Johnson).
-                    const sw = 44, sh = 56;
-                    ctx.shadowColor = '#FF71CE';
-                    ctx.shadowBlur = 16;
-                    ctx.drawImage(images.marsha, drawX - sw/2, drawY - sh + bob, sw, sh);
-                    ctx.shadowBlur = 0;
-                    // Floating "!" beacon so player knows it's interactable.
+                    const sw = 44, h = 56;
+                    ctx.drawImage(images.marsha, drawX - sw/2, drawY - h + bob, sw, h);
                     ctx.fillStyle = '#FFD700';
-                    ctx.shadowColor = '#FFD700';
-                    ctx.shadowBlur = 8;
                     ctx.font = 'bold 14px VT323';
                     ctx.textAlign = 'center';
-                    ctx.fillText('!', drawX, drawY - sh - 4 + bob);
+                    ctx.fillText('!', drawX, drawY - h - 4 + bob);
                     ctx.textAlign = 'left';
-                    ctx.shadowBlur = 0;
                 } else {
-                    ctx.fillStyle = '#B967DB'; ctx.shadowColor = '#B967DB';
+                    ctx.fillStyle = '#B967DB';
                     ctx.beginPath();
                     ctx.roundRect(drawX - 8, drawY - 28 + bob, 16, 20, 4);
                     ctx.fill();
                     ctx.beginPath();
                     ctx.arc(drawX, drawY - 32 + bob, 7, 0, Math.PI*2);
                     ctx.fill();
-                    ctx.fillStyle = '#FF71CE'; ctx.shadowColor = '#FF71CE';
+                    ctx.fillStyle = '#FF71CE';
                     for (let f = 0; f < 5; f++) {
                         const fa = (f / 5) * Math.PI;
                         ctx.beginPath();
@@ -1287,105 +1352,102 @@ function draw() {
                 const et = r.entity.enemyType || 'troll';
                 let size = 20, h = 24;
                 
-                if (et === 'troll') {
-                    ctx.fillStyle = '#FF0000'; ctx.shadowColor = '#FF0000';
-                    ctx.fillRect(drawX - 10, drawY - h + bob, size, h);
-                    ctx.fillStyle = '#FFF';
-                    ctx.fillRect(drawX - 6, drawY - h + 4 + bob, 4, 4);
-                    ctx.fillRect(drawX + 2, drawY - h + 4 + bob, 4, 4);
-                } else if (et === 'wraith') {
-                    // Ghostly triangle shape that flickers
-                    ctx.globalAlpha = 0.6 + Math.sin(game.animFrame * 0.8) * 0.3;
-                    ctx.fillStyle = '#39FF14'; ctx.shadowColor = '#39FF14';
-                    ctx.beginPath();
-                    ctx.moveTo(drawX, drawY - 30 + bob);
-                    ctx.lineTo(drawX + 12, drawY + bob);
-                    ctx.lineTo(drawX - 12, drawY + bob);
-                    ctx.closePath(); ctx.fill();
-                    ctx.fillStyle = '#000';
-                    ctx.beginPath(); ctx.arc(drawX - 3, drawY - 18 + bob, 2, 0, Math.PI*2); ctx.fill();
-                    ctx.beginPath(); ctx.arc(drawX + 3, drawY - 18 + bob, 2, 0, Math.PI*2); ctx.fill();
-                    ctx.globalAlpha = 1;
-                } else if (et === 'gatekeeper') {
-                    size = 28; h = 30;
-                    ctx.fillStyle = '#FFB000'; ctx.shadowColor = '#FFB000';
-                    ctx.fillRect(drawX - 14, drawY - h + bob, size, h);
-                    // Shield
-                    ctx.fillStyle = '#8B4513';
-                    ctx.fillRect(drawX - 16, drawY - 20 + bob, 6, 16);
-                    ctx.fillStyle = '#FFF';
-                    ctx.fillRect(drawX - 8, drawY - h + 6 + bob, 5, 5);
-                    ctx.fillRect(drawX + 4, drawY - h + 6 + bob, 5, 5);
-                } else if (et === 'concern') {
-                    ctx.fillStyle = '#8A2BE2'; ctx.shadowColor = '#8A2BE2';
-                    ctx.beginPath();
-                    ctx.roundRect(drawX - 10, drawY - 24 + bob, 20, 24, 10);
-                    ctx.fill();
-                    // "?" on face
-                    ctx.fillStyle = '#FFF'; ctx.font = 'bold 14px VT323';
-                    ctx.fillText('?', drawX - 4, drawY - 8 + bob);
-                } else if (et === 'swarm') {
-                    // Tiny scuttler — dark cloud with eyes
-                    size = 14; h = 14;
-                    ctx.fillStyle = '#330033'; ctx.shadowColor = '#FF00FF';
-                    ctx.beginPath();
-                    ctx.arc(drawX, drawY - 7 + bob, 7, 0, Math.PI*2);
-                    ctx.fill();
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.fillRect(drawX - 3, drawY - 8 + bob, 2, 2);
-                    ctx.fillRect(drawX + 1, drawY - 8 + bob, 2, 2);
-                } else if (et === 'bigot') {
-                    // Hostile face on a megaphone-shaped torso
-                    ctx.fillStyle = '#A52A2A'; ctx.shadowColor = '#FF4500';
-                    ctx.fillRect(drawX - 9, drawY - 24 + bob, 18, 24);
-                    // Megaphone
-                    ctx.fillStyle = '#444';
-                    ctx.beginPath();
-                    ctx.moveTo(drawX + 9, drawY - 18 + bob);
-                    ctx.lineTo(drawX + 18, drawY - 22 + bob);
-                    ctx.lineTo(drawX + 18, drawY - 8 + bob);
-                    ctx.lineTo(drawX + 9, drawY - 12 + bob);
-                    ctx.closePath();
-                    ctx.fill();
-                    ctx.fillStyle = '#FF0000';
-                    ctx.fillRect(drawX - 6, drawY - 20 + bob, 3, 3);
-                    ctx.fillRect(drawX + 3, drawY - 20 + bob, 3, 3);
-                } else if (et === 'police') {
-                    ctx.fillStyle = '#0000FF'; ctx.shadowColor = '#0000FF';
-                    ctx.fillRect(drawX - 10, drawY - 26 + bob, 20, 26);
-                    // Badge
-                    ctx.fillStyle = '#FFD700';
-                    ctx.beginPath(); ctx.arc(drawX, drawY - 16 + bob, 4, 0, Math.PI*2); ctx.fill();
-                    // Red eyes
-                    ctx.fillStyle = '#FF0000';
-                    ctx.fillRect(drawX - 6, drawY - 24 + bob, 4, 3);
-                    ctx.fillRect(drawX + 2, drawY - 24 + bob, 4, 3);
-                } else if (et === 'boss') {
-                    size = 64; h = 72;
-                    const enraged = r.entity.bossPhase === 2;
-                    const pulse = Math.sin(game.animFrame * (enraged ? 0.55 : 0.3)) * (enraged ? 7 : 4);
-                    if (imgReady(images.boss)) {
-                        // Spr_enemy.png is a transparent boss-quality demon sprite.
-                        ctx.shadowColor = enraged ? '#FF0040' : '#FF00FF';
-                        ctx.shadowBlur = (enraged ? 26 : 18) + pulse;
-                        ctx.drawImage(images.boss, drawX - size/2, drawY - h + bob, size, h);
-                        if (enraged) {
-                            // Red rage overlay — multiplied so the demon stays readable.
-                            ctx.save();
-                            ctx.globalCompositeOperation = 'multiply';
-                            ctx.globalAlpha = 0.45;
-                            ctx.fillStyle = '#FF0040';
-                            ctx.fillRect(drawX - size/2, drawY - h + bob, size, h);
-                            ctx.restore();
-                        }
-                        ctx.shadowBlur = 0;
-                    } else {
-                        ctx.fillStyle = '#FF00FF'; ctx.shadowColor = '#FF00FF';
-                        ctx.shadowBlur = 20 + pulse;
-                        ctx.fillRect(drawX - size/2, drawY - h + bob, size, h);
+                if (imgReady(images.enemy)) {
+                    ctx.drawImage(images.enemy, drawX - size, drawY - h + bob, size * 2, h);
+                } else {
+                    if (et === 'troll') {
+                        ctx.fillStyle = '#FF0000';
+                        ctx.fillRect(drawX - 10, drawY - h + bob, size, h);
                         ctx.fillStyle = '#FFF';
-                        ctx.fillRect(drawX - 12, drawY - h + 10 + bob, 8, 6);
-                        ctx.fillRect(drawX + 4, drawY - h + 10 + bob, 8, 6);
+                        ctx.fillRect(drawX - 6, drawY - h + 4 + bob, 4, 4);
+                        ctx.fillRect(drawX + 2, drawY - h + 4 + bob, 4, 4);
+                    } else if (et === 'wraith') {
+                        // Ghostly triangle shape that flickers
+                        ctx.globalAlpha = 0.6 + Math.sin(game.animFrame * 0.8) * 0.3;
+                        ctx.fillStyle = '#39FF14';
+                        ctx.beginPath();
+                        ctx.moveTo(drawX, drawY - 30 + bob);
+                        ctx.lineTo(drawX + 12, drawY + bob);
+                        ctx.lineTo(drawX - 12, drawY + bob);
+                        ctx.closePath(); ctx.fill();
+                        ctx.fillStyle = '#000';
+                        ctx.beginPath(); ctx.arc(drawX - 3, drawY - 18 + bob, 2, 0, Math.PI*2); ctx.fill();
+                        ctx.beginPath(); ctx.arc(drawX + 3, drawY - 18 + bob, 2, 0, Math.PI*2); ctx.fill();
+                        ctx.globalAlpha = 1;
+                    } else if (et === 'gatekeeper') {
+                        size = 28; h = 30;
+                        ctx.fillStyle = '#FFB000';
+                        ctx.fillRect(drawX - 14, drawY - h + bob, size, h);
+                        // Shield
+                        ctx.fillStyle = '#8B4513';
+                        ctx.fillRect(drawX - 16, drawY - 20 + bob, 6, 16);
+                        ctx.fillStyle = '#FFF';
+                        ctx.fillRect(drawX - 8, drawY - h + 6 + bob, 5, 5);
+                        ctx.fillRect(drawX + 4, drawY - h + 6 + bob, 5, 5);
+                    } else if (et === 'concern') {
+                        ctx.fillStyle = '#8A2BE2';
+                        ctx.beginPath();
+                        ctx.roundRect(drawX - 10, drawY - 24 + bob, 20, 24, 10);
+                        ctx.fill();
+                        // "?" on face
+                        ctx.fillStyle = '#FFF'; ctx.font = 'bold 14px VT323';
+                        ctx.fillText('?', drawX - 4, drawY - 8 + bob);
+                    } else if (et === 'swarm') {
+                        // Tiny scuttler — dark cloud with eyes
+                        size = 14; h = 14;
+                        ctx.fillStyle = '#330033';
+                        ctx.beginPath();
+                        ctx.arc(drawX, drawY - 7 + bob, 7, 0, Math.PI*2);
+                        ctx.fill();
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(drawX - 3, drawY - 8 + bob, 2, 2);
+                        ctx.fillRect(drawX + 1, drawY - 8 + bob, 2, 2);
+                    } else if (et === 'bigot') {
+                        // Hostile face on a megaphone-shaped torso
+                        ctx.fillStyle = '#A52A2A';
+                        ctx.fillRect(drawX - 9, drawY - 24 + bob, 18, 24);
+                        // Megaphone
+                        ctx.fillStyle = '#444';
+                        ctx.beginPath();
+                        ctx.moveTo(drawX + 9, drawY - 18 + bob);
+                        ctx.lineTo(drawX + 18, drawY - 22 + bob);
+                        ctx.lineTo(drawX + 18, drawY - 8 + bob);
+                        ctx.lineTo(drawX + 9, drawY - 12 + bob);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.fillStyle = '#FF0000';
+                        ctx.fillRect(drawX - 6, drawY - 20 + bob, 3, 3);
+                        ctx.fillRect(drawX + 3, drawY - 20 + bob, 3, 3);
+                    } else if (et === 'police') {
+                        ctx.fillStyle = '#0000FF';
+                        ctx.fillRect(drawX - 10, drawY - 26 + bob, 20, 26);
+                        // Badge
+                        ctx.fillStyle = '#FFD700';
+                        ctx.beginPath(); ctx.arc(drawX, drawY - 16 + bob, 4, 0, Math.PI*2); ctx.fill();
+                        // Red eyes
+                        ctx.fillStyle = '#FF0000';
+                        ctx.fillRect(drawX - 6, drawY - 24 + bob, 4, 3);
+                        ctx.fillRect(drawX + 2, drawY - 24 + bob, 4, 3);
+                    } else if (et === 'boss') {
+                        size = 64; h = 72;
+                        const enraged = r.entity.bossPhase === 2;
+                        if (imgReady(images.boss)) {
+                            ctx.drawImage(images.boss, drawX - size/2, drawY - h + bob, size, h);
+                            if (enraged) {
+                                ctx.save();
+                                ctx.globalCompositeOperation = 'multiply';
+                                ctx.globalAlpha = 0.45;
+                                ctx.fillStyle = '#FF0040';
+                                ctx.fillRect(drawX - size/2, drawY - h + bob, size, h);
+                                ctx.restore();
+                            }
+                        } else {
+                            ctx.fillStyle = '#FF00FF';
+                            ctx.fillRect(drawX - size/2, drawY - h + bob, size, h);
+                            ctx.fillStyle = '#FFF';
+                            ctx.fillRect(drawX - 12, drawY - h + 10 + bob, 8, 6);
+                            ctx.fillRect(drawX + 4, drawY - h + 10 + bob, 8, 6);
+                        }
                     }
                 }
                 
@@ -1422,68 +1484,78 @@ function draw() {
                 }
             } else if (r.type === 'player') {
                 if (r.entity.hurtCooldown % 2 === 0) {
-                    const bob = Math.sin(game.animFrame * 0.4) * 2;
-                    const pal = PALETTES[r.entity.colorPalette || 0];
-                    
-                    // Get body and accent colors (cycle for rainbow)
-                    let bodyColor, accentColor;
-                    if (pal.colors) {
-                        // Progress pride: cycle through all flag colors
-                        bodyColor = pal.colors[game.animFrame % pal.colors.length];
-                        accentColor = pal.colors[(game.animFrame + 3) % pal.colors.length];
+                    // DRAW PLAYER
+                    if (imgReady(images.player)) {
+                        const bob = Math.sin(game.animFrame * 0.1) * 3;
+                        ctx.save();
+                        ctx.translate(drawX, drawY - 20 + bob);
+                        if (r.entity.facingX < 0) ctx.scale(-1, 1);
+                        ctx.drawImage(images.player, -24, -40, 48, 48);
+                        ctx.restore();
                     } else {
-                        bodyColor = pal.body;
-                        accentColor = pal.accent;
+                        const bob = Math.sin(game.animFrame * 0.4) * 2;
+                        const pal = PALETTES[r.entity.colorPalette || 0];
+                        
+                        // Get body and accent colors (cycle for rainbow)
+                        let bodyColor, accentColor;
+                        if (pal.colors) {
+                            // Progress pride: cycle through all flag colors
+                            bodyColor = pal.colors[game.animFrame % pal.colors.length];
+                            accentColor = pal.colors[(game.animFrame + 3) % pal.colors.length];
+                        } else {
+                            bodyColor = pal.body;
+                            accentColor = pal.accent;
+                        }
+                        
+                        // Ground glow circle for POP
+                        ctx.fillStyle = pal.glow;
+                        ctx.globalAlpha = 0.2;
+                        ctx.shadowBlur = 30;
+                        ctx.shadowColor = pal.glow;
+                        ctx.beginPath();
+                        ctx.ellipse(drawX, drawY, 14, 7, 0, 0, Math.PI*2);
+                        ctx.fill();
+                        ctx.globalAlpha = 1.0;
+                        
+                        // Punk protagonist body
+                        ctx.fillStyle = bodyColor; ctx.shadowColor = bodyColor;
+                        ctx.shadowBlur = 25;
+                        ctx.beginPath();
+                        ctx.roundRect(drawX - 9, drawY - 30 + bob, 18, 22, 5);
+                        ctx.fill();
+                        // Head
+                        ctx.beginPath();
+                        ctx.arc(drawX, drawY - 34 + bob, 8, 0, Math.PI*2);
+                        ctx.fill();
+                        // Mohawk
+                        ctx.fillStyle = accentColor; ctx.shadowColor = accentColor;
+                        for (let s = 0; s < 5; s++) {
+                            ctx.fillRect(drawX - 4 + s * 2, drawY - 43 + bob - s, 2, 7 + s);
+                        }
+                        // Visor/glasses
+                        ctx.fillStyle = accentColor;
+                        ctx.fillRect(drawX - 7 + (r.entity.facingX * 3), drawY - 36 + bob + (r.entity.facingY * 1), 14, 3);
+                        // Arms + Hands
+                        ctx.fillStyle = bodyColor;
+                        ctx.shadowBlur = 10;
+                        const armSwing = Math.sin(game.animFrame * 0.5) * 4;
+                        // Left arm
+                        ctx.fillRect(drawX - 14, drawY - 26 + bob + armSwing, 5, 14);
+                        // Left hand
+                        ctx.fillStyle = accentColor;
+                        ctx.beginPath(); ctx.arc(drawX - 12, drawY - 11 + bob + armSwing, 3, 0, Math.PI*2); ctx.fill();
+                        // Right arm
+                        ctx.fillStyle = bodyColor;
+                        ctx.fillRect(drawX + 9, drawY - 26 + bob - armSwing, 5, 14);
+                        // Right hand
+                        ctx.fillStyle = accentColor;
+                        ctx.beginPath(); ctx.arc(drawX + 12, drawY - 11 + bob - armSwing, 3, 0, Math.PI*2); ctx.fill();
+                        // Legs
+                        ctx.fillStyle = bodyColor;
+                        const legSpread = Math.sin(game.animFrame * 0.6) * 3;
+                        ctx.fillRect(drawX - 6 - legSpread, drawY - 8 + bob, 5, 10);
+                        ctx.fillRect(drawX + 1 + legSpread, drawY - 8 + bob, 5, 10);
                     }
-                    
-                    // Ground glow circle for POP
-                    ctx.fillStyle = pal.glow;
-                    ctx.globalAlpha = 0.2;
-                    ctx.shadowBlur = 30;
-                    ctx.shadowColor = pal.glow;
-                    ctx.beginPath();
-                    ctx.ellipse(drawX, drawY, 14, 7, 0, 0, Math.PI*2);
-                    ctx.fill();
-                    ctx.globalAlpha = 1.0;
-                    
-                    // Punk protagonist body
-                    ctx.fillStyle = bodyColor; ctx.shadowColor = bodyColor;
-                    ctx.shadowBlur = 25;
-                    ctx.beginPath();
-                    ctx.roundRect(drawX - 9, drawY - 30 + bob, 18, 22, 5);
-                    ctx.fill();
-                    // Head
-                    ctx.beginPath();
-                    ctx.arc(drawX, drawY - 34 + bob, 8, 0, Math.PI*2);
-                    ctx.fill();
-                    // Mohawk
-                    ctx.fillStyle = accentColor; ctx.shadowColor = accentColor;
-                    for (let s = 0; s < 5; s++) {
-                        ctx.fillRect(drawX - 4 + s * 2, drawY - 43 + bob - s, 2, 7 + s);
-                    }
-                    // Visor/glasses
-                    ctx.fillStyle = accentColor;
-                    ctx.fillRect(drawX - 7 + (r.entity.facingX * 3), drawY - 36 + bob + (r.entity.facingY * 1), 14, 3);
-                    // Arms + Hands
-                    ctx.fillStyle = bodyColor;
-                    ctx.shadowBlur = 10;
-                    const armSwing = Math.sin(game.animFrame * 0.5) * 4;
-                    // Left arm
-                    ctx.fillRect(drawX - 14, drawY - 26 + bob + armSwing, 5, 14);
-                    // Left hand
-                    ctx.fillStyle = accentColor;
-                    ctx.beginPath(); ctx.arc(drawX - 12, drawY - 11 + bob + armSwing, 3, 0, Math.PI*2); ctx.fill();
-                    // Right arm
-                    ctx.fillStyle = bodyColor;
-                    ctx.fillRect(drawX + 9, drawY - 26 + bob - armSwing, 5, 14);
-                    // Right hand
-                    ctx.fillStyle = accentColor;
-                    ctx.beginPath(); ctx.arc(drawX + 12, drawY - 11 + bob - armSwing, 3, 0, Math.PI*2); ctx.fill();
-                    // Legs
-                    ctx.fillStyle = bodyColor;
-                    const legSpread = Math.sin(game.animFrame * 0.6) * 3;
-                    ctx.fillRect(drawX - 6 - legSpread, drawY - 8 + bob, 5, 10);
-                    ctx.fillRect(drawX + 1 + legSpread, drawY - 8 + bob, 5, 10);
                 }
             }
             ctx.shadowBlur = 0;
@@ -1491,28 +1563,12 @@ function draw() {
     });
 
     // Draw Particles
-    for (let i = game.particles.length - 1; i >= 0; i--) {
-        const p = game.particles[i];
-        p.x += p.vx;
-        p.y += p.vy;
-        p.life -= 0.05;
-        if (p.life <= 0) {
-            game.particles.splice(i, 1);
-            continue;
-        }
-        
-        const px = p.x * T + camX + T/2;
-        const py = p.y * T + camY + T/2;
-        
+    for (const p of game.particles) {
         ctx.globalAlpha = p.life;
         ctx.fillStyle = p.color;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = p.color;
-        ctx.beginPath();
-        ctx.arc(px, py - 10, 3, 0, Math.PI*2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
+        ctx.fillRect((p.x + game.camX/T) * T, (p.y + game.camY/T) * T, p.size, p.size);
     }
+    ctx.globalAlpha = 1.0;
     
     // Draw Attack Animation — proper arc sweep with correct screen-space angles
     if (game.attackAnim) {
