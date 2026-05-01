@@ -1017,27 +1017,7 @@ function update(dt) {
         }
     }
 
-    // Combat logic
-    if (game.attackAnim) {
-        const anim = game.attackAnim;
-        for (const troll of game.trolls) {
-            const dist = Math.abs(troll.x - anim.x) + Math.abs(troll.y - anim.y);
-            if (dist < 1.0 && anim.life > 6 && anim.life < 12) {
-                troll.health -= game.player.baseDamage;
-                troll.vx += anim.dx * 12; // Knockback
-                troll.vy -= 4;
-                game.hitStop = 8;
-                game.screenShake = 0.8;
-                UI.shakeScreen();
-                Audio.playHit && Audio.playHit();
-                spawnParticle(troll.x, troll.y, '#FF0040', 8);
-                if (troll.health <= 0) {
-                    game.trolls = game.trolls.filter(t => t !== troll);
-                    game.player.kills++;
-                }
-            }
-        }
-    }
+    // Combat is handled entirely by combat.js during the input event.
 
     // Stomp-to-kill: falling onto an enemy from above damages it and bounces
     // the player. Bosses and gatekeepers are too sturdy to stomp.
