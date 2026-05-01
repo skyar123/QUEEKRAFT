@@ -679,6 +679,8 @@ let showFps = false;
 const fpsSamples = [];
 const keys = {}; // Global keyboard state
 
+
+
 function gameLoop(time) {
     const real = (time - lastTime) / 1000;
     lastTime = time;
@@ -1978,6 +1980,19 @@ function setupControls() {
             } else if (!tryJump()) {
                 // Out of jumps right now — buffer so a slightly-early press still lands.
                 game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
+            }
+        }
+
+        if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+            const px = Math.floor(game.player.x + PLAYER_W / 2);
+            const pyFeet = Math.floor(game.player.y + PLAYER_H + 0.1);
+            if (game.player.onGround && game.map[`${px},${pyFeet}`] === '=') {
+                game.player.dropThrough = 8;
+                game.player.onGround = false;
+                game.player.vy = 1.5;
+            } else if (game.map[`${px},${Math.floor(game.player.y + PLAYER_H - 0.1)}`] === '>') {
+                descend();
+                return;
             }
         }
 
