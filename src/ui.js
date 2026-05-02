@@ -35,8 +35,10 @@ export const UI = {
         this.status.figures.textContent = game.historicalFigures;
         this.status.treasures.textContent = game.treasures;
 
-        const full = "♥".repeat(Math.max(0, game.player.health));
-        const empty = "♡".repeat(Math.max(0, game.player.maxHealth - game.player.health));
+        const displayHealth = Math.ceil(game.player.health);
+        const displayMax = Math.ceil(game.player.maxHealth);
+        const full = "♥".repeat(Math.max(0, displayHealth));
+        const empty = "♡".repeat(Math.max(0, displayMax - displayHealth));
         this.status.hearts.innerHTML = 
             [...full].map(h => `<span class="heart-full">${h}</span>`).join('') +
             [...empty].map(h => `<span class="heart-empty">${h}</span>`).join('');
