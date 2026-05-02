@@ -205,10 +205,27 @@ setTimeout(() => { if (!initStarted) { initStarted = true; initGame(); } }, 5000
 // True when an image finished loading and is safe to drawImage().
 function imgReady(img) { return img && img.complete && img.naturalWidth > 0; }
 
-let patterns = {};
-function initGame() {
+function updateResolution() {
+    const isPortrait = window.innerHeight > window.innerWidth;
+    if (isPortrait) {
+        // Vertical/Portrait Mode (iPhone)
+        game.camera.width = 12;
+        game.camera.height = 20;
+    } else {
+        // Landscape (Desktop/Tablet)
+        game.camera.width = 24;
+        game.camera.height = 16;
+    }
     canvas.width = game.camera.width * T;
     canvas.height = game.camera.height * T;
+    // ensure pixel art isn't blurry when resized
+    ctx.imageSmoothingEnabled = false;
+}
+window.addEventListener('resize', updateResolution);
+
+let patterns = {};
+function initGame() {
+    updateResolution();
     
     if (imgReady(images.tex_floor)) patterns.floor = ctx.createPattern(images.tex_floor, 'repeat');
     if (imgReady(images.tex_wall)) patterns.wall = ctx.createPattern(images.tex_wall, 'repeat');
@@ -2080,10 +2097,10 @@ function setupControls() {
         if (p.traits && p.traits.some(t => t.id === 'chronic')) speed = Math.min(speed, 2.0);
 
         if (p.dashTimer <= 0) {
-            if (keys['ArrowLeft'] || keys['KeyA']) {
+            if (keys['ArrowLeft'] || keys['KeyA'] || touchHeld.left) {
                 p.vx = -speed;
                 p.facingX = -1;
-            } else if (keys['ArrowRight'] || keys['KeyD']) {
+            } else if (keys['ArrowRight'] || keys['KeyD'] || touchHeld.right) {
                 p.vx = speed;
                 p.facingX = 1;
             }

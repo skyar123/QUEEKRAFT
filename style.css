@@ -150,6 +150,13 @@ body, html {
     min-height: 175px;
 }
 
+/* Hide touch controls on non-touch devices (desktops/laptops) */
+@media (pointer: fine) {
+    #controls {
+        display: none;
+    }
+}
+
 .dpad-container {
     grid-area: dpad-area;
     position: relative;
