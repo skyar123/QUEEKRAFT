@@ -2151,9 +2151,21 @@ function setupControls() {
         // Variable jump on touch release too.
         if (game.player.vy < -3.5) game.player.vy *= 0.45;
     });
-    bindHold('down', () => { touchHeld.down = true; tryDash(); }, () => { touchHeld.down = false; });
+    bindHold('down', () => { 
+        touchHeld.down = true; 
+        const px = Math.floor(game.player.x + PLAYER_W / 2);
+        const pyFeet = Math.floor(game.player.y + PLAYER_H + 0.1);
+        if (game.player.onGround && game.map[`${px},${pyFeet}`] === '=') {
+            game.player.dropThrough = 8;
+            game.player.onGround = false;
+            game.player.vy = 1.5;
+        } else if (game.map[`${px},${Math.floor(game.player.y + PLAYER_H - 0.1)}`] === '>') {
+            descend();
+        }
+    }, () => { touchHeld.down = false; });
 
     // Action buttons.
+    bindHold('dash-btn', tryDash);
     bindHold('interact', interact);
     bindHold('quick-attack', () => attackEnemy(game, game.player.facingX || 1, 0, 'quick'));
     // Power attack: hold to charge, release to fire (mirrors keyboard E).

@@ -168,9 +168,9 @@ body, html {
 .action-container {
     grid-area: action-area;
     display: grid;
-    grid-template-columns: repeat(2, 60px);
-    grid-template-rows: repeat(2, 60px);
-    gap: 8px;
+    grid-template-columns: repeat(3, 50px);
+    grid-template-rows: repeat(2, 50px);
+    gap: 6px;
     justify-content: center;
     align-content: center;
     justify-self: center;
