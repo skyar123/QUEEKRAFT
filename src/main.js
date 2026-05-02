@@ -179,7 +179,8 @@ const ASSET_PATHS = {
     enemy:     '/images/spr_enemy.png',
     boss:      '/images/spr_enemy.png',  // 1024x1024 transparent demon — boss only
     chest:     '/images/spr_chest.png',  // transparent neon chest — treasure / gender-reveal
-    marsha:    '/images/spr_marsha.png'  // transparent Marsha — historical NPC
+    marsha:    '/images/spr_marsha.png', // transparent Marsha — historical NPC
+    zine:      '/images/zine.png'        // zine scroll icon
 };
 
 const images = {};
@@ -1305,12 +1306,17 @@ function draw() {
                         ctx.beginPath(); ctx.arc(drawX, drawY - 8 + pulse, 8, 0, Math.PI*2); ctx.fill();
                     }
                 } else if (r.entity.type === 'zine') {
-                    ctx.fillStyle = '#FFFFFF';
                     const bob = Math.sin(game.animFrame * 0.3) * 2;
-                    ctx.fillRect(drawX - 6, drawY - 14 + bob, 12, 14);
-                    ctx.fillStyle = '#FF71CE';
-                    ctx.fillRect(drawX - 4, drawY - 12 + bob, 8, 2);
-                    ctx.fillRect(drawX - 4, drawY - 8 + bob, 8, 2);
+                    if (imgReady(images.zine)) {
+                        ctx.drawImage(images.zine, drawX - 16, drawY - 24 + bob, 32, 24);
+                    } else {
+                        // Fallback zine
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(drawX - 12, drawY - 20 + bob, 24, 28);
+                        ctx.fillStyle = '#FF71CE';
+                        ctx.fillRect(drawX - 8, drawY - 14 + bob, 16, 3);
+                        ctx.fillRect(drawX - 8, drawY - 6 + bob, 16, 3);
+                    }
                 } else if (r.entity.type === 'healing') {
                     const bob = Math.sin(game.animFrame * 0.4) * 2;
                     ctx.fillStyle = '#39FF14';
@@ -1397,7 +1403,6 @@ function draw() {
                         ctx.roundRect(drawX - 10, drawY - 24 + bob, 20, 24, 10);
                         ctx.fill();
                         // "?" on face
-                        ctx.fillStyle = '#FFF'; ctx.font = 'bold 14px VT323';
                         ctx.fillText('?', drawX - 4, drawY - 8 + bob);
                     } else if (et === 'swarm') {
                         // Tiny scuttler — dark cloud with eyes
@@ -1556,6 +1561,29 @@ function draw() {
                         ctx.fillRect(drawX + 1 + legSpread, drawY - 8 + bob, 5, 10);
                 }
             }
+            
+            // INTERACT PROMPT INDICATOR
+            // If the player is very close to an interactable entity (NPC or Item), show a bouncy ▼
+            if (r.type === 'item' || r.type === 'npc') {
+                const px = game.player.x + PLAYER_W / 2;
+                const py = game.player.y + PLAYER_H / 2;
+                const ex = r.x + 0.5;
+                const ey = r.y + 0.5;
+                const dist = Math.sqrt(Math.pow(px - ex, 2) + Math.pow(py - ey, 2));
+                if (dist < 2.5) {
+                    const drawX = sx + T / 2;
+                    const drawY = sy + T;
+                    const bounce = Math.sin(game.animFrame * 0.4) * 3;
+                    ctx.fillStyle = '#01CDFE';
+                    ctx.font = 'bold 20px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.shadowBlur = 8;
+                    ctx.shadowColor = '#01CDFE';
+                    ctx.fillText('▼', drawX, drawY - 50 + bounce);
+                    ctx.textAlign = 'left';
+                }
+            }
+            
             ctx.shadowBlur = 0;
         }
     });
@@ -2119,13 +2147,18 @@ function setupControls() {
     function bindHold(id, onPress, onRelease) {
         const el = document.getElementById(id);
         if (!el) return;
+        let isPressed = false;
         const press = (e) => {
-            e.preventDefault();
+            if (e && e.cancelable) e.preventDefault();
+            if (isPressed) return;
+            isPressed = true;
             el.classList.add('pressed');
             onPress && onPress();
         };
         const release = (e) => {
-            e && e.preventDefault && e.preventDefault();
+            if (e && e.cancelable) e.preventDefault();
+            if (!isPressed) return;
+            isPressed = false;
             el.classList.remove('pressed');
             onRelease && onRelease();
         };
