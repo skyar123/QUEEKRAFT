@@ -1056,7 +1056,8 @@ function update(dt) {
     applyHazards(p);
 
     // Friction (only when not dashing). Ice keeps almost all velocity.
-    if (p.dashTimer <= 0) p.vx *= p.onIceTile ? 0.97 : 0.78;
+    // Lower multiplier = more friction = faster stop when releasing keys
+    if (p.dashTimer <= 0) p.vx *= p.onIceTile ? 0.97 : 0.65;
     if (Math.abs(p.vx) < 0.05) p.vx = 0;
 
     // Status effect ticking (DOTs, freeze duration, etc.)
@@ -1815,6 +1816,29 @@ function draw() {
         game.damageFlash = 0;
     }
 
+    // --- HUD Overlay on Canvas ---
+    // Draw prominent Health (Hearts) in top right corner
+    const padding = 12;
+    const heartSize = 22;
+    for (let i = 0; i < game.player.maxHealth; i++) {
+        const hx = canvas.width - padding - (game.player.maxHealth - i) * (heartSize + 6);
+        const hy = padding;
+        ctx.font = '28px "VT323", monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        if (i < game.player.health) {
+            ctx.fillStyle = '#FF71CE'; // Full heart pink
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = '#FF71CE';
+            ctx.fillText('♥', hx, hy);
+        } else {
+            ctx.fillStyle = '#444444'; // Empty heart grey
+            ctx.shadowBlur = 0;
+            ctx.fillText('♡', hx, hy);
+        }
+    }
+    ctx.shadowBlur = 0;
+
     // Quest log overlay (J to toggle) — Cendric-style objective tracker.
     if (questLogVisible) {
         const w = 320, h = 220;
@@ -2050,9 +2074,10 @@ function setupControls() {
     const originalUpdate = update;
     update = (dt) => {
         const p = game.player;
-        let speed = 4;
-        if (p.trait && p.trait.id === 'adhd') speed = 5;
-        if (p.traits && p.traits.some(t => t.id === 'chronic')) speed = Math.min(speed, 3);
+        // Reduced base speed from 4 to 2.5 so it's easier to pinpoint items
+        let speed = 2.5;
+        if (p.trait && p.trait.id === 'adhd') speed = 3.5;
+        if (p.traits && p.traits.some(t => t.id === 'chronic')) speed = Math.min(speed, 2.0);
 
         if (p.dashTimer <= 0) {
             if (keys['ArrowLeft'] || keys['KeyA']) {
