@@ -227,6 +227,12 @@ let patterns = {};
 function initGame() {
     updateResolution();
     
+    // Assign a default class on very first run so the PWR button works!
+    if (!game.player.classObj) {
+        game.player.classObj = CLASSES[0];
+        game.player.className = CLASSES[0].name;
+    }
+    
     if (imgReady(images.tex_floor)) patterns.floor = ctx.createPattern(images.tex_floor, 'repeat');
     if (imgReady(images.tex_wall)) patterns.wall = ctx.createPattern(images.tex_wall, 'repeat');
     
@@ -2139,12 +2145,8 @@ function setupControls() {
                       () => { touchHeld.left = false; });
     bindHold('right', () => { touchHeld.right = true; game.player.facingX = 1; },
                       () => { touchHeld.right = false; });
-    bindHold('up', () => {
-        if ((touchHeld.down || keys['ArrowDown'] || keys['KeyS']) && game.player.onGround) {
-            game.player.dropThrough = 8;
-            game.player.onGround = false;
-            game.player.vy = 1.5;
-        } else if (!tryJump()) {
+    bindHold('jump-btn', () => {
+        if (!tryJump()) {
             game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
         }
     }, () => {
@@ -2167,9 +2169,8 @@ function setupControls() {
     // Action buttons.
     bindHold('dash-btn', tryDash);
     bindHold('interact', interact);
-    bindHold('quick-attack', () => attackEnemy(game, game.player.facingX || 1, 0, 'quick'));
-    // Power attack: hold to charge, release to fire (mirrors keyboard E).
-    bindHold('power-attack',
+    // Power attack: hold to charge, release to fire (short tap = quick attack).
+    bindHold('attack-btn',
         () => { game.player.chargeAttack = 1; game.player.chargeReady = false; },
         () => {
             if (game.player.chargeAttack <= 0) return;
