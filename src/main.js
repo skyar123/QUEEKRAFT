@@ -702,6 +702,7 @@ let gameStarted = false;
 let showFps = false;
 const fpsSamples = [];
 const keys = {}; // Global keyboard state
+let touchJumpHeld = false; // True while the mobile JUMP button is physically pressed
 
 
 
@@ -991,7 +992,7 @@ function update(dt) {
 
     // Variable Jump: If jump key is released while rising, cut the vertical velocity.
     // This allows for short hops vs high jumps (Rogue Legacy feel).
-    if (p.vy < -3 && !keys['Space'] && !keys['ArrowUp'] && !keys['KeyW']) {
+    if (p.vy < -3 && !keys['Space'] && !keys['ArrowUp'] && !keys['KeyW'] && !touchJumpHeld) {
         p.vy *= 0.5;
     }
 
@@ -1037,7 +1038,8 @@ function update(dt) {
     p.onGround = isGrounded(p);
     if (p.onGround) {
         p.coyoteTimer = (p.trait && p.trait.id === 'insomnia') ? COYOTE_FRAMES * 2 : COYOTE_FRAMES;
-        p.jumpsLeft = (p.traits && p.traits.some(t => t.id === 'nostalgia')) ? 2 : 1;
+        const hasDoubleJump = (p.traits && p.traits.some(t => t.id === 'nostalgia')) || p.powerActive > 0;
+        p.jumpsLeft = hasDoubleJump ? 2 : 1;
         if (!wasGrounded && p.vy >= 1.5) {
             Audio.playStep();
             spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 4, '#FFFFFF');
@@ -1091,6 +1093,9 @@ function update(dt) {
     if (game.animFrame % 10 === 0) {
         processTurn();
     }
+
+    // Keep explored map current so NPCs and items are always visible near the player.
+    updateFOV();
 }
 
 function draw() {
@@ -1335,31 +1340,84 @@ function draw() {
                     }
                 }
             } else if (r.type === 'npc') {
-                const bob = Math.sin(game.animFrame * 0.3) * 2;
+                const bob = Math.sin(game.animFrame * 0.3) * 3;
+                const figData = HISTORICAL_FIGURES[r.entity.figureKey];
+                const figureName = figData ? figData.name : 'Historical Figure';
+
+                // Pulsing aura glow behind the figure
+                const auraSize = 28 + Math.sin(game.animFrame * 0.08) * 6;
+                const auraAlpha = 0.35 + Math.sin(game.animFrame * 0.06) * 0.15;
+                ctx.save();
+                ctx.globalAlpha = auraAlpha;
+                ctx.shadowBlur = 24;
+                ctx.shadowColor = '#FF71CE';
+                ctx.fillStyle = '#FF71CE';
+                ctx.beginPath();
+                ctx.arc(drawX, drawY - 30 + bob, auraSize, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                // Orbiting sparkles
+                const sparkCount = 6;
+                for (let sp = 0; sp < sparkCount; sp++) {
+                    const angle = (game.animFrame * 0.04) + (sp / sparkCount) * Math.PI * 2;
+                    const radius = 22 + Math.sin(game.animFrame * 0.07 + sp) * 4;
+                    const sx2 = drawX + Math.cos(angle) * radius;
+                    const sy2 = drawY - 30 + bob + Math.sin(angle) * radius * 0.5;
+                    const sparkColor = ['#FF71CE','#01CDFE','#FFD700','#B967FF'][sp % 4];
+                    ctx.globalAlpha = 0.8;
+                    ctx.fillStyle = sparkColor;
+                    ctx.beginPath();
+                    ctx.arc(sx2, sy2, 2.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1.0;
+
                 if (imgReady(images.marsha)) {
-                    const sw = 44, h = 56;
+                    const sw = 48, h = 60;
                     ctx.drawImage(images.marsha, drawX - sw/2, drawY - h + bob, sw, h);
-                    ctx.fillStyle = '#FFD700';
-                    ctx.font = 'bold 14px VT323';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('!', drawX, drawY - h - 4 + bob);
-                    ctx.textAlign = 'left';
                 } else {
+                    // Distinctive humanoid fallback — glowing purple figure
+                    ctx.save();
+                    ctx.shadowBlur = 16;
+                    ctx.shadowColor = '#B967FF';
                     ctx.fillStyle = '#B967DB';
                     ctx.beginPath();
-                    ctx.roundRect(drawX - 8, drawY - 28 + bob, 16, 20, 4);
+                    ctx.roundRect(drawX - 9, drawY - 30 + bob, 18, 22, 5);
                     ctx.fill();
                     ctx.beginPath();
-                    ctx.arc(drawX, drawY - 32 + bob, 7, 0, Math.PI*2);
+                    ctx.arc(drawX, drawY - 35 + bob, 9, 0, Math.PI * 2);
                     ctx.fill();
-                    ctx.fillStyle = '#FF71CE';
+                    // Rainbow crown dots
+                    const crownColors = ['#FF71CE','#FFD700','#01CDFE','#39FF14','#B967FF'];
                     for (let f = 0; f < 5; f++) {
-                        const fa = (f / 5) * Math.PI;
+                        const fa = ((f / 4) - 0.5) * Math.PI * 0.7;
+                        ctx.fillStyle = crownColors[f];
                         ctx.beginPath();
-                        ctx.arc(drawX + Math.cos(fa) * 6, drawY - 38 + bob + Math.sin(fa) * -2, 2, 0, Math.PI*2);
+                        ctx.arc(drawX + Math.sin(fa) * 10, drawY - 44 + bob - Math.abs(Math.cos(fa)) * 4, 3, 0, Math.PI * 2);
                         ctx.fill();
                     }
+                    ctx.restore();
                 }
+
+                // Name label above figure
+                ctx.save();
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#FF71CE';
+                ctx.font = 'bold 11px VT323, monospace';
+                ctx.textAlign = 'center';
+                const labelY = drawY - 64 + bob;
+                ctx.fillStyle = 'rgba(0,0,0,0.65)';
+                const lw = ctx.measureText(figureName).width;
+                ctx.fillRect(drawX - lw / 2 - 3, labelY - 11, lw + 6, 14);
+                ctx.fillStyle = '#FFD700';
+                ctx.fillText(figureName, drawX, labelY);
+                // Exclamation marker
+                ctx.font = 'bold 16px VT323, monospace';
+                ctx.fillStyle = '#FFD700';
+                ctx.fillText('!', drawX, drawY - 72 + bob);
+                ctx.textAlign = 'left';
+                ctx.restore();
             } else if (r.type === 'troll') {
                 const bob = Math.sin(game.animFrame * 0.4 + r.x) * 2;
                 const et = r.entity.enemyType || 'troll';
@@ -1979,6 +2037,9 @@ function activateClassPower() {
     if (p.powerCooldown > 0 || !p.classObj) return;
     const cls = p.classObj.id;
     p.powerCooldown = 600; // 10s @ 60fps
+    // Universal: every power grants brief invincibility and a double jump.
+    p.hurtCooldown = Math.max(p.hurtCooldown, 120); // 2s invincibility
+    p.jumpsLeft = Math.max(p.jumpsLeft, 2);          // instant double jump
     Audio.playPower();
     if (cls === 'anarchist') {
         p.powerType = 'rage'; p.powerActive = 180;
@@ -2179,10 +2240,12 @@ function setupControls() {
     bindHold('right', () => { touchHeld.right = true; game.player.facingX = 1; },
                       () => { touchHeld.right = false; });
     bindHold('jump-btn', () => {
+        touchJumpHeld = true;
         if (!tryJump()) {
             game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
         }
     }, () => {
+        touchJumpHeld = false;
         // Variable jump on touch release too.
         if (game.player.vy < -3.5) game.player.vy *= 0.45;
     });
