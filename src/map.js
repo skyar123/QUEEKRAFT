@@ -290,16 +290,18 @@ export function generateMap(game) {
     }
 
     if (game.depth % 5 === 0) {
-        const bossX = roomCenterX(exitRoom.rx);
+        // Spawn the boss two tiles left of center so the exit stairs at center remain reachable.
+        const bossX = roomCenterX(exitRoom.rx) - 2;
         const bossY = roomFloorY(exitRoom.ry) - 1;
-        game.map[`${bossX},${bossY}`] = '.';
-        game.trolls.push({
-            x: bossX, y: bossY,
-            enemyType: 'boss',
-            health: 20, maxHealth: 20,
-            patrolPath: [], patrolIndex: 0, direction: 1,
-            moveDelay: 0, maxMoveDelay: 2,
-            alertRadius: 10, chasingTurns: 0, bossPhase: 1
-        });
+        if (game.map[`${bossX},${bossY}`] !== '#') {
+            game.trolls.push({
+                x: bossX, y: bossY,
+                enemyType: 'boss',
+                health: 20, maxHealth: 20,
+                patrolPath: [], patrolIndex: 0, direction: 1,
+                moveDelay: 0, maxMoveDelay: 2,
+                alertRadius: 10, chasingTurns: 0, bossPhase: 1
+            });
+        }
     }
 }
