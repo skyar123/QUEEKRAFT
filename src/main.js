@@ -1156,6 +1156,8 @@ function update(dt) {
 
     if (!game.player.alive) return;
 
+    updateFOV(); // Keep seen-tiles current so items/NPCs render as player explores
+
     const p = game.player;
 
     // Decrement timers
@@ -2493,10 +2495,12 @@ function setupControls() {
     bindHold('right', () => { touchHeld.right = true; game.player.facingX = 1; },
                       () => { touchHeld.right = false; });
     bindHold('jump-btn', () => {
+        keys['Space'] = true; // Suppress per-frame velocity cut while finger is held
         if (!tryJump()) {
             game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
         }
     }, () => {
+        keys['Space'] = false;
         // Variable jump on touch release too.
         if (game.player.vy < -3.5) game.player.vy *= 0.45;
     });
