@@ -111,22 +111,38 @@
     <!-- Camp / Upgrades Screen -->
     <div id="camp-screen" class="modal">
         <div class="camp-box">
-            <div style="color: var(--terminal-green); font-size: 24px; margin-bottom: 15px; text-align: center;">THE RUINED SAFEHOUSE (UPGRADES)</div>
-            <div style="text-align: center; margin-bottom: 20px;">Rest and prepare. Use collected Scrap to strengthen the next generation.</div>
-            <div style="text-align: center; margin-bottom: 15px; font-size: 20px; color: var(--terminal-amber);">Scrap: <span id="camp-treasures">0</span></div>
-            
+            <div style="color: #FF71CE; font-size: 24px; margin-bottom: 15px; text-align: center;">THE RUINED SAFEHOUSE</div>
+            <div style="text-align: center; margin-bottom: 14px; font-size: 14px; color: #aaa;">
+                Spend <span style="color:#FFD700">SCRAP</span> (collected from defeated foes &amp; loot) to permanently strengthen every future heir.
+                These bonuses persist across deaths.
+            </div>
+            <div style="text-align: center; margin-bottom: 12px; font-size: 20px; color: #FFD700;">Scrap: <span id="camp-treasures">0</span></div>
+
+            <!-- Checkpoint banner -->
+            <div id="checkpoint-banner" style="text-align:center;background:rgba(57,255,20,0.08);border:2px dashed #39FF14;padding:8px;margin-bottom:14px;font-size:14px;color:#39FF14;">
+                📍 Checkpoint: Depth <span id="camp-checkpoint">1</span> · Deepest reached: Depth <span id="camp-deepest">1</span>
+                <div style="font-size:11px;color:#aaa;margin-top:4px;">When your heir falls, they resume from this checkpoint instead of depth 1.</div>
+                <button class="upgrade-btn" id="reset-checkpoint-btn" style="margin-top:6px;font-size:12px;padding:4px 10px;border-color:#FF0040;color:#FF0040;">Reset to Depth 1</button>
+            </div>
+
             <div id="upgrade-options" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
                 <div class="upgrade-row">
-                    <span>Max Health (+1 Heart) - Cost: <span id="cost-health">3</span></span>
-                    <button class="upgrade-btn" id="upgrade-health-btn">Upgrade</button>
+                    <div style="flex:1;">
+                        <div style="color:#FF71CE;font-size:18px;">❤️ Max Health <span style="color:#aaa;font-size:13px;">(Lv <span id="lvl-health">0</span>)</span></div>
+                        <div style="font-size:12px;color:#aaa;">Permanently adds <span style="color:#39FF14">+1 heart</span> to every future run.<br>Currently granting: <span id="bonus-health" style="color:#39FF14">+0 hearts</span></div>
+                    </div>
+                    <button class="upgrade-btn" id="upgrade-health-btn">Buy<br><span style="font-size:12px;">(<span id="cost-health">3</span> scrap)</span></button>
                 </div>
                 <div class="upgrade-row">
-                    <span>Base Damage (+1 DMG) - Cost: <span id="cost-damage">5</span></span>
-                    <button class="upgrade-btn" id="upgrade-damage-btn">Upgrade</button>
+                    <div style="flex:1;">
+                        <div style="color:#01CDFE;font-size:18px;">⚔️ Base Damage <span style="color:#aaa;font-size:13px;">(Lv <span id="lvl-damage">0</span>)</span></div>
+                        <div style="font-size:12px;color:#aaa;">Permanently adds <span style="color:#39FF14">+1 sword/spoon damage</span> per swing.<br>Currently granting: <span id="bonus-damage" style="color:#39FF14">+0 dmg</span></div>
+                    </div>
+                    <button class="upgrade-btn" id="upgrade-damage-btn">Buy<br><span style="font-size:12px;">(<span id="cost-damage">5</span> scrap)</span></button>
                 </div>
             </div>
-            
-            <button class="restart-btn" id="enter-dungeon-btn" style="width: 100%; border-color: var(--terminal-green); color: var(--terminal-green);">Enter the Wasteland</button>
+
+            <button class="restart-btn" id="enter-dungeon-btn" style="width: 100%; border-color: #39FF14; color: #39FF14;">Enter the Wasteland</button>
         </div>
     </div>
 

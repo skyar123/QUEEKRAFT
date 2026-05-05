@@ -1,5 +1,6 @@
 import { UI } from './ui.js';
 import { Audio } from './audio.js';
+import { LOOT_TIERS, DIFFICULTIES } from './data.js';
 
 const PLAYER_W = 0.7;
 const PLAYER_H = 0.9;
@@ -10,6 +11,11 @@ function tileY(p) { return Math.floor(p.y + PLAYER_H / 2); }
 function hasTrait(player, id) {
     return (player.traits && player.traits.some(t => t.id === id)) ||
            (player.trait && player.trait.id === id);
+}
+
+function getDifficulty(game) {
+    const id = (game.persistent && game.persistent.difficulty) || 'normal';
+    return DIFFICULTIES[id] || DIFFICULTIES.normal;
 }
 
 // Cendric-style status effects: applied to enemies, decremented by tickStatus.
@@ -42,6 +48,7 @@ export function tickStatus(game) {
         }
         if (e.health <= 0) {
             UI.addMessage(`${e.enemyType} burned out!`, 'victory');
+            dropLoot(game, e);
             game.trolls.splice(i, 1);
             game.player.kills = (game.player.kills || 0) + 1;
         }
@@ -55,8 +62,116 @@ export function isShocked(enemy) {
     return enemy.status && enemy.status.shock && enemy.status.shock.duration > 0;
 }
 
-export function attackEnemy(game, dx, dy, type) {
-    if (game.player.attackCooldown > 0 && type !== 'blast') return;
+// ---------------------------------------------------------------------------
+// Tiered loot drops. Common roll-curve modulated by enemy strength (boss /
+// gatekeeper bias toward higher tiers) and by difficulty (Hard suppresses
+// commons but boosts the chance of true rares breaking through).
+function rollTier(game, enemy) {
+    const diff = getDifficulty(game);
+    const weights = {};
+    for (const [k, v] of Object.entries(LOOT_TIERS)) weights[k] = v.weight;
+
+    if (enemy.enemyType === 'boss') {
+        // Boss always drops legendary as one of its rewards.
+        return 'legendary';
+    }
+    if (enemy.enemyType === 'gatekeeper' || enemy.enemyType === 'police') {
+        weights.common *= 0.5;
+        weights.uncommon *= 1.4;
+        weights.rare *= 1.6;
+        weights.epic *= 1.4;
+    }
+    if (enemy.enemyType === 'wraith') {
+        weights.rare *= 1.8;
+        weights.epic *= 1.4;
+    }
+    // Difficulty bias: Hard mode shifts the curve toward rare+.
+    weights.rare *= diff.rareBonus;
+    weights.epic *= diff.rareBonus;
+    weights.legendary *= diff.rareBonus;
+
+    let total = 0;
+    for (const k in weights) total += weights[k];
+    let r = Math.random() * total;
+    for (const k in weights) {
+        r -= weights[k];
+        if (r <= 0) return k;
+    }
+    return 'common';
+}
+
+export function dropLoot(game, enemy) {
+    const diff = getDifficulty(game);
+    // Base chance modulated by lootBonus. Bosses always drop. Normal mobs:
+    // 0.55 * lootBonus, capped to 0.95.
+    let chance = 0.55 * diff.lootBonus;
+    if (enemy.enemyType === 'boss') chance = 1.0;
+    if (enemy.enemyType === 'gatekeeper') chance = Math.min(0.95, chance + 0.15);
+    if (Math.random() > chance) return;
+
+    const tierKey = rollTier(game, enemy);
+    const tier = LOOT_TIERS[tierKey];
+    const name = tier.names[Math.floor(Math.random() * tier.names.length)];
+    const item = {
+        x: enemy.x, y: enemy.y,
+        type: 'loot',
+        tier: tierKey,
+        name,
+        scrap: tier.scrap,
+        effect: tier.effect,
+        color: tier.color,
+        glow: tier.glow
+    };
+    game.items.push(item);
+    // Tier-flavored drop announce so the player feels the dopamine.
+    if (tierKey === 'legendary' || tierKey === 'epic') {
+        UI.addMessage(`✨ ${tier.glow === '#FFD700' ? 'LEGENDARY' : 'EPIC'} drop: ${name}!`, 'special');
+        UI.shakeScreen();
+        game.screenShake = Math.max(game.screenShake || 0, tierKey === 'legendary' ? 1.0 : 0.6);
+        // Loot beam particle burst
+        const colors = [tier.glow, '#FFFFFF', tier.color];
+        for (let i = 0; i < (tierKey === 'legendary' ? 50 : 25); i++) {
+            game.particles.push({
+                x: enemy.x + 0.5, y: enemy.y,
+                vx: (Math.random() - 0.5) * 0.6,
+                vy: -Math.random() * 0.7,
+                life: 1.0,
+                color: colors[i % colors.length],
+                size: 2 + Math.random() * 2
+            });
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Combo system. Each successful hit advances a 3-step counter (with optional
+// finisher branches: charged → AoE stun, up-input → uppercut, down-input
+// airborne → diving stab). Combo resets on damage taken or on a 60-frame
+// timeout. The timer ticks down in main.js's update loop.
+const COMBO_WINDOW = 60;       // frames a combo is alive after a successful hit
+const COMBO_MAX = 3;           // cap chain length
+const COMBO_DAMAGE_SCALE = [1.0, 1.15, 1.5]; // step 1, 2, 3 scaling
+
+export function tickCombo(game) {
+    const p = game.player;
+    if (p.comboTimer > 0) {
+        p.comboTimer--;
+        if (p.comboTimer <= 0) {
+            p.comboCount = 0;
+            p.comboPeak = 0;
+        }
+    }
+}
+
+export function resetCombo(game) {
+    game.player.comboCount = 0;
+    game.player.comboTimer = 0;
+}
+
+// dirY is -1 for up-attack, +1 for down-attack, 0 otherwise.
+// Returns true when something is hit so callers can sequence visuals.
+export function attackEnemy(game, dx, dy, type, dirY = 0) {
+    if (game.player.attackCooldown > 0 && type !== 'blast') return false;
 
     const px = tileX(game.player);
     const py = tileY(game.player);
@@ -72,17 +187,22 @@ export function attackEnemy(game, dx, dy, type) {
 
     if (!enemy) {
         if (type !== 'blast') {
-            game.attackAnim = { x: px, y: py, dx, dy, life: 8, weaponType: type === 'power' ? 'sword' : 'spoon' };
+            game.attackAnim = {
+                x: px, y: py, dx, dy, life: 8,
+                weaponType: type === 'power' ? 'sword' : 'spoon',
+                comboStep: (game.player.comboCount || 0),
+                dirY
+            };
             game.turnCounter++;
         }
-        return;
+        return false;
     }
 
     // Wraith dodge mechanic
     if (enemy.enemyType === 'wraith' && Math.random() < 0.5) {
         UI.addMessage("The Wraith dodged your attack!", "combat");
         Audio.playStep();
-        return;
+        return false;
     }
 
     let damage = game.player.baseDamage;
@@ -101,11 +221,34 @@ export function attackEnemy(game, dx, dy, type) {
         damage += 1;
     }
 
+    // Combo damage scaling. Quick light attacks chain; every 3rd successful
+    // light attack is a finisher (knockback + AoE shock). Counter advances on
+    // hit landing — see "Combo state" block below — but the *step* is the
+    // step the *upcoming* hit will be (count % 3). This way a fresh chain
+    // starts at Slash → Strike → FINISHER and loops.
+    const upcomingCount = (game.player.comboCount || 0) + 1;
+    const comboStep = (upcomingCount - 1) % COMBO_MAX;
+    const isFinisher = type === 'quick' && comboStep === COMBO_MAX - 1;
+    const isLauncher = dirY < 0 && type === 'quick';
+    const isDiveStab = dirY > 0 && type === 'quick' && !game.player.onGround;
+
+    let comboLabel = '';
+    if (type === 'quick') {
+        damage = Math.ceil(damage * COMBO_DAMAGE_SCALE[comboStep]);
+        if (comboStep === 0) comboLabel = 'Slash!';
+        else if (comboStep === 1) comboLabel = 'Strike!';
+        else if (comboStep === 2) comboLabel = 'FINISHER!';
+    }
+
     // Pattern Master: 20% crit chance for double damage
     let crit = false;
     if (hasTrait(game.player, 'autism') && Math.random() < 0.20) {
         damage *= 2;
         crit = true;
+    }
+    // Long combos auto-crit at 5+ (which only happens in chained finishers)
+    if (game.player.comboPeak >= 5) {
+        damage = Math.ceil(damage * 1.25);
     }
 
     // Big Mood: damage swings wildly between 0.5x and 2.5x
@@ -125,6 +268,8 @@ export function attackEnemy(game, dx, dy, type) {
 
     if (game.player.hasBrick) damage += 1;
     if (game.player.hasRage) damage *= 2;
+    // Rare-loot damage buff (decremented in main.js update)
+    if (game.player.lootBuff > 0) damage += 1;
 
     // Apply status effects based on attack type / class.
     if (type === 'power') {
@@ -136,6 +281,41 @@ export function attackEnemy(game, dx, dy, type) {
         applyStatus(enemy, 'shock', 60, 1);
         applyStatus(enemy, 'burn', 120, 1);
     }
+    // 3-step quick-finisher branches: AoE shock to nearby enemies
+    if (isFinisher) {
+        applyStatus(enemy, 'shock', 45, 1);
+        knockback = true;
+        for (const other of game.trolls) {
+            if (other === enemy) continue;
+            const d = Math.abs(other.x - enemy.x) + Math.abs(other.y - enemy.y);
+            if (d <= 1) {
+                other.health -= Math.max(1, Math.floor(damage * 0.5));
+                applyStatus(other, 'shock', 30, 1);
+                game.floatingText.push({ x: other.x, y: other.y, text: '⚡SPLASH', life: 24, color: '#FFD700' });
+            }
+        }
+    }
+    // Up-input launcher pops the enemy upward & extends combo
+    if (isLauncher) {
+        comboLabel = 'LAUNCH ↑';
+        damage = Math.ceil(damage * 1.1);
+        // Visual: little upward burst + brief shock
+        applyStatus(enemy, 'shock', 25, 1);
+        for (let i = 0; i < 14; i++) game.particles.push({
+            x: enemy.x + 0.5, y: enemy.y,
+            vx: (Math.random() - 0.5) * 0.3, vy: -0.4 - Math.random() * 0.5,
+            life: 1.0, color: '#FFD700'
+        });
+    }
+    // Down-attack mid-air: dive stab — bounces player up afterwards.
+    if (isDiveStab) {
+        comboLabel = 'DIVE STAB ↓';
+        damage = Math.ceil(damage * 1.3);
+        game.player.vy = -7;
+        game.player.jumpsLeft = Math.max(game.player.jumpsLeft, 1);
+        applyStatus(enemy, 'shock', 20, 1);
+    }
+
     // Damage to a shocked enemy chains a tiny burst into its neighbors (Cendric-style elemental synergy).
     if (isShocked(enemy)) {
         damage += 1;
@@ -152,28 +332,61 @@ export function attackEnemy(game, dx, dy, type) {
     if (isFrozen(enemy)) damage = Math.ceil(damage * 1.5);
 
     enemy.health -= damage;
-    UI.addMessage(`${crit ? 'CRIT! ' : ''}Hit ${enemy.enemyType} for ${damage}!`, 'combat');
+    UI.addMessage(`${crit ? 'CRIT! ' : ''}${comboLabel ? comboLabel + ' ' : ''}Hit ${enemy.enemyType} for ${damage}!`, 'combat');
     UI.shakeScreen();
     Audio.playHit();
-    
+
+    // Combo state: every successful quick hit advances; power attacks are
+    // intentional finishers and break the chain while still benefiting from
+    // the big damage applied above.
+    if (type === 'quick') {
+        game.player.comboCount = upcomingCount;
+        game.player.comboPeak = upcomingCount;
+        game.player.comboTimer = COMBO_WINDOW;
+    } else if (type === 'power') {
+        game.player.comboCount = 0;
+        game.player.comboPeak = 0;
+    }
+
     // Attack Animation (anchored to player tile so the swing renders cleanly)
-    game.attackAnim = { x: px, y: py, dx, dy, life: 8, weaponType: type === 'power' ? 'sword' : 'spoon' };
-    
+    game.attackAnim = {
+        x: px, y: py, dx, dy, life: 8,
+        weaponType: type === 'power' ? 'sword' : 'spoon',
+        comboStep,
+        finisher: isFinisher,
+        launcher: isLauncher,
+        diveStab: isDiveStab,
+        dirY
+    };
+
     // Floating Damage Text
     game.floatingText.push({
         x: enemy.x, y: enemy.y, text: `-${damage}`, life: 30, color: '#FF71CE'
     });
-    
+
     // Spawn neon particles!
     for (let i = 0; i < 15; i++) {
         game.particles.push({
             x: enemy.x, y: enemy.y,
             vx: (Math.random() - 0.5) * 0.3,
             vy: (Math.random() - 0.5) * 0.3,
-            life: 1.0, color: '#FF71CE' // Neon Pink
+            life: 1.0, color: '#FF71CE'
         });
     }
-    
+    // Finisher / launcher / dive: heavier impact particles
+    if (isFinisher || isLauncher || isDiveStab) {
+        const fxColor = isFinisher ? '#FFD700' : isLauncher ? '#01CDFE' : '#FF71CE';
+        for (let i = 0; i < 22; i++) {
+            game.particles.push({
+                x: enemy.x + 0.5, y: enemy.y,
+                vx: (Math.random() - 0.5) * 0.7,
+                vy: (isLauncher ? -1 : (isDiveStab ? 1 : -0.4)) - Math.random() * 0.5,
+                life: 1.0, color: fxColor
+            });
+        }
+        game.screenShake = Math.max(game.screenShake || 0, isFinisher ? 0.85 : 0.55);
+    }
+
     if (knockback) {
         const kx = enemy.x + dx;
         const ky = enemy.y + dy;
@@ -182,15 +395,15 @@ export function attackEnemy(game, dx, dy, type) {
             enemy.y = ky;
         }
     }
-    
+
     if (enemy.health <= 0) {
         UI.addMessage(`${enemy.enemyType === 'boss' ? 'THE BOSS' : 'Enemy'} defeated!`, 'victory');
         game.trolls = game.trolls.filter(t => t !== enemy);
         game.player.kills = (game.player.kills || 0) + 1;
 
-        // Small chance to drop scrap from any kill — feels generous, encourages exploration
-        if (enemy.enemyType !== 'boss' && Math.random() < 0.30) {
-            game.items.push({ x: enemy.x, y: enemy.y, type: 'treasure', name: 'Salvaged Scrap' });
+        // Tiered loot drop replaces the old flat 30% scrap drop.
+        if (enemy.enemyType !== 'boss') {
+            dropLoot(game, enemy);
         }
 
         // Death explosion
@@ -213,16 +426,19 @@ export function attackEnemy(game, dx, dy, type) {
             game.player.scrapEarned = (game.player.scrapEarned || 0) + 15;
             game.player.health = game.player.maxHealth;
             Audio.playLoot();
+            // Boss drops a guaranteed Legendary plus some secondaries.
+            dropLoot(game, enemy);
             const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
             dirs.forEach(d => {
                 game.items.push({ x: enemy.x + d[0], y: enemy.y + d[1], type: 'treasure', name: 'Boss Scrap' });
             });
         }
     }
-    
+
     if (type !== 'blast') {
         game.turnCounter++;
     }
+    return true;
 }
 
 export function takeDamage(game, amount = 1) {
@@ -231,13 +447,23 @@ export function takeDamage(game, amount = 1) {
     // Trait-based damage mitigation
     if (hasTrait(game.player, 'dwarfism')) amount = Math.max(1, amount - 1);
 
-    game.player.health -= amount;
+    // Difficulty scaling: Easy = ¼ heart per "1 damage" hit, Normal = ½, Hard = full.
+    const diff = getDifficulty(game);
+    let scaled = amount * diff.damageScale;
+    // Round to the nearest quarter so the heart HUD shows clean ¼ / ½ / ¾ states.
+    scaled = Math.round(scaled * 4) / 4;
+    if (scaled < 0.25) scaled = 0.25;
+
+    game.player.health -= scaled;
     UI.addMessage("Hit!", 'death');
     UI.shakeScreen();
     Audio.playDamage();
     // Full-screen flash + shake intensity scaled to damage taken.
-    game.damageFlash = Math.min(1.0, (game.damageFlash || 0) + 0.6 + amount * 0.15);
-    game.screenShake = Math.max(game.screenShake || 0, 0.6 + amount * 0.2);
+    game.damageFlash = Math.min(1.0, (game.damageFlash || 0) + 0.6 + scaled * 0.15);
+    game.screenShake = Math.max(game.screenShake || 0, 0.6 + scaled * 0.2);
+
+    // Combo broken on damage taken — punishes greedy play, rewards spacing.
+    resetCombo(game);
 
     // Chronic pain doubles i-frames; insomnia leaves you alert with shorter recovery
     let iframes = 3;
@@ -246,12 +472,13 @@ export function takeDamage(game, amount = 1) {
     game.player.hurtCooldown = iframes;
 
     game.floatingText.push({
-        x: tileX(game.player), y: tileY(game.player), text: `-${amount}`, life: 30, color: '#01CDFE'
+        x: tileX(game.player), y: tileY(game.player), text: `-${scaled}`, life: 30, color: '#01CDFE'
     });
 
     UI.updateStatus(game);
 
-    if (game.player.health <= 0) {
+    if (game.player.health <= 0.001) {
+        game.player.health = 0;
         game.player.alive = false;
         UI.showGameOver(game, "You succumbed to your wounds.");
     }

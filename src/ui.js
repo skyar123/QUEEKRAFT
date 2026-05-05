@@ -1,4 +1,4 @@
-import { ZINES, HISTORICAL_FIGURES } from './data.js';
+import { ZINES, HISTORICAL_FIGURES, DIFFICULTIES } from './data.js';
 
 export const UI = {
     messageArea: document.getElementById('message-area'),
@@ -146,20 +146,104 @@ export const UI = {
         });
     },
 
-    showCamp(gameState, onEnterDungeon, onUpgradeHealth, onUpgradeDamage, lineage) {
+    showCamp(gameState, onEnterDungeon, onUpgradeHealth, onUpgradeDamage, lineage, onDifficultyChange, onResetCheckpoint) {
         this.modals.camp.style.display = 'flex';
         if (lineage) this.renderLineage(lineage);
-        
+
         const updateCampUI = () => {
             document.getElementById('camp-treasures').textContent = gameState.persistent.treasures;
             document.getElementById('cost-health').textContent = gameState.persistent.healthCost;
             document.getElementById('cost-damage').textContent = gameState.persistent.damageCost;
-            
+
+            const healthLvl = gameState.persistent.healthUpgrades || 0;
+            const dmgLvl = gameState.persistent.damageUpgrades || 0;
+            const lvlHealth = document.getElementById('lvl-health');
+            const lvlDamage = document.getElementById('lvl-damage');
+            const bonusHealth = document.getElementById('bonus-health');
+            const bonusDamage = document.getElementById('bonus-damage');
+            if (lvlHealth) lvlHealth.textContent = healthLvl;
+            if (lvlDamage) lvlDamage.textContent = dmgLvl;
+            if (bonusHealth) bonusHealth.textContent = `+${healthLvl} heart${healthLvl === 1 ? '' : 's'}`;
+            if (bonusDamage) bonusDamage.textContent = `+${dmgLvl} dmg`;
+
+            const cpEl = document.getElementById('camp-checkpoint');
+            const dpEl = document.getElementById('camp-deepest');
+            if (cpEl) cpEl.textContent = gameState.persistent.checkpointDepth || 1;
+            if (dpEl) dpEl.textContent = gameState.persistent.deepestReached || 1;
+            const resetBtn = document.getElementById('reset-checkpoint-btn');
+            if (resetBtn) resetBtn.disabled = (gameState.persistent.checkpointDepth || 1) <= 1;
+
             document.getElementById('upgrade-health-btn').disabled = gameState.persistent.treasures < gameState.persistent.healthCost;
             document.getElementById('upgrade-damage-btn').disabled = gameState.persistent.treasures < gameState.persistent.damageCost;
         };
-        
+
         updateCampUI();
+        // Wire the checkpoint reset button each time the camp opens.
+        const resetBtn = document.getElementById('reset-checkpoint-btn');
+        if (resetBtn) {
+            resetBtn.onclick = () => {
+                if (onResetCheckpoint) onResetCheckpoint();
+                updateCampUI();
+            };
+        }
+
+        // -------------------------------------------------------------------
+        // Difficulty selector. Lazy-build once, then re-highlight current pick
+        // every time the camp opens.
+        let diffRow = document.getElementById('difficulty-row');
+        if (!diffRow) {
+            diffRow = document.createElement('div');
+            diffRow.id = 'difficulty-row';
+            diffRow.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;margin:14px 0;padding:10px;border:2px dashed var(--punk-cyan);';
+
+            const heading = document.createElement('div');
+            heading.style.cssText = 'color:var(--punk-cyan);font-size:18px;text-align:center;text-shadow:0 0 6px var(--punk-cyan);';
+            heading.textContent = '⚔ DIFFICULTY ⚔';
+            diffRow.appendChild(heading);
+
+            const buttons = document.createElement('div');
+            buttons.style.cssText = 'display:flex;gap:10px;justify-content:center;flex-wrap:wrap;';
+            ['easy', 'normal', 'hard'].forEach(id => {
+                const d = DIFFICULTIES[id];
+                const btn = document.createElement('button');
+                btn.className = 'upgrade-btn';
+                btn.dataset.diff = id;
+                btn.style.cssText = `padding:8px 14px;font-size:18px;border-color:${d.color};color:${d.color};display:flex;flex-direction:column;align-items:center;gap:2px;min-width:120px;`;
+                const label = document.createElement('span');
+                label.textContent = d.label;
+                label.style.cssText = 'font-weight:bold;font-size:18px;';
+                const tagline = document.createElement('span');
+                tagline.textContent = d.tagline;
+                tagline.style.cssText = 'font-size:11px;opacity:0.85;text-transform:none;';
+                btn.appendChild(label);
+                btn.appendChild(tagline);
+                btn.onclick = () => {
+                    if (onDifficultyChange) onDifficultyChange(id);
+                    diffRow.querySelectorAll('button').forEach(b => {
+                        const dd = DIFFICULTIES[b.dataset.diff];
+                        b.style.borderColor = dd.color;
+                        b.style.boxShadow = '';
+                    });
+                    btn.style.boxShadow = `0 0 18px ${d.color}`;
+                    btn.style.borderColor = d.color;
+                };
+                buttons.appendChild(btn);
+            });
+            diffRow.appendChild(buttons);
+
+            const enterBtn = document.getElementById('enter-dungeon-btn');
+            enterBtn.parentNode.insertBefore(diffRow, enterBtn);
+        }
+        // Highlight the persistent choice every time camp opens.
+        diffRow.querySelectorAll('button').forEach(b => {
+            const dd = DIFFICULTIES[b.dataset.diff];
+            b.style.borderColor = dd.color;
+            if (b.dataset.diff === (gameState.persistent.difficulty || 'normal')) {
+                b.style.boxShadow = `0 0 18px ${dd.color}`;
+            } else {
+                b.style.boxShadow = '';
+            }
+        });
         
         // Add color palette selector if not already present
         let paletteRow = document.getElementById('palette-row');

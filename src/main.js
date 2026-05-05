@@ -1,7 +1,7 @@
 import { UI, DialogueUI } from './ui.js';
 import { generateMap } from './map.js';
-import { attackEnemy, takeDamage, tickStatus, applyStatus, isFrozen } from './combat.js';
-import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES } from './data.js';
+import { attackEnemy, takeDamage, tickStatus, tickCombo, resetCombo, applyStatus, isFrozen } from './combat.js';
+import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES } from './data.js';
 import { Audio } from './audio.js';
 
 const canvas = document.getElementById('game-canvas');
@@ -17,7 +17,17 @@ const game = {
         healthCost: 3,
         damageCost: 5,
         seenZines: {},
-        seenFigures: {}
+        seenFigures: {},
+        // Difficulty mode persists across runs so the player can crank it
+        // back up after dying on Easy. Default Normal until the player picks.
+        difficulty: 'normal',
+        // Permanent +1 max HP charms accumulated from Legendary loot drops.
+        permanentHearts: 0,
+        // Checkpoint depth — every time the player descends, this advances.
+        // On death, the next heir starts here (capped at deepest reached) so
+        // progress isn't fully wiped from level 1.
+        checkpointDepth: 1,
+        deepestReached: 1
     },
     player: {
         x: 5, y: 5,
@@ -45,6 +55,13 @@ const game = {
         // Charge attack state — hold E to build power, release to unleash a heavy strike.
         chargeAttack: 0,        // 0..120 (frames held)
         chargeReady: false,     // true once charge meter exceeds threshold
+        // Combo system: tracked between calls so successful Quick attacks
+        // chain into a 3-step string (Slash → Strike → FINISHER).
+        comboCount: 0,
+        comboTimer: 0,
+        comboPeak: 0,
+        // Loot-side temp buff: rare+ pickups grant +1 damage for a few seconds.
+        lootBuff: 0,
         // Lineage stat tracking
         kills: 0, depthReached: 1, scrapEarned: 0
     },
@@ -139,6 +156,11 @@ function loadGame() {
     } catch (e) {
         // Corrupted save — ignore and start fresh.
     }
+    // Difficulty fallback for older saves that didn't include the field.
+    if (!DIFFICULTIES[game.persistent.difficulty]) game.persistent.difficulty = 'normal';
+    if (typeof game.persistent.permanentHearts !== 'number') game.persistent.permanentHearts = 0;
+    if (typeof game.persistent.checkpointDepth !== 'number') game.persistent.checkpointDepth = 1;
+    if (typeof game.persistent.deepestReached !== 'number') game.persistent.deepestReached = 1;
 }
 loadGame();
 
@@ -293,7 +315,19 @@ function startCamp() {
             }
             return false;
         },
-        lineage
+        lineage,
+        (difficultyId) => {
+            if (DIFFICULTIES[difficultyId]) {
+                game.persistent.difficulty = difficultyId;
+                saveGame();
+                UI.addMessage(`Difficulty set: ${DIFFICULTIES[difficultyId].label}`, 'special');
+            }
+        },
+        () => {
+            // Player explicitly chose to reset their checkpoint to depth 1.
+            game.persistent.checkpointDepth = 1;
+            saveGame();
+        }
     );
 }
 
@@ -314,12 +348,18 @@ async function descend() {
     });
 
     game.depth++;
+    // Checkpoint advances each time you descend. Saves to localStorage so the
+    // next heir resumes where the previous one fell.
+    game.persistent.checkpointDepth = Math.max(game.persistent.checkpointDepth || 1, game.depth);
+    game.persistent.deepestReached = Math.max(game.persistent.deepestReached || 1, game.depth);
+    saveGame();
     generateMap(game);
     game.player.x = game.spawnX || 5;
     game.player.y = game.spawnY || 5;
     game.camInitialized = false;
     UI.updateStatus(game);
-    
+    UI.addMessage(`📍 Checkpoint reached: Depth ${game.depth}`, 'special');
+
     // Fade out
     overlay.style.opacity = '0';
     setTimeout(() => overlay.remove(), 600);
@@ -329,8 +369,10 @@ function startDungeon() {
     // Reset transient dungeon state but apply persistent upgrades
     const p = game.player;
     p.alive = true;
-    let maxHp = 3 + game.persistent.healthUpgrades;
+    const diff = DIFFICULTIES[game.persistent.difficulty || 'normal'] || DIFFICULTIES.normal;
+    let maxHp = 3 + game.persistent.healthUpgrades + diff.bonusHearts + (game.persistent.permanentHearts || 0);
     if (p.traits && p.traits.some(t => t.id === 'gigantism')) maxHp += 1;
+    maxHp = Math.max(1, maxHp); // Hard mode could never push you below 1 heart
     p.maxHealth = maxHp;
     p.health = p.maxHealth;
     p.baseDamage = 1 + game.persistent.damageUpgrades;
@@ -343,9 +385,14 @@ function startDungeon() {
     p.powerCooldown = 0; p.powerActive = 0; p.powerType = null;
     p.jumpsLeft = 1;
     p.coyoteTimer = 0;
-    p.kills = 0; p.scrapEarned = 0; p.depthReached = 1;
+    p.comboCount = 0; p.comboTimer = 0; p.comboPeak = 0;
+    p.lootBuff = 0;
+    p.kills = 0; p.scrapEarned = 0;
 
-    game.depth = 1;
+    // Checkpoint resume: next heir starts at the highest depth previously
+    // reached (mediated by `checkpointDepth`). First-ever run is depth 1.
+    game.depth = Math.max(1, game.persistent.checkpointDepth || 1);
+    p.depthReached = game.depth;
     game.zines = Object.keys(game.persistent.seenZines).length;
     game.historicalFigures = Object.keys(game.persistent.seenFigures).length;
     game.treasures = 0;
@@ -620,6 +667,44 @@ function interact() {
             game.player.scrapEarned = (game.player.scrapEarned || 0) + 1;
             UI.addMessage(`Picked up ${item.name}!`, 'treasure');
             Audio.playLoot();
+        } else if (item.type === 'loot') {
+            // Tiered loot: scrap + tier-specific effect (heal, buff, perma-heart).
+            const scrap = item.scrap || 1;
+            game.treasures += scrap;
+            game.persistent.treasures += scrap;
+            game.player.scrapEarned = (game.player.scrapEarned || 0) + scrap;
+            const tierKey = item.tier || 'common';
+            const label = tierKey.toUpperCase();
+            UI.addMessage(`[${label}] ${item.name}  +${scrap} scrap!`, tierKey === 'legendary' ? 'special' : (tierKey === 'epic' ? 'special' : 'treasure'));
+            Audio.playLoot();
+            // Visual sparkle
+            for (let i = 0; i < 18; i++) {
+                game.particles.push({
+                    x: tileX(), y: tileY(),
+                    vx: (Math.random() - 0.5) * 0.5,
+                    vy: -Math.random() * 0.6,
+                    life: 1.0,
+                    color: item.glow || '#FFD700',
+                    size: 2 + Math.random() * 2
+                });
+            }
+            if (item.effect === 'small_heal') {
+                game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
+            } else if (item.effect === 'big_heal') {
+                game.player.health = Math.min(game.player.maxHealth, game.player.health + 2);
+                game.player.lootBuff = Math.max(game.player.lootBuff || 0, 240);
+                UI.addMessage('Solidarity surges through you (+1 dmg / 4s)', 'healing');
+            } else if (item.effect === 'rage_vial') {
+                game.player.health = Math.min(game.player.maxHealth, game.player.health + 3);
+                game.player.lootBuff = Math.max(game.player.lootBuff || 0, 360);
+                UI.addMessage('Ancestor rage in your veins (+1 dmg / 6s)', 'healing');
+            } else if (item.effect === 'permanent_heart') {
+                game.persistent.permanentHearts = (game.persistent.permanentHearts || 0) + 1;
+                game.player.maxHealth += 1;
+                game.player.health = game.player.maxHealth;
+                saveGame();
+                UI.addMessage('PERMANENT +1 HEART. The lineage grows stronger.', 'special');
+            }
         } else if (item.type === 'gender-reveal') {
             // EXPLORATION MECHANIC: Gender Reveal Chest
             if (Math.random() > 0.5) {
@@ -980,6 +1065,9 @@ function update(dt) {
     if (p.powerCooldown > 0) p.powerCooldown--;
     if (p.powerActive > 0) p.powerActive--;
     if (p.dropThrough > 0) p.dropThrough--;
+    if (p.lootBuff > 0) p.lootBuff--;
+    // Combo timer — resets the chain after 1 second of inaction.
+    tickCombo(game);
 
     // Charge meter ticks while E is held (capped at 120).
     if (p.chargeAttack > 0 && p.chargeAttack < 120) p.chargeAttack++;
@@ -1323,6 +1411,47 @@ function draw() {
                     // Draw a cross/plus
                     ctx.fillRect(drawX - 2, drawY - 12 + bob, 4, 10);
                     ctx.fillRect(drawX - 5, drawY - 8 + bob, 10, 4);
+                } else if (r.entity.type === 'loot') {
+                    // Tier-glowing pickup. Higher tiers pulse harder + emit upward sparkles.
+                    const tier = r.entity.tier || 'common';
+                    const glow = r.entity.glow || '#FFFFFF';
+                    const color = r.entity.color || '#CCCCCC';
+                    const pulseSpeed = tier === 'legendary' ? 0.32 : tier === 'epic' ? 0.24 : tier === 'rare' ? 0.18 : 0.12;
+                    const bob = Math.sin(game.animFrame * pulseSpeed) * 3;
+                    const radius = tier === 'legendary' ? 28 : tier === 'epic' ? 22 : tier === 'rare' ? 18 : 14;
+                    // Halo
+                    ctx.globalAlpha = 0.35;
+                    ctx.fillStyle = glow;
+                    ctx.shadowBlur = radius;
+                    ctx.shadowColor = glow;
+                    ctx.beginPath();
+                    ctx.arc(drawX, drawY - 10 + bob, radius * 0.4, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1.0;
+                    // Gem body
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.moveTo(drawX,      drawY - 18 + bob);
+                    ctx.lineTo(drawX + 8,  drawY - 10 + bob);
+                    ctx.lineTo(drawX,      drawY - 2 + bob);
+                    ctx.lineTo(drawX - 8,  drawY - 10 + bob);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.globalAlpha = 0.7;
+                    ctx.fillRect(drawX - 2, drawY - 14 + bob, 4, 4);
+                    ctx.globalAlpha = 1.0;
+                    // Trickle sparkles for higher tiers
+                    if ((tier === 'legendary' || tier === 'epic') && game.animFrame % 6 === 0) {
+                        game.particles.push({
+                            x: r.x + 0.5 + (Math.random() - 0.5) * 0.4,
+                            y: r.y + 0.4,
+                            vx: (Math.random() - 0.5) * 0.1,
+                            vy: -0.2 - Math.random() * 0.15,
+                            life: 0.8, color: glow, size: 2
+                        });
+                    }
+                    ctx.shadowBlur = 0;
                 } else {
                     const bob = Math.sin(game.animFrame * 0.3) * 1;
                     if (imgReady(images.chest)) {
@@ -1606,18 +1735,37 @@ function draw() {
             const cx = anim.x * T + camX + T/2;
             const cy = anim.y * T + camY + T/2 - 12;
 
-            // Platformer: direct screen-space angle from facing direction
-            const facingAngle = Math.atan2(anim.dy, anim.dx);
-
-            const HALF_SWEEP = Math.PI * 0.72;
-            const startAngle = facingAngle - HALF_SWEEP;
-            const endAngle   = facingAngle + HALF_SWEEP;
+            // Platformer: direct screen-space angle from facing direction.
+            // Combo branches modify the sweep so each chain step reads visually.
+            const baseAngle = Math.atan2(anim.dy, anim.dx);
+            // Combo step 0 → horizontal slash, step 1 → reverse from above,
+            // step 2 (finisher) → big spin. Launcher / dive override entirely.
+            let facingAngle = baseAngle;
+            let HALF_SWEEP = Math.PI * 0.72;
+            let direction = 1;
+            if (anim.launcher) {
+                facingAngle = baseAngle - Math.PI * 0.45; // up-tilted swing
+                HALF_SWEEP = Math.PI * 0.85;
+            } else if (anim.diveStab) {
+                facingAngle = baseAngle + Math.PI * 0.45; // down-thrust
+                HALF_SWEEP = Math.PI * 0.45;
+            } else if (anim.finisher) {
+                HALF_SWEEP = Math.PI * 1.05; // big spin sweep on finisher
+            } else if (anim.comboStep === 1) {
+                direction = -1; // reverse-direction follow-up slash
+            }
+            const startAngle = facingAngle - HALF_SWEEP * direction;
+            const endAngle   = facingAngle + HALF_SWEEP * direction;
             const swingProgress = (8 - anim.life) / 8;
             const weaponAngle = startAngle + swingProgress * (endAngle - startAngle);
 
-            const RADIUS = anim.weaponType === 'sword' ? 46 : 36;
+            const RADIUS = (anim.weaponType === 'sword' ? 46 : 36) +
+                           (anim.finisher ? 8 : anim.comboStep === 1 ? 4 : 0);
             const isSword = anim.weaponType === 'sword';
-            const glowColor = isSword ? '#01CDFE' : '#FF71CE';
+            const glowColor = anim.finisher ? '#FFD700'
+                            : anim.launcher ? '#01CDFE'
+                            : anim.diveStab ? '#FF71CE'
+                            : (isSword ? '#01CDFE' : '#FF71CE');
 
             ctx.save();
 
@@ -1868,27 +2016,86 @@ function draw() {
     }
 
     // --- HUD Overlay on Canvas ---
-    // Draw prominent Health (Hearts) in top right corner
+    // Draw prominent Health (Hearts) in top right corner. Each heart is sliced
+    // into quarters so Easy/Normal damage drains visibly per ¼ / ½ heart hit.
     const padding = 12;
     const heartSize = 22;
+    const heartGap = 6;
+    const heartW = heartSize + heartGap;
+    ctx.font = '28px "VT323", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
     for (let i = 0; i < game.player.maxHealth; i++) {
-        const hx = canvas.width - padding - (game.player.maxHealth - i) * (heartSize + 6);
+        const hx = canvas.width - padding - (game.player.maxHealth - i) * heartW;
         const hy = padding;
-        ctx.font = '28px "VT323", monospace';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        if (i < game.player.health) {
-            ctx.fillStyle = '#FF71CE'; // Full heart pink
+        const heartFill = Math.max(0, Math.min(1, game.player.health - i));
+
+        // Empty silhouette first (always drawn so quarter hearts read clearly).
+        ctx.fillStyle = '#1a1a1a';
+        ctx.shadowBlur = 0;
+        ctx.fillText('♥', hx, hy);
+        ctx.fillStyle = '#444444';
+        ctx.fillText('♡', hx, hy);
+
+        if (heartFill > 0) {
+            // Clip to fill ratio so we get crisp ¼ / ½ / ¾ partial hearts.
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(hx, hy, heartSize * heartFill, heartSize + 6);
+            ctx.clip();
+            ctx.fillStyle = '#FF71CE';
             ctx.shadowBlur = 12;
             ctx.shadowColor = '#FF71CE';
             ctx.fillText('♥', hx, hy);
-        } else {
-            ctx.fillStyle = '#444444'; // Empty heart grey
-            ctx.shadowBlur = 0;
-            ctx.fillText('♡', hx, hy);
+            ctx.restore();
         }
     }
     ctx.shadowBlur = 0;
+
+    // Difficulty label sits beside the hearts so the player remembers the
+    // setting at a glance.
+    const diffNow = DIFFICULTIES[game.persistent.difficulty || 'normal'] || DIFFICULTIES.normal;
+    ctx.font = 'bold 12px VT323';
+    ctx.fillStyle = diffNow.color;
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = diffNow.color;
+    const diffLabel = `${diffNow.label}`;
+    const diffW = ctx.measureText(diffLabel).width;
+    const diffX = canvas.width - padding - game.player.maxHealth * heartW - diffW - 6;
+    ctx.fillText(diffLabel, diffX, padding + 6);
+    ctx.shadowBlur = 0;
+
+    // Combo HUD — displays current chain count + remaining window.
+    if (game.player.comboCount > 0 || game.player.comboTimer > 0) {
+        const cc = Math.max(game.player.comboCount, game.player.comboPeak || 0);
+        const cTimerMax = 60;
+        const cFill = Math.max(0, game.player.comboTimer / cTimerMax);
+        const baseX = padding;
+        const baseY = canvas.height - padding - 28;
+        ctx.font = 'bold 26px VT323';
+        const labelTier = cc >= 3 ? '#FFD700' : cc === 2 ? '#FF71CE' : '#01CDFE';
+        ctx.fillStyle = labelTier;
+        ctx.shadowBlur = 14;
+        ctx.shadowColor = labelTier;
+        ctx.fillText(`x${cc} COMBO`, baseX, baseY);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(baseX, baseY + 22, 96, 4);
+        ctx.fillStyle = labelTier;
+        ctx.fillRect(baseX, baseY + 22, 96 * cFill, 4);
+    }
+
+    // Loot buff indicator — small +1 DMG sigil under the combo HUD.
+    if (game.player.lootBuff > 0) {
+        const baseX = padding;
+        const baseY = canvas.height - padding - 56;
+        ctx.font = 'bold 14px VT323';
+        ctx.fillStyle = '#39FF14';
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = '#39FF14';
+        ctx.fillText(`+1 DMG (${Math.ceil(game.player.lootBuff / 60)}s)`, baseX, baseY);
+        ctx.shadowBlur = 0;
+    }
 
     // Quest log overlay (J to toggle) — Cendric-style objective tracker.
     if (questLogVisible) {
@@ -2072,7 +2279,13 @@ function setupControls() {
         }
 
         if (e.code === 'KeyQ') {
-            attackEnemy(game, game.player.facingX, 0, 'quick');
+            // Directional attacks: Up + Q = launcher; Down + Q (airborne) = dive stab.
+            const upHeld = keys['ArrowUp'] || keys['KeyW'];
+            const downHeld = keys['ArrowDown'] || keys['KeyS'];
+            let dirY = 0;
+            if (upHeld) dirY = -1;
+            else if (downHeld && !game.player.onGround) dirY = 1;
+            attackEnemy(game, game.player.facingX, 0, 'quick', dirY);
         } else if (e.code === 'KeyE') {
             // Begin charging — holding builds the meter; release in keyup.
             game.player.chargeAttack = 1;
@@ -2210,6 +2423,9 @@ function setupControls() {
             const charged = game.player.chargeAttack >= 60;
             const overcharge = game.player.chargeAttack >= 110;
             const fx = game.player.facingX || 1;
+            // Touch directional inputs: hold down dpad while tapping ATK = dive stab.
+            let dirY = 0;
+            if (touchHeld.down && !game.player.onGround) dirY = 1;
             if (overcharge) {
                 UI.addMessage("OVERCHARGED STRIKE! 🔥", 'special');
                 game.screenShake = Math.max(game.screenShake, 0.8);
@@ -2219,7 +2435,7 @@ function setupControls() {
             } else if (charged) {
                 attackEnemy(game, fx, 0, 'power');
             } else {
-                attackEnemy(game, fx, 0, 'quick');
+                attackEnemy(game, fx, 0, 'quick', dirY);
             }
             game.player.chargeAttack = 0;
             game.player.chargeReady = false;

@@ -243,3 +243,55 @@ export const HEALING_ITEMS = {
     'book': { name: 'Book of Affirmations', desc: 'Self-love heals wounds.', healing: 2 },
     'crystal': { name: 'Healing Crystal', desc: 'Amethyst radiates healing energy.', healing: 3 }
 };
+
+// ---------------------------------------------------------------------------
+// Difficulty modes. damageScale multiplies enemy-dealt damage; values map
+// each "1 damage" hit to fractional hearts (¼ / ½ / 1). bonusHearts is added
+// to the player's max health on dungeon entry. lootBonus multiplies drop
+// rolls (Easy throws more loot at you; Hard throws less but rarer loot still
+// breaks through).
+export const DIFFICULTIES = {
+    easy:   { id: 'easy',   label: 'EASY',   damageScale: 0.25, bonusHearts: 2,  lootBonus: 1.6,  rareBonus: 1.0, color: '#39FF14',
+              tagline: '¼ heart per hit · +2 hearts · loot rains' },
+    normal: { id: 'normal', label: 'NORMAL', damageScale: 0.5,  bonusHearts: 0,  lootBonus: 1.0,  rareBonus: 1.0, color: '#01CDFE',
+              tagline: '½ heart per hit · standard hearts · standard loot' },
+    hard:   { id: 'hard',   label: 'HARD',   damageScale: 1.0,  bonusHearts: -1, lootBonus: 0.7,  rareBonus: 1.6, color: '#FF0040',
+              tagline: '1 heart per hit · -1 heart · rare loot favored' }
+};
+
+// ---------------------------------------------------------------------------
+// Tiered loot system — pulled from rogue-likes & ARPGs but trans-themed and
+// (we hope) more interesting than Diablo 3's mostly-flat orange affix soup.
+// Each tier carries a name pool, a glow color, a pickup effect, and a scrap
+// reward. Effects layer (Rare+ heals; Epic+ buffs damage; Legendary stamps a
+// permanent stat onto the persistent profile).
+export const LOOT_TIERS = {
+    common: {
+        weight: 55, color: '#CCCCCC', glow: '#FFFFFF', scrap: 1,
+        names: ['Bent Rebar', 'Scrap Wire', 'Cracked Mirror', 'Old Pamphlet', 'Dented Locket'],
+        effect: null
+    },
+    uncommon: {
+        weight: 28, color: '#39FF14', glow: '#39FF14', scrap: 2,
+        names: ['Resistance Pin', 'Liberation Pamphlet', 'Pride Shoelace', 'Borrowed Lipstick', 'Recovered Photo'],
+        effect: 'small_heal'   // +1 hp
+    },
+    rare: {
+        weight: 12, color: '#01CDFE', glow: '#01CDFE', scrap: 4,
+        names: ['Solidarity Charm', 'Mutual-Aid Token', 'Marsha\'s Hairpin', 'Sylvia\'s Lighter', 'Stonewall Coin'],
+        effect: 'big_heal'     // +2 hp + +1 next hit
+    },
+    epic: {
+        weight: 4, color: '#B967DB', glow: '#B967DB', scrap: 8,
+        names: ['Hirschfeld\'s Notes', 'Christine\'s Letter', 'Gilded Pronoun Pin', 'Eleanor\'s Diary'],
+        effect: 'rage_vial'    // +3 hp + 6s damage boost
+    },
+    legendary: {
+        weight: 1, color: '#FFD700', glow: '#FFD700', scrap: 20,
+        names: ['Stonewall Brick', 'Compton\'s Cafeteria Sugar Shaker', 'Crown of Eleanor Rykener', 'Lili\'s Last Brushstroke'],
+        effect: 'permanent_heart'  // permanent +1 max health (lineage)
+    }
+};
+
+// Probability table compiled from weights, used by combat.dropLoot.
+export const LOOT_TIER_KEYS = Object.keys(LOOT_TIERS);
