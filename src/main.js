@@ -27,7 +27,9 @@ const game = {
         // On death, the next heir starts here (capped at deepest reached) so
         // progress isn't fully wiped from level 1.
         checkpointDepth: 1,
-        deepestReached: 1
+        deepestReached: 1,
+        // Has the player seen the cinematic intro? Replay button stays in camp.
+        seenIntro: false
     },
     player: {
         x: 5, y: 5,
@@ -161,6 +163,7 @@ function loadGame() {
     if (typeof game.persistent.permanentHearts !== 'number') game.persistent.permanentHearts = 0;
     if (typeof game.persistent.checkpointDepth !== 'number') game.persistent.checkpointDepth = 1;
     if (typeof game.persistent.deepestReached !== 'number') game.persistent.deepestReached = 1;
+    if (typeof game.persistent.seenIntro !== 'boolean') game.persistent.seenIntro = false;
 }
 loadGame();
 
@@ -249,19 +252,117 @@ window.addEventListener('resize', updateResolution);
 let patterns = {};
 function initGame() {
     updateResolution();
-    
+
     // Assign a default class on very first run so the PWR button works!
     if (!game.player.classObj) {
         game.player.classObj = CLASSES[0];
         game.player.className = CLASSES[0].name;
     }
-    
+
     if (imgReady(images.tex_floor)) patterns.floor = ctx.createPattern(images.tex_floor, 'repeat');
     if (imgReady(images.tex_wall)) patterns.wall = ctx.createPattern(images.tex_wall, 'repeat');
-    
-    // Start by showing the camp screen for the very first run, or directly start
-    startCamp();
+
+    // First-time players see the cinematic intro before the camp screen.
+    if (!game.persistent.seenIntro) {
+        playIntro(() => {
+            game.persistent.seenIntro = true;
+            saveGame();
+            startCamp();
+        });
+    } else {
+        startCamp();
+    }
 }
+
+// ---------------------------------------------------------------------------
+// Cinematic intro. Walks through a fixed sequence of scenes with auto-advance
+// timers, dot indicators, and SPACE / TAP / Next-button to step manually.
+// Skip jumps straight to the camp screen. Used on first run and replayable
+// from the camp's "Replay Intro Story" button.
+function playIntro(onDone) {
+    const screen = document.getElementById('intro-screen');
+    const dotsEl = document.getElementById('intro-dots');
+    const skipBtn = document.getElementById('intro-skip');
+    const nextBtn = document.getElementById('intro-next');
+    const scenes = Array.from(screen.querySelectorAll('.intro-scene'));
+    if (!scenes.length) { onDone && onDone(); return; }
+
+    // Per-scene auto-advance times in ms. The CONTROLS scene & the final
+    // logo scene linger longer because they have more to read / no dialog.
+    const sceneDurations = [3200, 3200, 3500, 3200, 4200, 4200, 6500, 8000];
+
+    let idx = 0;
+    let timer = null;
+    let cleanedUp = false;
+
+    // Build dot indicators (one per scene).
+    dotsEl.innerHTML = '';
+    scenes.forEach(() => {
+        const d = document.createElement('div');
+        d.className = 'dot';
+        dotsEl.appendChild(d);
+    });
+    const dots = Array.from(dotsEl.querySelectorAll('.dot'));
+
+    function show(i) {
+        if (timer) { clearTimeout(timer); timer = null; }
+        scenes.forEach((s, n) => s.classList.toggle('active', n === i));
+        dots.forEach((d, n) => d.classList.toggle('active', n === i));
+        if (i < scenes.length - 1) {
+            const dur = sceneDurations[i] || 3500;
+            timer = setTimeout(() => show(i + 1), dur);
+        }
+    }
+
+    function advance() {
+        if (idx >= scenes.length - 1) {
+            finish();
+        } else {
+            idx += 1;
+            show(idx);
+        }
+    }
+
+    function finish() {
+        if (cleanedUp) return;
+        cleanedUp = true;
+        if (timer) { clearTimeout(timer); timer = null; }
+        screen.style.display = 'none';
+        document.removeEventListener('keydown', onKey, true);
+        screen.removeEventListener('click', onClick);
+        skipBtn.removeEventListener('click', skip);
+        nextBtn.removeEventListener('click', nextHandler);
+        // Tiny delay so the click that closed the intro doesn't bleed into
+        // the camp's "Enter the Wasteland" button.
+        setTimeout(() => onDone && onDone(), 50);
+    }
+
+    function onKey(e) {
+        if (e.code === 'Escape') { e.preventDefault(); finish(); }
+        else if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowRight') {
+            e.preventDefault();
+            advance();
+        }
+    }
+    function onClick(e) {
+        // Ignore clicks on the buttons themselves — they have their own handlers.
+        if (e.target.closest('#intro-controls-bar')) return;
+        advance();
+    }
+    function skip(e) { e.stopPropagation(); finish(); }
+    function nextHandler(e) { e.stopPropagation(); advance(); }
+
+    screen.style.display = 'flex';
+    document.addEventListener('keydown', onKey, true);
+    screen.addEventListener('click', onClick);
+    skipBtn.addEventListener('click', skip);
+    nextBtn.addEventListener('click', nextHandler);
+
+    show(0);
+}
+
+// Expose for the camp's "Replay Intro" button.
+window.__playIntro = playIntro;
 
 function spawnParticle(x, y, color, count = 5) {
     for (let i = 0; i < count; i++) {

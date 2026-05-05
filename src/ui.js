@@ -187,6 +187,19 @@ export const UI = {
             };
         }
 
+        // Replay-intro button hides the camp, plays the cinematic, then re-opens
+        // the camp when the player skips/finishes — no progress lost.
+        const replayBtn = document.getElementById('replay-intro-btn');
+        if (replayBtn && typeof window.__playIntro === 'function') {
+            replayBtn.onclick = () => {
+                this.modals.camp.style.display = 'none';
+                window.__playIntro(() => {
+                    this.modals.camp.style.display = 'flex';
+                    updateCampUI();
+                });
+            };
+        }
+
         // -------------------------------------------------------------------
         // Difficulty selector. Lazy-build once, then re-highlight current pick
         // every time the camp opens.
