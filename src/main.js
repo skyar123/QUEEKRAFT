@@ -453,10 +453,13 @@ async function descend() {
     // next heir resumes where the previous one fell.
     game.persistent.checkpointDepth = Math.max(game.persistent.checkpointDepth || 1, game.depth);
     game.persistent.deepestReached = Math.max(game.persistent.deepestReached || 1, game.depth);
+    game.player.depthReached = game.depth;
     saveGame();
+    // Reset FOV and prompt state so the new floor starts unexplored.
+    game.seen = {};
+    lastPromptTile = null;
     generateMap(game);
-    game.player.x = game.spawnX || 5;
-    game.player.y = game.spawnY || 5;
+    // generateMap already positions the player on the new floor's spawn tile.
     game.camInitialized = false;
     UI.updateStatus(game);
     UI.addMessage(`📍 Checkpoint reached: Depth ${game.depth}`, 'special');
@@ -741,6 +744,9 @@ function interact() {
         game.npcs = game.npcs.filter(n => n !== npc);
         UI.updateStatus(game);
         draw();
+        if (game.zines >= 19 && game.historicalFigures >= 9) {
+            UI.showVictory();
+        }
         return;
     }
 
