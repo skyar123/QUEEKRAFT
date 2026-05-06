@@ -15,7 +15,15 @@
     <div id="game-container">
         <div id="game-area">
             <canvas id="game-canvas" tabindex="0"></canvas>
-            
+
+            <!-- Transparent gesture zones layered over the canvas on mobile.
+                 Left zone: move left/right by touch position.
+                 Right zone: tap=attack, swipe-up=jump, long-press=interact, double-tap=pause. -->
+            <div id="touch-overlay">
+                <div id="touch-zone-move"   class="touch-zone"></div>
+                <div id="touch-zone-action" class="touch-zone"></div>
+            </div>
+
             <div id="message-area"></div>
             
             <div id="status-line">

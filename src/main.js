@@ -232,19 +232,30 @@ setTimeout(() => { if (!initStarted) { initStarted = true; initGame(); } }, 5000
 function imgReady(img) { return img && img.complete && img.naturalWidth > 0; }
 
 function updateResolution() {
-    const isPortrait = window.innerHeight > window.innerWidth;
-    if (isPortrait) {
-        // Vertical/Portrait Mode (iPhone)
-        game.camera.width = 12;
-        game.camera.height = 20;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const isMobile = ('ontouchstart' in window || navigator.maxTouchPoints > 0) && w <= 1100;
+    const isPortrait = h > w;
+
+    if (isMobile) {
+        // Show fewer tiles so the player feels closer to the action.
+        // Height is derived from screen ratio so the canvas fills without distortion.
+        if (isPortrait) {
+            game.camera.width  = 10;
+            game.camera.height = Math.max(14, Math.min(game.mapHeight - 2,
+                                    Math.round(10 * h / w)));
+        } else {
+            game.camera.width  = 16;
+            game.camera.height = Math.max(8, Math.min(14,
+                                    Math.round(16 * h / w)));
+        }
     } else {
-        // Landscape (Desktop/Tablet)
-        game.camera.width = 24;
-        game.camera.height = 16;
+        game.camera.width  = isPortrait ? 12 : 24;
+        game.camera.height = isPortrait ? 20 : 16;
     }
-    canvas.width = game.camera.width * T;
+
+    canvas.width  = game.camera.width  * T;
     canvas.height = game.camera.height * T;
-    // ensure pixel art isn't blurry when resized
     ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener('resize', updateResolution);
@@ -2676,12 +2687,194 @@ function setupControls() {
     bindHold('pause-btn', () => { paused = !paused; });
     bindHold('quest-btn', () => { questLogVisible = !questLogVisible; });
 
-    // Hook touch held-state into the per-frame velocity assignment.
-    const updateRefForTouch = () => {
-        // Touch now shares the same acceleration logic as keyboard via the shared flags in touchHeld
-    };
-    const prevUpdate = update;
-    update = (dt) => { updateRefForTouch(); prevUpdate(dt); };
+    // -----------------------------------------------------------------------
+    // Glitter-punk transparent overlay controls for mobile.
+    // Zones are defined in index.html; this wires multi-touch gestures to
+    // the same touchHeld flags / action functions the button system uses.
+    // -----------------------------------------------------------------------
+    (function setupMobileOverlay() {
+        const overlay = document.getElementById('touch-overlay');
+        if (!overlay) return;
+
+        // Per-touch state keyed by Touch.identifier.
+        const activeTouches = new Map();
+        let lastTapTime  = 0;
+        let longPressTimer = null;
+        let longPressId    = -1;
+
+        // Request fullscreen on first tap to push browser chrome away.
+        let fsRequested = false;
+        function tryFullscreen() {
+            if (fsRequested) return;
+            fsRequested = true;
+            const el = document.documentElement;
+            try {
+                if (el.requestFullscreen)            el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+                else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+            } catch (_) {}
+        }
+
+        // Neon glow dot that follows each finger.
+        function spawnGlow(x, y, color) {
+            const el = document.createElement('div');
+            el.className = 'touch-glow';
+            el.style.left = x + 'px';
+            el.style.top  = y + 'px';
+            el.style.background =
+                `radial-gradient(circle, ${color}70 0%, ${color}28 45%, transparent 70%)`;
+            el.style.boxShadow =
+                `0 0 18px 6px ${color}55, 0 0 36px 12px rgba(1,205,254,0.22)`;
+            overlay.appendChild(el);
+            return el;
+        }
+        function moveGlow(el, x, y) {
+            if (!el) return;
+            el.style.left = x + 'px';
+            el.style.top  = y + 'px';
+        }
+        function removeGlow(el) {
+            if (!el || !el.parentNode) return;
+            el.style.transition = 'opacity 0.15s';
+            el.style.opacity    = '0';
+            setTimeout(() => el.remove(), 160);
+        }
+
+        // Update move direction from finger x within the move zone.
+        function updateMoveDir(x) {
+            const half = overlay.offsetWidth * 0.42 * 0.5;
+            if (x < half) {
+                touchHeld.left  = true;  touchHeld.right = false;
+                game.player.facingX = -1;
+            } else {
+                touchHeld.right = true;  touchHeld.left  = false;
+                game.player.facingX = 1;
+            }
+        }
+        function releaseMoveIfDone() {
+            const still = [...activeTouches.values()].some(t => t.zone === 'move');
+            if (!still) { touchHeld.left = false; touchHeld.right = false; }
+        }
+
+        overlay.addEventListener('touchstart', e => {
+            e.preventDefault();
+            tryFullscreen();
+            const rect     = overlay.getBoundingClientRect();
+            const moveEdge = rect.width * 0.42;
+
+            for (const touch of e.changedTouches) {
+                const x    = touch.clientX - rect.left;
+                const y    = touch.clientY - rect.top;
+                const zone = x < moveEdge ? 'move' : 'action';
+                const color = zone === 'move' ? '#01CDFE' : '#FF71CE';
+
+                const info = {
+                    zone, startX: x, startY: y, curX: x, curY: y,
+                    startTime: Date.now(), moved: false, jumped: false,
+                    glow: spawnGlow(x, y, color)
+                };
+                activeTouches.set(touch.identifier, info);
+
+                if (zone === 'move') {
+                    updateMoveDir(x);
+                } else {
+                    // Double-tap → pause/menu
+                    const now = Date.now();
+                    if (now - lastTapTime < 280) {
+                        paused = !paused;
+                        lastTapTime = 0;
+                    } else {
+                        lastTapTime = now;
+                    }
+                    // Long press → interact (fires if finger hasn't moved)
+                    if (longPressTimer) clearTimeout(longPressTimer);
+                    longPressId    = touch.identifier;
+                    longPressTimer = setTimeout(() => {
+                        const t = activeTouches.get(longPressId);
+                        if (t && !t.moved) interact();
+                        longPressTimer = null;
+                    }, 500);
+                }
+            }
+        }, { passive: false });
+
+        overlay.addEventListener('touchmove', e => {
+            e.preventDefault();
+            const rect = overlay.getBoundingClientRect();
+
+            for (const touch of e.changedTouches) {
+                const info = activeTouches.get(touch.identifier);
+                if (!info) continue;
+
+                const x  = touch.clientX - rect.left;
+                const y  = touch.clientY - rect.top;
+                const dx = x - info.startX;
+                const dy = y - info.startY;
+
+                if (Math.abs(dx) > 8 || Math.abs(dy) > 8) info.moved = true;
+                info.curX = x;
+                info.curY = y;
+                moveGlow(info.glow, x, y);
+
+                if (info.zone === 'move') {
+                    updateMoveDir(x);
+                } else {
+                    // Cancel long-press on deliberate swipe
+                    if (info.moved && longPressTimer) {
+                        clearTimeout(longPressTimer);
+                        longPressTimer = null;
+                    }
+                    // Live swipe-up triggers jump the moment threshold is crossed
+                    if (!info.jumped && dy < -35) {
+                        info.jumped = true;
+                        if (!tryJump()) game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
+                    }
+                }
+            }
+        }, { passive: false });
+
+        overlay.addEventListener('touchend', e => {
+            e.preventDefault();
+
+            for (const touch of e.changedTouches) {
+                const info = activeTouches.get(touch.identifier);
+                if (!info) continue;
+                activeTouches.delete(touch.identifier);
+                removeGlow(info.glow);
+
+                if (longPressTimer && touch.identifier === longPressId) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+
+                if (info.zone === 'move') {
+                    releaseMoveIfDone();
+                } else {
+                    const elapsed = Date.now() - info.startTime;
+                    const dy      = info.curY - info.startY;
+
+                    // Quick tap (no swipe, under 350 ms) → quick attack
+                    if (!info.moved && elapsed < 350) {
+                        attackEnemy(game, game.player.facingX || 1, 0, 'quick');
+                    }
+                    // Swipe-up release: jump if not already fired mid-swipe
+                    if (!info.jumped && dy < -35) {
+                        if (!tryJump()) game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
+                    }
+                    // Variable-height jump: cut velocity on finger-lift (mirrors key release)
+                    if (game.player.vy < -3.5) game.player.vy *= 0.45;
+                }
+            }
+        }, { passive: false });
+
+        overlay.addEventListener('touchcancel', e => {
+            for (const touch of e.changedTouches) {
+                const info = activeTouches.get(touch.identifier);
+                if (info) { removeGlow(info.glow); activeTouches.delete(touch.identifier); }
+            }
+            if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+            releaseMoveIfDone();
+        }, { passive: false });
+    })();
 
     // iOS requires a user gesture to start audio. Resume on first interaction.
     const unlockAudio = () => {

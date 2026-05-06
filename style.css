@@ -497,3 +497,90 @@ body, html {
     backdrop-filter: blur(10px);
     background: rgba(10, 10, 10, 0.85) !important;
 }
+
+/* ===== MOBILE FULLSCREEN + GLITTER-PUNK OVERLAY CONTROLS ===== */
+
+/* Transparent overlay: hidden by default, shown on touch devices */
+#touch-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.touch-zone {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    pointer-events: all;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Left 42% = movement zone, right 58% = action zone */
+#touch-zone-move   { left: 0;   width: 42%; }
+#touch-zone-action { right: 0;  width: 58%; }
+
+/* Neon glow dot that appears under each finger */
+.touch-glow {
+    position: absolute;
+    border-radius: 50%;
+    width: 80px;
+    height: 80px;
+    margin: -40px 0 0 -40px;
+    pointer-events: none;
+    animation: touchGlowIn 0.12s ease-out forwards;
+}
+
+@keyframes touchGlowIn {
+    from { transform: scale(0.2); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+}
+
+/* Mobile: full-screen canvas, overlay visible, bottom controls hidden */
+@media (pointer: coarse) {
+    #game-container {
+        /* keep safe-area padding from notch/home bar, just strip inner gap */
+    }
+
+    #game-area {
+        padding: 0;
+    }
+
+    #game-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100% !important;
+        height: 100% !important;
+        max-width: none !important;
+        max-height: none !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0;
+    }
+
+    /* Hide the classic button panel on touch devices */
+    #controls {
+        display: none !important;
+    }
+
+    #touch-overlay {
+        display: block;
+    }
+
+    /* Compact HUD text so it doesn't eat into game view */
+    #message-area {
+        height: 34px;
+        font-size: 11px;
+    }
+
+    #status-line {
+        font-size: 10px;
+        padding: 2px 5px;
+        bottom: env(safe-area-inset-bottom, 4px);
+    }
+}
