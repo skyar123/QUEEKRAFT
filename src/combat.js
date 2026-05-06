@@ -242,7 +242,8 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
 
     // Pattern Master: 20% crit chance for double damage
     let crit = false;
-    if (hasTrait(game.player, 'autism') && Math.random() < 0.20) {
+    const critChance = (hasTrait(game.player, 'autism') ? 0.20 : 0) + (game.player.critBonus || 0);
+    if (Math.random() < critChance) {
         damage *= 2;
         crit = true;
     }
@@ -250,6 +251,20 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
     if (game.player.comboPeak >= 5) {
         damage = Math.ceil(damage * 1.25);
     }
+
+    // MELEE LIGHT: Scaling Knockback Logic
+    enemy.percent = (enemy.percent || 0) + damage;
+    const weight = enemy.weight || 100;
+    const baseKB = 2;
+    const growth = 1.2;
+    // KB = (((damage/10 + damage*percent/20) * 200 / (weight + 100) * 1.4) + baseKB) * growth
+    const kb = (((damage / 10 + (damage * enemy.percent) / 20) * 200 / (weight + 100) * 1.4) + baseKB) * growth;
+    
+    // Apply velocity (enemies are now physics-driven)
+    enemy.vx = (dx || (enemy.x > px ? 1 : -1)) * kb * 0.15;
+    enemy.vy = -kb * 0.1; // Pop up
+    enemy.hitstun = Math.floor(kb * 1.5);
+    enemy.onGround = false;
 
     // Big Mood: damage swings wildly between 0.5x and 2.5x
     if (hasTrait(game.player, 'bipolar')) {
@@ -386,20 +401,12 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
         }
         game.screenShake = Math.max(game.screenShake || 0, isFinisher ? 0.85 : 0.55);
     }
-
-    if (knockback) {
-        const kx = enemy.x + dx;
-        const ky = enemy.y + dy;
-        if (game.map[`${kx},${ky}`] === '.' && !game.trolls.find(t => t.x === kx && t.y === ky)) {
-            enemy.x = kx;
-            enemy.y = ky;
-        }
-    }
-
     if (enemy.health <= 0) {
         UI.addMessage(`${enemy.enemyType === 'boss' ? 'THE BOSS' : 'Enemy'} defeated!`, 'victory');
         game.trolls = game.trolls.filter(t => t !== enemy);
         game.player.kills = (game.player.kills || 0) + 1;
+        if (typeof window.addXP === 'function') window.addXP(20);
+        else game.player.xp = (game.player.xp || 0) + 20;
 
         // Tiered loot drop replaces the old flat 30% scrap drop.
         if (enemy.enemyType !== 'boss') {
@@ -428,6 +435,8 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
             Audio.playLoot();
             // Boss drops a guaranteed Legendary plus some secondaries.
             dropLoot(game, enemy);
+            if (typeof window.addXP === 'function') window.addXP(500);
+            else game.player.xp = (game.player.xp || 0) + 500;
             const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
             dirs.forEach(d => {
                 game.items.push({ x: enemy.x + d[0], y: enemy.y + d[1], type: 'treasure', name: 'Boss Scrap' });
@@ -464,6 +473,15 @@ export function takeDamage(game, amount = 1) {
 
     // Combo broken on damage taken — punishes greedy play, rewards spacing.
     resetCombo(game);
+
+    // MELEE LIGHT: Player Knockback
+    game.player.percent = (game.player.percent || 0) + amount;
+    const pKB = 4 + (game.player.percent * 0.1);
+    const pDir = (game.player.vx >= 0 ? -1 : 1);
+    game.player.vx = pDir * pKB;
+    game.player.vy = -pKB * 0.5;
+    game.player.onGround = false;
+    game.player.hitstun = 12;
 
     // Chronic pain doubles i-frames; insomnia leaves you alert with shorter recovery
     let iframes = 3;

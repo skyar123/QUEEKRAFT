@@ -90,5 +90,26 @@ export const Audio = {
         playTone(70,  'sawtooth', 0.6, 0.22);
         playTone(110, 'square',   0.6, 0.10);
         setTimeout(() => playTone(58, 'sawtooth', 0.4, 0.18), 200);
+    },
+    
+    // AI INTEGRATIONS
+    speak: (text) => {
+        if (!window.speechSynthesis) return;
+        // Stop any current speech
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        utterance.pitch = 0.9;
+        // Find a cool voice if possible
+        const voices = window.speechSynthesis.getVoices();
+        utterance.voice = voices.find(v => v.name.includes('Google') || v.lang === 'en-US') || voices[0];
+        window.speechSynthesis.speak(utterance);
+    },
+    
+    generateMusic: (prompt) => {
+        console.log(`[Lyria AI] Generating soundtrack for: ${prompt}`);
+        // In a real implementation, you would call the Lyria API here.
+        // For now, we simulate the vibe with procedural tones.
+        this.playPower();
     }
 };

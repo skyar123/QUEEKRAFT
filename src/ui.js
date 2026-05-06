@@ -1,4 +1,5 @@
-import { ZINES, HISTORICAL_FIGURES, DIFFICULTIES } from './data.js';
+import { ZINES, HISTORICAL_FIGURES, DIFFICULTIES, GEMINI_GUIDE } from './data.js';
+import { Audio } from './audio.js';
 
 export const UI = {
     messageArea: document.getElementById('message-area'),
@@ -7,7 +8,9 @@ export const UI = {
         hearts: document.getElementById('player-hearts'),
         zines: document.getElementById('zines'),
         figures: document.getElementById('figures'),
-        treasures: document.getElementById('treasures')
+        treasures: document.getElementById('treasures'),
+        level: document.getElementById('player-level'),
+        xpBar: document.getElementById('xp-bar-fill')
     },
     modals: {
         zine: document.getElementById('zine-modal'),
@@ -15,7 +18,8 @@ export const UI = {
         victory: document.getElementById('victory-screen'),
         gameOver: document.getElementById('game-over-screen'),
         heirSelect: document.getElementById('heir-select-screen'),
-        camp: document.getElementById('camp-screen')
+        camp: document.getElementById('camp-screen'),
+        levelUp: document.getElementById('level-up-screen')
     },
     
     addMessage(text, type = 'system') {
@@ -34,6 +38,10 @@ export const UI = {
         this.status.zines.textContent = game.zines;
         this.status.figures.textContent = game.historicalFigures;
         this.status.treasures.textContent = game.treasures;
+        this.status.level.textContent = game.player.level || 1;
+        
+        const xpRatio = (game.player.xp || 0) / (game.player.xpToNext || 100);
+        this.status.xpBar.style.width = `${Math.min(1, xpRatio) * 100}%`;
 
         const displayHealth = Math.ceil(game.player.health);
         const displayMax = Math.ceil(game.player.maxHealth);
@@ -49,6 +57,15 @@ export const UI = {
         if (!zine) return;
         document.getElementById('zine-title').textContent = zine.title;
         document.getElementById('zine-content').innerHTML = zine.content;
+        
+        const coverImg = document.getElementById('zine-cover');
+        if (zine.image) {
+            coverImg.src = zine.image;
+            coverImg.style.display = 'block';
+        } else {
+            coverImg.style.display = 'none';
+        }
+        
         this.modals.zine.style.display = 'flex';
     },
 
@@ -106,6 +123,49 @@ export const UI = {
         });
 
         this.modals.heirSelect.style.display = 'flex';
+    },
+
+    showLevelUp(perks, onSelect) {
+        const container = document.getElementById('perk-options');
+        container.innerHTML = '';
+        
+        perks.forEach(perk => {
+            const card = document.createElement('div');
+            card.className = 'perk-card';
+            card.innerHTML = `
+                <div class="perk-name">${perk.name}</div>
+                <div class="perk-desc">${perk.desc}</div>
+            `;
+            card.onclick = () => {
+                this.modals.levelUp.style.display = 'none';
+                onSelect(perk);
+            };
+            container.appendChild(card);
+        });
+        
+        this.modals.levelUp.style.display = 'flex';
+    },
+
+    showItemReward(item) {
+        // Reuse zine modal for item rewards for now, or create a specific one
+        document.getElementById('zine-title').textContent = item.name || item.type;
+        document.getElementById('zine-content').innerHTML = `<p>${item.desc || 'A valuable piece of history.'}</p>`;
+        
+        const coverImg = document.getElementById('zine-cover');
+        if (item.image) {
+            coverImg.src = item.image;
+            coverImg.style.display = 'block';
+        } else {
+            // Fallback for scrap
+            if (item.name?.includes('Scrap')) coverImg.src = '/images/items/scrap.png';
+            else if (item.name?.includes('Brick')) coverImg.src = '/images/items/brick.png';
+            else if (item.name?.includes('Token')) coverImg.src = '/images/items/history_token.png';
+            else coverImg.style.display = 'none';
+            
+            if (coverImg.src.includes('items')) coverImg.style.display = 'block';
+        }
+        
+        this.modals.zine.style.display = 'flex';
     },
 
     renderLineage(lineage) {
@@ -346,6 +406,9 @@ export const DialogueUI = {
         const node = this.currentNPC.dialogue[this.currentNode];
         document.getElementById('conversation-text').textContent = node.text;
         
+        // AI TTS - Speak the NPC text
+        Audio.speak(node.text);
+        
         const choicesContainer = document.getElementById('conversation-choices');
         choicesContainer.innerHTML = '';
         
@@ -371,6 +434,20 @@ export const DialogueUI = {
             };
             choicesContainer.appendChild(btn);
         }
+
+        // Add "Fact Check" button for Google Search integration
+        if (this.currentNPC.fact) {
+            const factBtn = document.createElement('button');
+            factBtn.className = 'conversation-btn';
+            factBtn.style.borderColor = '#FFD700';
+            factBtn.style.color = '#FFD700';
+            factBtn.innerHTML = '🔍 FACT CHECK (Search)';
+            factBtn.onclick = () => {
+                UI.addMessage(`[Google Search Data]: ${this.currentNPC.fact}`, 'special');
+                Audio.speak(`Search result: ${this.currentNPC.fact}`);
+            };
+            choicesContainer.appendChild(factBtn);
+        }
     },
 
     applyEffects(node) {
@@ -389,9 +466,49 @@ export const DialogueUI = {
 
     close() {
         UI.modals.conversation.style.display = 'none';
+        // Stop speech when closing
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
         this.currentGame = null;
         this.currentNPC = null;
         this.currentNode = null;
+    }
+};
+
+export const GeminiUI = {
+    start(game) {
+        const spirit = GEMINI_GUIDE;
+        const msg = spirit.responses[Math.floor(Math.random() * spirit.responses.length)];
+        
+        document.getElementById('conversation-name').textContent = spirit.name;
+        document.getElementById('conversation-text').textContent = msg;
+        
+        // Change portrait for AI
+        const portrait = document.querySelector('#conversation-modal img');
+        if (portrait) {
+            portrait.src = '/images/portrait_gemini.png';
+            portrait.style.filter = 'drop-shadow(0 0 15px var(--punk-cyan))';
+            portrait.classList.add('pulse-glow');
+        }
+        
+        UI.modals.conversation.style.display = 'flex';
+        
+        const choicesContainer = document.getElementById('conversation-choices');
+        choicesContainer.innerHTML = '';
+        
+        const btn = document.createElement('button');
+        btn.className = 'conversation-btn';
+        btn.textContent = "Thank you, Guide.";
+        btn.onclick = () => {
+            if (portrait) {
+                portrait.src = '/images/portrait_npc.png';
+                portrait.style.filter = '';
+                portrait.classList.remove('pulse-glow');
+            }
+            UI.modals.conversation.style.display = 'none';
+        };
+        choicesContainer.appendChild(btn);
+        
+        Audio.speak(msg);
     }
 };
 

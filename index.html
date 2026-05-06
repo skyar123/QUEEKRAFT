@@ -20,6 +20,8 @@
             
             <div id="status-line">
                 <span id="player-name">Skylar</span> the Survivor | 
+                Lvl <span id="player-level">1</span> |
+                <div id="xp-bar-container"><div id="xp-bar-fill"></div></div> |
                 Depth:<span id="depth">1</span> | 
                 Hearts:<span id="player-hearts"></span> |
                 Archives:<span id="zines">0</span>/19 | 
@@ -44,6 +46,7 @@
             <div id="top-buttons">
                 <button class="mini-btn" id="pause-btn" aria-label="Pause">⏸</button>
                 <button class="mini-btn" id="quest-btn" aria-label="Quest log">📋</button>
+                <button class="mini-btn" id="ai-btn" aria-label="Archive Terminal">🤖</button>
             </div>
             <div id="control-status">Tap dpad to move · ↑ Jump · ↓ Dash · Hold E to charge · R class · ⏸ pause · 📋 quests</div>
         </div>
@@ -327,6 +330,7 @@
     <!-- Modals for Zines, Dialogues, Victory, Game Over -->
     <div id="zine-modal" class="modal">
         <div class="zine-box">
+            <img id="zine-cover" src="" style="width: 100%; height: auto; border: 2px solid var(--punk-pink); margin-bottom: 15px; display: none; box-shadow: 0 0 15px var(--punk-pink);">
             <div class="zine-header" id="zine-title">Trans Resources</div>
             <div class="zine-content" id="zine-content"></div>
             <button class="zine-close" id="zine-close-btn">Close</button>
@@ -372,6 +376,17 @@
         </div>
     </div>
 
+    <!-- Level Up Screen -->
+    <div id="level-up-screen" class="modal">
+        <div class="level-up-box">
+            <div class="level-up-header">LEVEL UP!</div>
+            <div id="level-up-subtitle" style="text-align: center; margin-bottom: 20px; color: var(--punk-cyan);">Choose a Perk</div>
+            <div id="perk-options" class="perk-container">
+                <!-- Perks injected dynamically -->
+            </div>
+        </div>
+    </div>
+
     <!-- Heir Selection Screen -->
     <div id="heir-select-screen" class="modal">
         <div class="heir-box">
@@ -414,6 +429,10 @@
                         <div style="font-size:12px;color:#aaa;">Permanently adds <span style="color:#39FF14">+1 sword/spoon damage</span> per swing.<br>Currently granting: <span id="bonus-damage" style="color:#39FF14">+0 dmg</span></div>
                     </div>
                     <button class="upgrade-btn" id="upgrade-damage-btn">Buy<br><span style="font-size:12px;">(<span id="cost-damage">5</span> scrap)</span></button>
+                </div>
+                <div class="upgrade-row" style="border-color: var(--punk-cyan);">
+                    <span>Archive Terminal (AI)</span>
+                    <button class="upgrade-btn" id="ai-guide-btn" style="border-color: var(--punk-cyan); color: var(--punk-cyan);">Talk to Gemini</button>
                 </div>
             </div>
 

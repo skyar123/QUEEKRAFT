@@ -1,5 +1,5 @@
 export const ZINES = {
-    'tucking': { title: 'Safe Tucking Guide', content: '<h3>Safe Tucking</h3><p>Medical tape only, never duct tape! Take breaks every 8 hours. Your safety comes first.</p>' },
+    'tucking': { title: 'Safe Tucking Guide', image: '/images/items/zine_tucking.png', content: '<h3>Safe Tucking</h3><p>Medical tape only, never duct tape! Take breaks every 8 hours. Your safety comes first.</p>' },
     'binding': { title: 'Chest Binding Safety', content: '<h3>Binding Safety</h3><p>Use proper binders, never ace bandages. Listen to your body. Take breaks.</p>' },
     'hrt': { title: 'HRT Guide', content: '<h3>Hormone Therapy</h3><p>Work with qualified doctors. Informed consent clinics are available. You deserve care.</p>' },
     'legal': { title: 'Legal Rights', content: '<h3>Know Your Rights</h3><p>Title VII protects employment. Laws vary by location. Knowledge is power.</p>' },
@@ -49,7 +49,8 @@ export const HISTORICAL_FIGURES = {
                 reward: 'item_history',
                 choices: []
             }
-        }
+        },
+        fact: "Eleanor Rykener was a 14th-century individual in London who worked as an embroiderer and barmaid, and lived openly as a woman, challenging medieval gender norms."
     },
     'marsha': { 
         name: 'Marsha P. Johnson', 
@@ -80,7 +81,8 @@ export const HISTORICAL_FIGURES = {
                 text: "Pay them no mind, honey! Keep fighting!",
                 choices: []
             }
-        }
+        },
+        fact: "Marsha P. Johnson was a key figure in the 1969 Stonewall uprising and co-founded STAR (Street Transvestite Action Revolutionaries) to support homeless queer youth."
     },
     'sylvia': {
         name: 'Sylvia Rivera',
@@ -106,7 +108,8 @@ export const HISTORICAL_FIGURES = {
                 text: "Liberation means ALL of us.",
                 choices: []
             }
-        }
+        },
+        fact: "Sylvia Rivera co-founded STAR with Marsha P. Johnson and was the first transgender activist to have her portrait hung in the National Portrait Gallery."
     },
     'dora': { 
         name: 'Dora Richter', 
@@ -124,7 +127,8 @@ export const HISTORICAL_FIGURES = {
                 text: "Every surgery, every experiment laid the groundwork for future generations like yourself.",
                 choices: []
             }
-        }
+        },
+        fact: "Dora Richter was one of the first people in modern history to undergo complete gender-affirming surgery at Magnus Hirschfeld's Institute for Sexual Science in 1931."
     },
     'alan': { 
         name: 'Dr. Alan L. Hart', 
@@ -150,7 +154,8 @@ export const HISTORICAL_FIGURES = {
                 text: "Stay safe out there.",
                 choices: []
             }
-        }
+        },
+        fact: "Dr. Alan Hart pioneered the use of X-ray photography to detect tuberculosis, saving countless lives while living authentically as a trans man in the early 20th century."
     },
     'charley': { 
         name: 'Charley Parkhurst', 
@@ -168,7 +173,8 @@ export const HISTORICAL_FIGURES = {
                 text: "I found freedom on the frontier, where a person could reinvent themselves completely. Go find yours.",
                 choices: []
             }
-        }
+        },
+        fact: "Charley Parkhurst was a famous stagecoach driver who lived as a man for decades and was the first person assigned female at birth to register to vote in a U.S. presidential election (1868)."
     },
     'lili': { 
         name: 'Lili Elbe', 
@@ -187,7 +193,8 @@ export const HISTORICAL_FIGURES = {
                 text: "Even though I died young, I lived authentically. Sometimes that is revolution enough.",
                 choices: []
             }
-        }
+        },
+        fact: "Lili Elbe was a successful Danish painter and one of the earliest documented recipients of gender-affirming surgery, which inspired the book and film 'The Danish Girl'."
     },
     'christine': { 
         name: 'Christine Jorgensen', 
@@ -205,7 +212,8 @@ export const HISTORICAL_FIGURES = {
                 text: "The body should fit the soul, not vice versa.",
                 choices: []
             }
-        }
+        },
+        fact: "Christine Jorgensen became an international media sensation in 1952 as the first American to publicly transition, using her platform to advocate for transgender visibility."
     },
     'lucy': { 
         name: 'Lucy Hicks Anderson', 
@@ -223,25 +231,37 @@ export const HISTORICAL_FIGURES = {
                 text: "Marriage equality, the right to exist - these are battles we must win for every generation.",
                 choices: []
             }
-        }
+        },
+        fact: "Lucy Hicks Anderson was a Black trans socialite who fiercely defended her right to live and marry as a woman, stating: 'I defy any doctor in the world to prove that I am not a woman.'"
     }
 };
 
 export const TREASURES = {
-    'flag': { name: 'Pride Flag', desc: 'A beautiful rainbow flag!' },
-    'nametag': { name: 'Name Tag', desc: 'Your real name in bold letters.' },
-    'letter': { name: 'Support Letter', desc: 'Love from chosen family.' },
-    'meds': { name: 'HRT Meds', desc: 'Steps toward authenticity.' },
-    'pin': { name: 'Trans Pin', desc: 'Small but powerful symbol.' },
-    'photo': { name: 'Family Photo', desc: 'Your chosen family at Pride.' },
-    'mirror': { name: 'Affirming Mirror', desc: 'Shows your true self.' },
-    'notes': { name: 'Therapy Notes', desc: 'Wisdom for the journey.' }
+    'flag': { name: 'Pride Flag', desc: 'A beautiful rainbow flag!', image: '/images/items/flag.png' },
+    'nametag': { name: 'Name Tag', desc: 'Your real name in bold letters.', image: '/images/items/nametag.png' },
+    'letter': { name: 'Support Letter', desc: 'Love from chosen family.', image: '/images/items/letter.png' },
+    'meds': { name: 'HRT Meds', desc: 'Steps toward authenticity.', image: '/images/items/meds.png' },
+    'pin': { name: 'Trans Pin', desc: 'Small but powerful symbol.', image: '/images/items/pin.png' },
+    'photo': { name: 'Family Photo', desc: 'Your chosen family at Pride.', image: '/images/items/photo.png' },
+    'mirror': { name: 'Affirming Mirror', desc: 'Shows your true self.', image: '/images/items/mirror.png' },
+    'notes': { name: 'Therapy Notes', desc: 'Wisdom for the journey.', image: '/images/items/notes.png' }
 };
 
 export const HEALING_ITEMS = {
-    'tea': { name: 'Healing Tea', desc: 'Chamomile and lavender restore you.', healing: 1 },
-    'book': { name: 'Book of Affirmations', desc: 'Self-love heals wounds.', healing: 2 },
-    'crystal': { name: 'Healing Crystal', desc: 'Amethyst radiates healing energy.', healing: 3 }
+    'tea': { name: 'Healing Tea', desc: 'Chamomile and lavender restore you.', healing: 1, image: '/images/items/tea.png' },
+    'book': { name: 'Book of Affirmations', desc: 'Self-love heals wounds.', healing: 2, image: '/images/items/book.png' },
+    'crystal': { name: 'Healing Crystal', desc: 'Amethyst radiates healing energy.', healing: 3, image: '/images/items/crystal.png' }
+};
+
+export const GEMINI_GUIDE = {
+    name: "AI ARCHIVE SPIRIT (GEMINI)",
+    responses: [
+        "I am the keeper of the Queer Archives. What would you like to know about our shared history?",
+        "Every zine you collect strengthens our collective memory. Data is resistance.",
+        "I can help you navigate the wasteland. My sensors detect high levels of queer joy in the deeper archives.",
+        "The historical figures you meet are ancestors. Their courage is your inheritance.",
+        "I am powered by the collective spirit of those who came before. How can I assist your revolution today?"
+    ]
 };
 
 // ---------------------------------------------------------------------------

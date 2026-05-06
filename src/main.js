@@ -1,4 +1,4 @@
-import { UI, DialogueUI } from './ui.js';
+import { UI, DialogueUI, GeminiUI } from './ui.js';
 import { generateMap } from './map.js';
 import { attackEnemy, takeDamage, tickStatus, tickCombo, resetCombo, applyStatus, isFrozen } from './combat.js';
 import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES } from './data.js';
@@ -377,6 +377,44 @@ function spawnParticle(x, y, color, count = 5) {
     }
 }
 
+const PERKS = [
+    { id: 'hp', name: 'Vitality', desc: '+1 Max HP and heal to full.', effect: (p) => { p.maxHealth += 1; p.health = p.maxHealth; } },
+    { id: 'dmg', name: 'Strength', desc: '+1 Base Damage.', effect: (p) => { p.baseDamage += 1; } },
+    { id: 'speed', name: 'Agility', desc: 'Slightly faster movement and acceleration.', effect: (p) => { p.hasSpeedPerk = true; } },
+    { id: 'jump', name: 'Airborne', desc: 'Gain an extra jump.', effect: (p) => { p.extraJumps = (p.extraJumps || 0) + 1; } },
+    { id: 'crit', name: 'Precision', desc: '+10% Crit Chance.', effect: (p) => { p.critBonus = (p.critBonus || 0) + 0.1; } },
+    { id: 'regen', name: 'Recovery', desc: 'Slowly regenerate health over time.', effect: (p) => { p.hasRegen = true; } }
+];
+
+function addXP(amount) {
+    const p = game.player;
+    p.xp = (p.xp || 0) + amount;
+    p.xpToNext = p.xpToNext || 100;
+    
+    UI.addMessage(`+${amount} XP`, 'special');
+    
+    if (p.xp >= p.xpToNext) {
+        p.xp -= p.xpToNext;
+        p.level = (p.level || 1) + 1;
+        p.xpToNext = Math.floor(p.xpToNext * 1.5);
+        levelUp();
+    }
+    UI.updateStatus(game);
+}
+window.addXP = addXP;
+
+function levelUp() {
+    // Pick 3 random perks
+    const shuffled = [...PERKS].sort(() => 0.5 - Math.random());
+    const choices = shuffled.slice(0, 3);
+    
+    UI.showLevelUp(choices, (selected) => {
+        selected.effect(game.player);
+        UI.addMessage(`Leveled Up! New Perk: ${selected.name}`, 'special');
+        UI.updateStatus(game);
+    });
+}
+
 function updateParticles() {
     for (let i = game.particles.length - 1; i >= 0; i--) {
         const p = game.particles[i];
@@ -430,6 +468,12 @@ function startCamp() {
             saveGame();
         }
     );
+    
+    // Hook up AI Guide buttons
+    const aiBtn = document.getElementById('ai-guide-btn');
+    if (aiBtn) aiBtn.onclick = () => GeminiUI.start(game);
+    const topAiBtn = document.getElementById('ai-btn');
+    if (topAiBtn) topAiBtn.onclick = () => GeminiUI.start(game);
 }
 
 async function descend() {
@@ -491,7 +535,10 @@ function startDungeon() {
     p.coyoteTimer = 0;
     p.comboCount = 0; p.comboTimer = 0; p.comboPeak = 0;
     p.lootBuff = 0;
-    p.kills = 0; p.scrapEarned = 0;
+    p.kills = 0; p.scrapEarned = 0; p.depthReached = 1;
+    p.xp = 0; p.level = 1; p.xpToNext = 100;
+    p.percent = 0; p.hitstun = 0;
+    p.extraJumps = 0; p.critBonus = 0; p.hasRegen = false; p.hasSpeedPerk = false;
 
     // Checkpoint resume: next heir starts at the highest depth previously
     // reached (mediated by `checkpointDepth`). First-ever run is depth 1.
@@ -743,6 +790,7 @@ function interact() {
         DialogueUI.start(game, npc.figureKey);
         game.npcs = game.npcs.filter(n => n !== npc);
         UI.updateStatus(game);
+        addXP(150);
         draw();
         if (game.zines >= 19 && game.historicalFigures >= 9) {
             UI.showVictory();
@@ -760,6 +808,7 @@ function interact() {
             UI.addMessage(`Collected: ${item.name}!`, 'special');
             Audio.playLoot();
             UI.showZine(item.zineKey);
+            addXP(100);
         } else if (item.type === 'healing') {
             const healing = HEALING_ITEMS[item.healingKey];
             let healAmount = healing.healing;
@@ -821,11 +870,12 @@ function interact() {
                 takeDamage(game, 2);
             } else {
                 // It's queer joy! (Loot)
-                UI.addMessage(`🎉 The Gender Reveal Chest was full of HRT and treasures! 🎉`, 'special');
+            UI.addMessage(`🎉 The Gender Reveal Chest was full of HRT and treasures! 🎉`, 'special');
                 game.treasures += 3;
                 game.persistent.treasures += 3;
                 game.player.scrapEarned = (game.player.scrapEarned || 0) + 3;
                 game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
+                addXP(50);
             }
         }
         game.items = game.items.filter(i => i !== item);
@@ -954,14 +1004,18 @@ const stars = [];
 // === Platformer physics constants (Rogue Legacy inspired) ===
 const PLAYER_W = 0.65; // Slightly narrower for better platforming
 const PLAYER_H = 0.9;
-const GRAVITY = 0.8; // Snappier gravity
-const TERMINAL_VY = 12;
-const JUMP_SPEED = -8.5; // Tighter jump arc scaled for 10x10 rooms
-const COYOTE_FRAMES = 8;
-const JUMP_BUFFER_FRAMES = 8;
+const GRAVITY = 0.75; // Slightly gentler gravity for more hangtime
+const TERMINAL_VY = 14;
+const JUMP_SPEED = -9.2; // Compensating for lower gravity
+const COYOTE_FRAMES = 10;
+const JUMP_BUFFER_FRAMES = 10;
 const DASH_FRAMES = 8;
-const DASH_COOLDOWN = 30;
-const DASH_SPEED = 0.55;
+const DASH_COOLDOWN = 35;
+const DASH_SPEED = 0.6;
+const ACCEL = 1.2;          // Horizontal acceleration
+const FRICTION_GROUND = 0.78; // Ground friction
+const FRICTION_AIR = 0.92;    // Air resistance
+const MAX_VX = 5.5;          // Speed limit
 
 // Returns true if (px, py) lies inside any solid wall.
 // One-way platforms are NOT considered solid by this — use isOneWayBlocking
@@ -1002,22 +1056,23 @@ function isGrounded(p) {
     return false;
 }
 
-function moveX(dx) {
+function moveEntityX(ent, dx, w, h) {
     if (dx === 0) return;
-    const p = game.player;
-    const target = p.x + dx;
-    const lead = dx > 0 ? target + PLAYER_W : target;
-    // Horizontal motion only blocks on solid walls — you can walk past a
-    // one-way platform's edge column horizontally.
-    if (pointSolid(lead, p.y) ||
-        pointSolid(lead, p.y + PLAYER_H * 0.5) ||
-        pointSolid(lead, p.y + PLAYER_H - 0.001)) {
-        if (dx > 0) p.x = Math.floor(lead) - PLAYER_W - 0.0001;
-        else p.x = Math.floor(lead) + 1;
-        p.vx = 0;
+    const target = ent.x + dx;
+    const lead = dx > 0 ? target + w : target;
+    if (pointSolid(lead, ent.y) ||
+        pointSolid(lead, ent.y + h * 0.5) ||
+        pointSolid(lead, ent.y + h - 0.001)) {
+        if (dx > 0) ent.x = Math.floor(lead) - w - 0.0001;
+        else ent.x = Math.floor(lead) + 1;
+        ent.vx = 0;
     } else {
-        p.x = target;
+        ent.x = target;
     }
+}
+
+function moveX(dx) {
+    moveEntityX(game.player, dx, PLAYER_W, PLAYER_H);
 }
 
 function moveY(dy) {
@@ -1053,6 +1108,29 @@ function moveY(dy) {
     }
 }
 
+function moveEnemyY(e, dy, w, h) {
+    if (dy === 0) return;
+    const target = e.y + dy;
+    if (dy > 0) {
+        const feet = target + h;
+        if (pointSolid(e.x + 0.05, feet) || pointSolid(e.x + w - 0.05, feet)) {
+            e.y = Math.floor(feet) - h - 0.0001;
+            e.vy = 0;
+            e.onGround = true;
+        } else {
+            e.y = target;
+            e.onGround = false;
+        }
+    } else {
+        if (pointSolid(e.x + 0.05, target) || pointSolid(e.x + w - 0.05, target)) {
+            e.y = Math.floor(target) + 1;
+            e.vy = 0;
+        } else {
+            e.y = target;
+        }
+    }
+}
+
 function tryJump() {
     const p = game.player;
     if (p.coyoteTimer > 0) {
@@ -1064,6 +1142,7 @@ function tryJump() {
         spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 6, '#FF71CE');
         return true;
     }
+    const maxJumps = 1 + (p.extraJumps || 0) + (p.traits && p.traits.some(t => t.id === 'nostalgia') ? 1 : 0);
     if (p.jumpsLeft > 0) {
         p.vy = JUMP_SPEED * 0.92;
         p.jumpsLeft -= 1;
@@ -1177,6 +1256,7 @@ function update(dt) {
     if (p.lootBuff > 0) p.lootBuff--;
     // Combo timer — resets the chain after 1 second of inaction.
     tickCombo(game);
+    if (p.hitstun > 0) p.hitstun--;
 
     // Charge meter ticks while E is held (capped at 120).
     if (p.chargeAttack > 0 && p.chargeAttack < 120) p.chargeAttack++;
@@ -1234,7 +1314,7 @@ function update(dt) {
     p.onGround = isGrounded(p);
     if (p.onGround) {
         p.coyoteTimer = (p.trait && p.trait.id === 'insomnia') ? COYOTE_FRAMES * 2 : COYOTE_FRAMES;
-        p.jumpsLeft = (p.traits && p.traits.some(t => t.id === 'nostalgia')) ? 2 : 1;
+        p.jumpsLeft = 1 + (p.extraJumps || 0) + (p.traits && p.traits.some(t => t.id === 'nostalgia') ? 1 : 0);
         if (!wasGrounded && p.vy >= 1.5) {
             Audio.playStep();
             spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 4, '#FFFFFF');
@@ -1263,6 +1343,7 @@ function update(dt) {
                     UI.addMessage(`Stomped ${troll.enemyType}!`, 'victory');
                     game.trolls = game.trolls.filter(t => t !== troll);
                     p.kills = (p.kills || 0) + 1;
+                    addXP(20);
                     if (Math.random() < 0.30) {
                         game.items.push({ x: troll.x, y: troll.y, type: 'treasure', name: 'Salvaged Scrap' });
                     }
@@ -1277,12 +1358,39 @@ function update(dt) {
     applyHazards(p);
 
     // Friction (only when not dashing). Ice keeps almost all velocity.
-    // Lower multiplier = more friction = faster stop when releasing keys
-    if (p.dashTimer <= 0) p.vx *= p.onIceTile ? 0.97 : 0.65;
-    if (Math.abs(p.vx) < 0.05) p.vx = 0;
+    if (p.dashTimer <= 0) {
+        const fric = p.onGround ? (p.onIceTile ? 0.98 : FRICTION_GROUND) : FRICTION_AIR;
+        p.vx *= fric;
+    }
+    if (Math.abs(p.vx) < 0.01) p.vx = 0;
 
     // Status effect ticking (DOTs, freeze duration, etc.)
     tickStatus(game);
+
+    // Regen perk
+    if (p.hasRegen && game.animFrame % 600 === 0 && p.health < p.maxHealth) {
+        p.health = Math.min(p.maxHealth, p.health + 1);
+        game.floatingText.push({ x: p.x, y: p.y, text: '+1', life: 40, color: '#39FF14' });
+        UI.updateStatus(game);
+    }
+
+    // Update Enemies (Melee Light Physics)
+    for (const troll of game.trolls) {
+        if (troll.hitstun > 0) troll.hitstun--;
+        
+        // Gravity
+        if (!troll.onGround) troll.vy = (troll.vy || 0) + GRAVITY * 0.8;
+        if (troll.vy > TERMINAL_VY) troll.vy = TERMINAL_VY;
+        
+        // Horizontal Friction
+        troll.vx = (troll.vx || 0) * 0.95;
+        if (Math.abs(troll.vx) < 0.05) troll.vx = 0;
+        
+        // Apply movement
+        const w = 0.8, h = 0.8;
+        moveEntityX(troll, (troll.vx || 0) * 0.1, w, h);
+        moveEnemyY(troll, (troll.vy || 0) * 0.1, w, h);
+    }
 
     // Enemy AI / cooldown tick (turn-style every ~10 frames)
     if (game.animFrame % 10 === 0) {
@@ -2355,8 +2463,10 @@ function setupControls() {
             }
         }
 
-        if (UI.modals.zine.style.display === 'flex' || UI.modals.conversation.style.display === 'flex') return;
-        if (paused) return;
+        if (UI.modals.zine.style.display === 'flex' || 
+            UI.modals.conversation.style.display === 'flex' ||
+            UI.modals.levelUp.style.display === 'flex') return;
+        if (paused || game.player.hitstun > 0) return;
 
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'ArrowDown' || e.code === 'KeyS') {
             e.preventDefault(); // Prevent browser scrolling which looks like a game freeze!
@@ -2447,19 +2557,28 @@ function setupControls() {
     const originalUpdate = update;
     update = (dt) => {
         const p = game.player;
-        // Reduced base speed from 4 to 2.5 so it's easier to pinpoint items
-        let speed = 2.5;
-        if (p.trait && p.trait.id === 'adhd') speed = 3.5;
-        if (p.traits && p.traits.some(t => t.id === 'chronic')) speed = Math.min(speed, 2.0);
+        let accel = ACCEL;
+        if (p.trait && p.trait.id === 'adhd') accel *= 1.4;
+        if (p.hasSpeedPerk) accel *= 1.3;
+        if (p.traits && p.traits.some(t => t.id === 'chronic')) accel *= 0.7;
 
-        if (p.dashTimer <= 0) {
+        if (p.hitstun > 0) {
+            // Melee-style DI: allow slight horizontal nudge while in hitstun
+            if (keys['ArrowLeft'] || keys['KeyA']) p.vx -= 0.15;
+            if (keys['ArrowRight'] || keys['KeyD']) p.vx += 0.15;
+        } else if (p.dashTimer <= 0) {
             if (keys['ArrowLeft'] || keys['KeyA'] || touchHeld.left) {
-                p.vx = -speed;
+                p.vx -= accel;
                 p.facingX = -1;
             } else if (keys['ArrowRight'] || keys['KeyD'] || touchHeld.right) {
-                p.vx = speed;
+                p.vx += accel;
                 p.facingX = 1;
             }
+            // Clamp speed
+            let limit = MAX_VX * (p.trait?.id === 'adhd' ? 1.3 : 1.0);
+            if (p.hasSpeedPerk) limit *= 1.25;
+            if (p.vx > limit) p.vx = limit;
+            if (p.vx < -limit) p.vx = -limit;
         }
         originalUpdate(dt);
     };
@@ -2559,13 +2678,7 @@ function setupControls() {
 
     // Hook touch held-state into the per-frame velocity assignment.
     const updateRefForTouch = () => {
-        const p = game.player;
-        if (p.dashTimer > 0) return;
-        let speed = 4;
-        if (p.trait && p.trait.id === 'adhd') speed = 5;
-        if (p.traits && p.traits.some(t => t.id === 'chronic')) speed = Math.min(speed, 3);
-        if (touchHeld.left)  { p.vx = -speed; p.facingX = -1; }
-        if (touchHeld.right) { p.vx =  speed; p.facingX =  1; }
+        // Touch now shares the same acceleration logic as keyboard via the shared flags in touchHeld
     };
     const prevUpdate = update;
     update = (dt) => { updateRefForTouch(); prevUpdate(dt); };
