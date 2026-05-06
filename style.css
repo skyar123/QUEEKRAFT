@@ -165,58 +165,92 @@ body, html {
 .msg-combat { color: #FF9900; }
 .msg-healing { color: var(--punk-cyan); font-weight: bold; text-shadow: 0 0 5px var(--punk-cyan); }
 
+/* ─── Mobile controls panel ─────────────────────────────────────── */
 #controls {
     background: #050505;
-    border-top: 3px solid var(--punk-purple);
-    display: grid;
-    grid-template-areas:
-        "top-buttons top-buttons top-buttons"
-        "dpad-area . action-area"
-        "status status status";
-    grid-template-rows: auto 1fr auto;
-    grid-template-columns: 1fr 1fr 1fr;
-    justify-content: center;
-    align-content: center;
-    gap: 8px;
-    padding: 8px 8px calc(8px + env(safe-area-inset-bottom)) 8px;
-    box-shadow: 0 -5px 20px rgba(185, 103, 219, 0.2);
-    min-height: 175px;
-}
-
-/* Hide touch controls on non-touch devices (desktops/laptops) */
-@media (pointer: fine) {
-    #controls {
-        display: none;
-    }
-}
-
-.dpad-container {
-    grid-area: dpad-area;
+    border-top: 2px solid rgba(185, 103, 219, 0.4);
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 10px;
+    padding: 8px 10px calc(10px + env(safe-area-inset-bottom)) 10px;
+    box-shadow: 0 -4px 18px rgba(185, 103, 219, 0.18);
+    min-height: 160px;
     position: relative;
-    width: 165px;
-    height: 165px;
-    justify-self: center;
+}
+
+/* Hide on non-touch devices */
+@media (pointer: fine) {
+    #controls { display: none; }
+}
+
+/* ─── Floating joystick zone (left half) ─────────────────────────── */
+#joystick-zone {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid rgba(1, 205, 254, 0.18);
+    border-radius: 12px;
+    background: rgba(1, 205, 254, 0.03);
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    overflow: hidden;
+}
+
+.joy-label {
+    font-family: 'VT323', monospace;
+    font-size: 12px;
+    color: rgba(1, 205, 254, 0.25);
+    letter-spacing: 3px;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Joystick visual — positioned by JS at the touch origin */
+#joystick-vis {
+    position: absolute;
+    display: none;
+    pointer-events: none;
+}
+
+#joystick-ring {
+    position: absolute;
+    width: 108px;
+    height: 108px;
+    border-radius: 50%;
+    border: 2.5px solid rgba(1, 205, 254, 0.55);
+    background: rgba(1, 205, 254, 0.05);
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 18px rgba(1, 205, 254, 0.2);
+}
+
+#joystick-knob {
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(1, 205, 254, 0.85) 0%, rgba(1, 205, 254, 0.3) 100%);
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 14px rgba(1, 205, 254, 0.7);
+}
+
+/* ─── Action button zone (right side arc) ────────────────────────── */
+#action-zone {
+    position: relative;
+    width: 196px;
+    flex-shrink: 0;
     align-self: center;
 }
-.action-container {
-    grid-area: action-area;
-    display: grid;
-    grid-template-columns: repeat(3, 50px);
-    grid-template-rows: repeat(2, 50px);
-    gap: 6px;
-    justify-content: center;
-    align-content: center;
-    justify-self: center;
-}
-#top-buttons { grid-area: top-buttons; display: flex; gap: 8px; justify-content: center; }
 
-.control-btn {
-    border: 2px solid var(--punk-cyan);
-    border-radius: 6px;
-    background: rgba(1, 205, 254, 0.12);
-    color: var(--punk-cyan);
-    font-size: 22px;
-    font-weight: bold;
+/* Base style for all action buttons */
+.action-btn {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -224,65 +258,159 @@ body, html {
     -webkit-user-select: none;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
-    transition: transform 0.08s, background 0.08s;
-    cursor: pointer;
-    box-shadow: inset 0 0 8px rgba(1, 205, 254, 0.3);
     -webkit-touch-callout: none;
+    transition: transform 0.06s, opacity 0.06s, box-shadow 0.06s;
+    cursor: pointer;
+    font-family: 'VT323', monospace;
+    font-weight: bold;
+    opacity: 0.72;
 }
-.control-btn.pressed {
-    background: rgba(1, 205, 254, 0.4);
-    transform: scale(0.92);
-    box-shadow: inset 0 0 14px rgba(1, 205, 254, 0.6), 0 0 12px var(--punk-cyan);
+.action-btn.pressed {
+    transform: scale(0.88) !important;
+    opacity: 1;
 }
-.dpad-btn {
+
+/* JUMP — top-right, largest, neon green */
+.btn-jump {
+    width: 80px; height: 80px; font-size: 15px;
+    right: 0; top: 0;
+    border-color: #39FF14;
+    color: #39FF14;
+    background: rgba(57, 255, 20, 0.10);
+    box-shadow: 0 0 14px rgba(57, 255, 20, 0.3), inset 0 0 8px rgba(57, 255, 20, 0.15);
+}
+.btn-jump.pressed {
+    background: rgba(57, 255, 20, 0.32);
+    box-shadow: 0 0 22px rgba(57, 255, 20, 0.65), inset 0 0 14px rgba(57, 255, 20, 0.35);
+}
+
+/* ATK — bottom-right, large, punk pink */
+.btn-atk {
+    width: 80px; height: 80px; font-size: 15px;
+    right: 0; bottom: 0;
+    border-color: var(--punk-pink);
+    color: var(--punk-pink);
+    background: rgba(255, 113, 206, 0.10);
+    box-shadow: 0 0 14px rgba(255, 113, 206, 0.3), inset 0 0 8px rgba(255, 113, 206, 0.15);
+}
+.btn-atk.pressed {
+    background: rgba(255, 113, 206, 0.32);
+    box-shadow: 0 0 22px rgba(255, 113, 206, 0.65), inset 0 0 14px rgba(255, 113, 206, 0.35);
+}
+
+/* DASH — middle, cyan */
+.btn-dash {
+    width: 60px; height: 60px; font-size: 13px;
+    right: 86px; top: 50%; transform: translateY(-50%);
+    border-color: var(--punk-cyan);
+    color: var(--punk-cyan);
+    background: rgba(1, 205, 254, 0.09);
+    box-shadow: 0 0 10px rgba(1, 205, 254, 0.25), inset 0 0 6px rgba(1, 205, 254, 0.12);
+}
+.btn-dash.pressed {
+    background: rgba(1, 205, 254, 0.28);
+    box-shadow: 0 0 18px rgba(1, 205, 254, 0.55), inset 0 0 10px rgba(1, 205, 254, 0.3);
+    transform: translateY(-50%) scale(0.88) !important;
+}
+
+/* USE — upper-left of cluster, small rounded square */
+.btn-use {
+    width: 46px; height: 46px; font-size: 12px;
+    right: 152px; top: 4px;
+    border-radius: 8px;
+    border-color: rgba(255,255,255,0.5);
+    color: rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.07);
+    box-shadow: inset 0 0 6px rgba(255,255,255,0.1);
+}
+.btn-use.pressed {
+    background: rgba(255,255,255,0.2);
+    box-shadow: 0 0 12px rgba(255,255,255,0.4);
+}
+
+/* PWR — lower-left of cluster, gold rounded square */
+.btn-pwr {
+    width: 46px; height: 46px; font-size: 12px;
+    right: 152px; bottom: 4px;
+    border-radius: 8px;
+    border-color: rgba(255, 215, 0, 0.6);
+    color: #FFD700;
+    background: rgba(255, 215, 0, 0.08);
+    box-shadow: inset 0 0 6px rgba(255, 215, 0, 0.12);
+}
+.btn-pwr.pressed {
+    background: rgba(255, 215, 0, 0.28);
+    box-shadow: 0 0 14px rgba(255, 215, 0, 0.5);
+}
+
+/* ─── Touch HUD (pause / quest / AI) — top-right corner overlay ──── */
+#touch-hud {
     position: absolute;
-    width: 55px; height: 55px;
-    font-size: 28px;
+    top: calc(8px + env(safe-area-inset-top));
+    right: calc(8px + env(safe-area-inset-right));
+    display: none; /* shown by media query below */
+    flex-direction: column;
+    gap: 5px;
+    z-index: 20;
 }
 
-#up    { top: 0;    left: 50%;  transform: translateX(-50%); }
-#down  { bottom: 0; left: 50%;  transform: translateX(-50%); }
-#left  { top: 50%;  left: 0;    transform: translateY(-50%); }
-#right { top: 50%;  right: 0;   transform: translateY(-50%); }
+@media (pointer: coarse) {
+    #touch-hud { display: flex; }
+}
 
-#interact     { font-size: 16px; border-color: #FFF;             color: #FFF;             background: rgba(255,255,255,0.12); box-shadow: inset 0 0 8px rgba(255,255,255,0.4);}
-#quick-attack { font-size: 22px; border-color: var(--punk-pink); color: var(--punk-pink); background: rgba(255,113,206,0.15); box-shadow: inset 0 0 8px rgba(255,113,206,0.4);}
-#power-attack { font-size: 22px; border-color: var(--punk-purple); color: var(--punk-purple); background: rgba(185,103,219,0.15); box-shadow: inset 0 0 8px rgba(185,103,219,0.4);}
-#class-power  { font-size: 22px; border-color: #FFD700;          color: #FFD700;          background: rgba(255,215,0,0.15); box-shadow: inset 0 0 8px rgba(255,215,0,0.4);}
-
-.mini-btn {
-    border: 2px solid var(--punk-purple);
-    background: rgba(185,103,219,0.15);
+.hud-btn {
+    width: 42px; height: 36px;
+    border: 1.5px solid rgba(185, 103, 219, 0.5);
+    background: rgba(5, 5, 5, 0.75);
     color: var(--punk-purple);
-    width: 44px; height: 32px;
-    border-radius: 6px;
-    font-size: 18px;
+    border-radius: 7px;
+    font-size: 16px;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     -webkit-user-select: none;
     user-select: none;
     touch-action: manipulation;
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
-.mini-btn:active { background: rgba(185,103,219,0.4); transform: scale(0.95); }
+.hud-btn:active {
+    background: rgba(185, 103, 219, 0.3);
+    transform: scale(0.92);
+}
 
-#control-status { grid-area: status; text-align: center; font-size: 11px; color: var(--punk-cyan); padding: 2px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8; }
+/* ─── Hint text ──────────────────────────────────────────────────── */
+#control-hint {
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: rgba(1, 205, 254, 0.3);
+    white-space: nowrap;
+    pointer-events: none;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
 
-/* Compact mode for short screens (landscape phones, small devices) */
+/* ─── Compact landscape mode ─────────────────────────────────────── */
 @media (max-height: 500px) {
-    #controls { min-height: 140px; }
-    .dpad-container { width: 130px; height: 130px; }
-    .dpad-btn { width: 44px; height: 44px; font-size: 22px; }
-    .action-container { grid-template-columns: repeat(2, 50px); grid-template-rows: repeat(2, 50px); gap: 6px; }
-    #control-status { font-size: 10px; }
+    #controls { min-height: 120px; gap: 6px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) 8px; }
+    #action-zone { width: 164px; }
+    .btn-jump, .btn-atk { width: 66px; height: 66px; font-size: 13px; }
+    .btn-dash { width: 50px; height: 50px; right: 72px; }
+    .btn-use  { width: 40px; height: 40px; right: 126px; top: 2px; }
+    .btn-pwr  { width: 40px; height: 40px; right: 126px; bottom: 2px; }
+    #joystick-ring { width: 88px; height: 88px; }
+    #joystick-knob { width: 38px; height: 38px; }
     #message-area { height: 36px; font-size: 12px; }
     #status-line { font-size: 13px; padding: 2px 6px; }
 }
 
-/* Hide on-screen controls when keyboard/mouse is the primary input (desktops). */
+/* ─── Desktop: hide controls, show only hint ─────────────────────── */
 @media (hover: hover) and (pointer: fine) {
-    #controls { min-height: 0; padding: 4px; }
-    .dpad-container, .action-container, #top-buttons { display: none; }
-    #control-status { font-size: 12px; }
+    #controls { display: none; }
 }
 
 .modal {

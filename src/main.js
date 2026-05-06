@@ -525,6 +525,20 @@ async function descend() {
 }
 
 function startDungeon() {
+    // Show touch controls tutorial once on first mobile session
+    if (window.matchMedia('(pointer: coarse)').matches &&
+        !localStorage.getItem('queekraft_touch_tut_v1')) {
+        const tut = document.getElementById('touch-tutorial');
+        const btn = document.getElementById('tutorial-dismiss');
+        if (tut && btn) {
+            tut.style.display = 'flex';
+            btn.onclick = () => {
+                tut.style.display = 'none';
+                localStorage.setItem('queekraft_touch_tut_v1', '1');
+            };
+        }
+    }
+
     // Reset transient dungeon state but apply persistent upgrades
     const p = game.player;
     p.alive = true;
@@ -2625,33 +2639,113 @@ function setupControls() {
     }
 
     // Held-state flags drive the wrapped update loop.
-    const touchHeld = { left: false, right: false };
-    bindHold('left',  () => { touchHeld.left = true;  game.player.facingX = -1; },
-                      () => { touchHeld.left = false; });
-    bindHold('right', () => { touchHeld.right = true; game.player.facingX = 1; },
-                      () => { touchHeld.right = false; });
+    const touchHeld = { left: false, right: false, down: false };
+
+    // ── Floating virtual joystick (left half of controls panel) ──────────
+    const joystickZone = document.getElementById('joystick-zone');
+    const joystickVis  = document.getElementById('joystick-vis');
+    const joystickRing = document.getElementById('joystick-ring');
+    const joystickKnob = document.getElementById('joystick-knob');
+
+    if (joystickZone && joystickVis) {
+        const RING_R = 54;        // half the ring diameter
+        const DEAD   = 12;        // px of horizontal dead-zone before moving
+        const JUMP_T = -42;       // dy threshold for swipe-up-to-jump
+        const DROP_T =  24;       // dy threshold for swipe-down-to-drop
+
+        let joyId = null, joyX = 0, joyY = 0;
+        let jumpFired = false, dropFired = false;
+
+        const joyShow = (cx, cy) => {
+            const r = joystickZone.getBoundingClientRect();
+            const pad = RING_R + 6;
+            joyX = Math.max(pad, Math.min(r.width  - pad, cx - r.left));
+            joyY = Math.max(pad, Math.min(r.height - pad, cy - r.top));
+            joystickVis.style.left = joyX + 'px';
+            joystickVis.style.top  = joyY + 'px';
+            joystickVis.style.display = 'block';
+            joystickRing.style.left = '0'; joystickRing.style.top = '0';
+            joystickKnob.style.left = '0'; joystickKnob.style.top = '0';
+        };
+
+        const joyMove = (cx, cy) => {
+            const r  = joystickZone.getBoundingClientRect();
+            const dx = (cx - r.left) - joyX;
+            const dy = (cy - r.top)  - joyY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const s    = dist > 0 ? Math.min(1, RING_R / dist) : 1;
+            joystickKnob.style.left = (dx * s) + 'px';
+            joystickKnob.style.top  = (dy * s) + 'px';
+
+            // Horizontal movement
+            if (dx > DEAD) {
+                touchHeld.right = true; touchHeld.left = false;
+                game.player.facingX = 1;
+            } else if (dx < -DEAD) {
+                touchHeld.left = true; touchHeld.right = false;
+                game.player.facingX = -1;
+            } else {
+                touchHeld.left = false; touchHeld.right = false;
+            }
+
+            // Swipe up → jump (one-shot per touch)
+            if (dy < JUMP_T && !jumpFired) {
+                jumpFired = true;
+                if (!tryJump()) game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
+            }
+
+            // Swipe down → drop through / descend (one-shot)
+            if (dy > DROP_T && !dropFired) {
+                dropFired = true;
+                touchHeld.down = true;
+                const px = Math.floor(game.player.x + PLAYER_W / 2);
+                const pyFeet = Math.floor(game.player.y + PLAYER_H + 0.1);
+                if (game.player.onGround && game.map[`${px},${pyFeet}`] === '=') {
+                    game.player.dropThrough = 8;
+                    game.player.onGround = false;
+                    game.player.vy = 1.5;
+                } else if (game.map[`${px},${Math.floor(game.player.y + PLAYER_H - 0.1)}`] === '>') {
+                    descend();
+                }
+            } else if (dy <= DROP_T) {
+                dropFired = false;
+                touchHeld.down = false;
+            }
+        };
+
+        const joyEnd = () => {
+            joystickVis.style.display = 'none';
+            touchHeld.left = false; touchHeld.right = false; touchHeld.down = false;
+            joyId = null; jumpFired = false; dropFired = false;
+        };
+
+        joystickZone.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (joyId !== null) return;
+            const t = e.changedTouches[0];
+            joyId = t.identifier;
+            jumpFired = false; dropFired = false;
+            joyShow(t.clientX, t.clientY);
+        }, { passive: false });
+
+        joystickZone.addEventListener('touchmove', e => {
+            e.preventDefault();
+            for (const t of e.changedTouches) {
+                if (t.identifier === joyId) { joyMove(t.clientX, t.clientY); break; }
+            }
+        }, { passive: false });
+
+        joystickZone.addEventListener('touchend',   e => { e.preventDefault(); for (const t of e.changedTouches) { if (t.identifier === joyId) { joyEnd(); break; } } }, { passive: false });
+        joystickZone.addEventListener('touchcancel',e => { e.preventDefault(); joyEnd(); }, { passive: false });
+    }
+
     bindHold('jump-btn', () => {
-        keys['Space'] = true; // Suppress per-frame velocity cut while finger is held
-        if (!tryJump()) {
-            game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
-        }
+        keys['Space'] = true;
+        if (!tryJump()) game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
     }, () => {
         keys['Space'] = false;
-        // Variable jump on touch release too.
         if (game.player.vy < -3.5) game.player.vy *= 0.45;
     });
-    bindHold('down', () => { 
-        touchHeld.down = true; 
-        const px = Math.floor(game.player.x + PLAYER_W / 2);
-        const pyFeet = Math.floor(game.player.y + PLAYER_H + 0.1);
-        if (game.player.onGround && game.map[`${px},${pyFeet}`] === '=') {
-            game.player.dropThrough = 8;
-            game.player.onGround = false;
-            game.player.vy = 1.5;
-        } else if (game.map[`${px},${Math.floor(game.player.y + PLAYER_H - 0.1)}`] === '>') {
-            descend();
-        }
-    }, () => { touchHeld.down = false; });
 
     // Action buttons.
     bindHold('dash-btn', tryDash);

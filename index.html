@@ -36,27 +36,32 @@
                 Survivors:<span id="figures">0</span>/9 | 
                 Scrap:<span id="treasures">0</span>
             </div>
+            <!-- Touch HUD: pause/quest/AI in top-right corner, far from action buttons -->
+            <div id="touch-hud">
+                <button class="hud-btn" id="ai-btn" aria-label="AI Terminal">🤖</button>
+                <button class="hud-btn" id="quest-btn" aria-label="Quest log">📋</button>
+                <button class="hud-btn" id="pause-btn" aria-label="Pause">⏸</button>
+            </div>
         </div>
 
         <div id="controls">
-            <div class="dpad-container">
-                <button class="control-btn dpad-btn" id="left" aria-label="Move Left"><span>←</span></button>
-                <button class="control-btn dpad-btn" id="right" aria-label="Move Right"><span>→</span></button>
-                <button class="control-btn dpad-btn" id="down" aria-label="Dash / Drop"><span>↓</span></button>
+            <!-- Left half: floating virtual joystick — touch anywhere to spawn -->
+            <div id="joystick-zone" aria-label="Movement zone">
+                <div id="joystick-vis">
+                    <div id="joystick-ring"></div>
+                    <div id="joystick-knob"></div>
+                </div>
+                <span class="joy-label">MOVE</span>
             </div>
-            <div class="action-container">
-                <button class="control-btn" id="dash-btn" aria-label="Dash">DASH</button>
-                <button class="control-btn" id="interact" aria-label="Interact">USE</button>
-                <button class="control-btn" id="class-power" aria-label="Class power">PWR</button>
-                <button class="control-btn" id="attack-btn" aria-label="Attack">ATK</button>
-                <button class="control-btn" id="jump-btn" aria-label="Jump" style="grid-column: span 2">JUMP</button>
+            <!-- Right: action buttons in thumb-natural arc -->
+            <div id="action-zone">
+                <button class="action-btn btn-use"  id="interact"     aria-label="Use / Interact">USE</button>
+                <button class="action-btn btn-jump" id="jump-btn"     aria-label="Jump">JUMP</button>
+                <button class="action-btn btn-dash" id="dash-btn"     aria-label="Dash">DASH</button>
+                <button class="action-btn btn-atk"  id="attack-btn"   aria-label="Attack">ATK</button>
+                <button class="action-btn btn-pwr"  id="class-power"  aria-label="Class power">PWR</button>
             </div>
-            <div id="top-buttons">
-                <button class="mini-btn" id="pause-btn" aria-label="Pause">⏸</button>
-                <button class="mini-btn" id="quest-btn" aria-label="Quest log">📋</button>
-                <button class="mini-btn" id="ai-btn" aria-label="Archive Terminal">🤖</button>
-            </div>
-            <div id="control-status">Tap dpad to move · ↑ Jump · ↓ Dash · Hold E to charge · R class · ⏸ pause · 📋 quests</div>
+            <div id="control-hint">drag left · swipe ↑ jump · swipe ↓ drop · ⏸ top-right</div>
         </div>
     </div>
 
@@ -109,18 +114,29 @@
 
             <div class="intro-scene" data-scene="6">
                 <div class="intro-eyebrow" style="color:#01CDFE;">CONTROLS</div>
-                <div class="intro-controls">
-                    <div class="ctrl-row"><span class="key">←/→ A/D</span> <span>walk</span></div>
-                    <div class="ctrl-row"><span class="key">SPACE / W</span> <span>jump (double-tap = double-jump)</span></div>
-                    <div class="ctrl-row"><span class="key">↓ + JUMP</span> <span>drop through platforms</span></div>
-                    <div class="ctrl-row"><span class="key">Q</span> <span>quick attack — chain into combos!</span></div>
-                    <div class="ctrl-row"><span class="key">↑ + Q</span> <span>uppercut launcher</span></div>
-                    <div class="ctrl-row"><span class="key">↓ + Q (mid-air)</span> <span>dive stab</span></div>
-                    <div class="ctrl-row"><span class="key">E (hold)</span> <span>charge heavy strike</span></div>
-                    <div class="ctrl-row"><span class="key">SHIFT</span> <span>dash (i-frames)</span></div>
-                    <div class="ctrl-row"><span class="key">R</span> <span>class power</span></div>
-                    <div class="ctrl-row"><span class="key">F / ENTER</span> <span>interact / pick up loot</span></div>
-                    <div class="ctrl-row"><span class="key">P / ESC</span> <span>pause</span></div>
+                <div class="intro-controls-two-col">
+                    <div class="ctrl-col">
+                        <div class="ctrl-col-head">⌨ KEYBOARD</div>
+                        <div class="ctrl-row"><span class="key">←/→ A/D</span> <span>walk</span></div>
+                        <div class="ctrl-row"><span class="key">SPACE / W</span> <span>jump</span></div>
+                        <div class="ctrl-row"><span class="key">↓ + JUMP</span> <span>drop through</span></div>
+                        <div class="ctrl-row"><span class="key">Q</span> <span>quick attack</span></div>
+                        <div class="ctrl-row"><span class="key">E (hold)</span> <span>charge strike</span></div>
+                        <div class="ctrl-row"><span class="key">SHIFT</span> <span>dash</span></div>
+                        <div class="ctrl-row"><span class="key">R</span> <span>class power</span></div>
+                        <div class="ctrl-row"><span class="key">P / ESC</span> <span>pause</span></div>
+                    </div>
+                    <div class="ctrl-col">
+                        <div class="ctrl-col-head">📱 TOUCH</div>
+                        <div class="ctrl-row"><span class="key tkey">← → drag</span> <span>move</span></div>
+                        <div class="ctrl-row"><span class="key tkey">↑ swipe</span> <span>jump</span></div>
+                        <div class="ctrl-row"><span class="key tkey">↓ swipe</span> <span>drop through</span></div>
+                        <div class="ctrl-row"><span class="key tkey">ATK tap</span> <span>attack</span></div>
+                        <div class="ctrl-row"><span class="key tkey">ATK hold</span> <span>charge strike</span></div>
+                        <div class="ctrl-row"><span class="key tkey">DASH</span> <span>dodge</span></div>
+                        <div class="ctrl-row"><span class="key tkey">PWR</span> <span>class power</span></div>
+                        <div class="ctrl-row"><span class="key tkey">⏸ corner</span> <span>pause</span></div>
+                    </div>
                 </div>
             </div>
 
@@ -327,11 +343,84 @@
             100% { clip-path: inset(0 0 80% 0); transform: translate(2px, 0); }
         }
 
+        .intro-controls-two-col {
+            display: flex;
+            gap: 14px;
+            border: 2px solid #01CDFE;
+            padding: 14px 16px;
+            background: rgba(1,205,254,0.06);
+            box-shadow: 0 0 22px rgba(1,205,254,0.35);
+            font-size: 15px;
+        }
+        .ctrl-col { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+        .ctrl-col-head {
+            color: #01CDFE;
+            font-size: 13px;
+            letter-spacing: 2px;
+            margin-bottom: 6px;
+            padding-bottom: 3px;
+            border-bottom: 1px solid rgba(1,205,254,0.3);
+        }
+        .tkey { color: #39FF14; text-shadow: 0 0 6px #39FF14; }
+
+        /* Touch tutorial overlay */
+        #touch-tutorial {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 3500;
+            backdrop-filter: blur(8px);
+            padding: 16px;
+        }
+        #touch-tutorial-box {
+            border: 3px solid #01CDFE;
+            background: rgba(5, 5, 20, 0.97);
+            padding: 22px 20px;
+            max-width: 380px;
+            width: 100%;
+            box-shadow: 0 0 40px rgba(1,205,254,0.4);
+            font-family: 'VT323', monospace;
+        }
+        .tut-title {
+            font-size: 30px;
+            color: #01CDFE;
+            text-align: center;
+            margin-bottom: 18px;
+            text-shadow: 0 0 14px #01CDFE;
+            letter-spacing: 3px;
+        }
+        .tut-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .tut-item { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; }
+        .tut-icon { font-size: 28px; color: #FF71CE; text-shadow: 0 0 8px #FF71CE; }
+        .tut-lbl { font-size: 14px; color: #FFF; line-height: 1.3; }
+        .tut-lbl em { color: #01CDFE; font-style: normal; font-size: 12px; }
+        #tutorial-dismiss {
+            display: block; width: 100%;
+            padding: 10px;
+            background: transparent;
+            border: 2px solid #FF71CE;
+            color: #FF71CE;
+            font-family: 'VT323', monospace;
+            font-size: 24px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            touch-action: manipulation;
+        }
+        #tutorial-dismiss:active { background: #FF71CE; color: #000; }
+
         @media (max-width: 600px) {
             .intro-title { font-size: 30px; }
             .intro-logo { font-size: 60px; letter-spacing: 2px; }
-            .intro-controls { font-size: 14px; padding: 12px 14px; }
-            .ctrl-row .key { min-width: 110px; }
+            .intro-controls-two-col { font-size: 12px; gap: 8px; padding: 10px 10px; }
+            .ctrl-row .key { min-width: 80px; }
         }
     </style>
 
@@ -446,6 +535,40 @@
 
             <button class="restart-btn" id="enter-dungeon-btn" style="width: 100%; border-color: #39FF14; color: #39FF14;">Enter the Wasteland</button>
             <button class="upgrade-btn" id="replay-intro-btn" style="width:100%;margin-top:8px;border-color:#B967DB;color:#B967DB;font-size:14px;">▶ Replay Intro Story</button>
+        </div>
+    </div>
+
+    <!-- Touch controls tutorial — shown once on first mobile session -->
+    <div id="touch-tutorial">
+        <div id="touch-tutorial-box">
+            <div class="tut-title">TOUCH CONTROLS</div>
+            <div class="tut-grid">
+                <div class="tut-item">
+                    <div class="tut-icon">←→</div>
+                    <div class="tut-lbl">Drag left zone<br><em>to move</em></div>
+                </div>
+                <div class="tut-item">
+                    <div class="tut-icon">↑</div>
+                    <div class="tut-lbl">Swipe up<br><em>or tap JUMP</em></div>
+                </div>
+                <div class="tut-item">
+                    <div class="tut-icon">↓</div>
+                    <div class="tut-lbl">Swipe down<br><em>drop through</em></div>
+                </div>
+                <div class="tut-item">
+                    <div class="tut-icon">⚔</div>
+                    <div class="tut-lbl">Tap ATK<br><em>hold = charge</em></div>
+                </div>
+                <div class="tut-item">
+                    <div class="tut-icon">💨</div>
+                    <div class="tut-lbl">DASH<br><em>i-frame dodge</em></div>
+                </div>
+                <div class="tut-item">
+                    <div class="tut-icon">⏸</div>
+                    <div class="tut-lbl">Top-right<br><em>to pause</em></div>
+                </div>
+            </div>
+            <button id="tutorial-dismiss">GOT IT ▶</button>
         </div>
     </div>
 
