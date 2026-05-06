@@ -106,7 +106,7 @@ export const Audio = {
         window.speechSynthesis.speak(utterance);
     },
     
-    generateMusic: (prompt) => {
+    generateMusic(prompt) {
         console.log(`[Lyria AI] Generating soundtrack for: ${prompt}`);
         // In a real implementation, you would call the Lyria API here.
         // For now, we simulate the vibe with procedural tones.

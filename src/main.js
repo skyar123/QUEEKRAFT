@@ -205,8 +205,23 @@ const ASSET_PATHS = {
     boss:      '/images/spr_enemy.png',  // 1024x1024 transparent demon — boss only
     chest:     '/images/spr_chest.png',  // transparent neon chest — treasure / gender-reveal
     marsha:    '/images/spr_marsha.png', // transparent Marsha — historical NPC
-    zine:      '/images/zine.png'        // zine scroll icon
+    zine:      '/images/zine.png',       // zine scroll icon
+    tilesheet: '/tilesheet.png'          // 8 tiles × 32px: # . = > ^ ~ T C
 };
+
+// Tile-char → tilesheet column. Used by drawTileSprite below.
+const TILE_INDEX = { '#': 0, '.': 1, '=': 2, '>': 3, '^': 4, '~': 5, 'T': 6, 'C': 7 };
+
+// Blit a 32x32 cell from the tilesheet onto the canvas at (sx, sy).
+// Returns true when the sheet was used so callers can skip the procedural fallback.
+function drawTileSprite(ch, sx, sy) {
+    const idx = TILE_INDEX[ch];
+    if (idx === undefined) return false;
+    const sheet = images.tilesheet;
+    if (!imgReady(sheet)) return false;
+    ctx.drawImage(sheet, idx * T, 0, T, T, sx, sy, T, T);
+    return true;
+}
 
 const images = {};
 for (const k of Object.keys(ASSET_PATHS)) images[k] = new Image();
@@ -609,6 +624,16 @@ function processTurn() {
         const frozen = troll.status && troll.status.freeze && troll.status.freeze.duration > 0;
         const shocked = troll.status && troll.status.shock && troll.status.shock.duration > 0;
         if (shocked) return; // shocked = stunned, skip turn entirely
+        // Skip AI while in hitstun, airborne, or still flying off from a knockback —
+        // physics owns the troll until they settle. Without this gate, AI re-snaps
+        // them to integer tile coords mid-knockback and erases the velocity.
+        if ((troll.hitstun || 0) > 0) return;
+        if (troll.onGround === false) return;
+        if (Math.abs(troll.vx || 0) > 0.4 || Math.abs(troll.vy || 0) > 0.6) return;
+        // Snap any small leftover fraction so grid AI moves stay aligned.
+        troll.x = Math.round(troll.x);
+        troll.y = Math.round(troll.y);
+        troll.vx = 0;
         troll.moveDelay += frozen ? 0.5 : 1;
         if (troll.moveDelay < troll.maxMoveDelay) return;
         troll.moveDelay = 0;
@@ -1499,101 +1524,98 @@ function draw() {
         ctx.globalAlpha = 1.0;
         
         if (r.type === 'tile') {
-            ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+            ctx.globalAlpha = r.isVisible ? 1.0 : 0.35;
+            // Try the tilesheet as the base layer first. The procedural overlay
+            // below paints animation/glow/state on top — anything the static
+            // sprite can't show on its own (visibility halo, crumble fade,
+            // etc.) still gets drawn dynamically.
+            const usedSheet = drawTileSprite(r.tile, sx, sy);
+
             if (r.tile === '#') {
-                const glow = r.isVisible ? 'rgba(255,113,206,0.3)' : null;
-                drawTile(ctx, sx, sy, '#0a0a0a', true, glow, patterns.wall);
-            } else if (r.tile === '~') {
-                // Ice — pale blue floor tile with a glossy highlight.
-                drawTile(ctx, sx, sy, '#1a3a4a', true, r.isVisible ? 'rgba(91,206,250,0.45)' : null, null);
-                if (r.isVisible) {
-                    ctx.globalAlpha = 0.55;
-                    ctx.fillStyle = '#5BCEFA';
-                    ctx.fillRect(sx + 1, sy + 1, T - 2, 6);
-                    ctx.globalAlpha = 0.85;
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.fillRect(sx + 4, sy + 2, T - 14, 2);
-                }
-            } else if (r.tile === 'T') {
-                // Trampoline — pink/yellow pad with a glowing top stripe.
-                drawTile(ctx, sx, sy, '#1a0a14', true, null, null);
-                if (r.isVisible) {
+                if (!usedSheet) {
+                    const glow = r.isVisible ? 'rgba(255,113,206,0.3)' : null;
+                    drawTile(ctx, sx, sy, '#0a0a0a', true, glow, patterns.wall);
+                } else if (r.isVisible) {
+                    // Faint pink visibility halo over the sprite.
+                    ctx.globalAlpha = 0.18;
+                    ctx.strokeStyle = '#FF71CE';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(sx + 1, sy + 1, T - 2, T - 2);
                     ctx.globalAlpha = 1.0;
-                    ctx.fillStyle = '#FF71CE';
-                    ctx.fillRect(sx + 2, sy + 4, T - 4, T - 12);
-                    ctx.fillStyle = '#FFD700';
-                    ctx.fillRect(sx + 2, sy + 4, T - 4, 3);
-                    // Springs
-                    ctx.strokeStyle = '#FFD700';
-                    ctx.lineWidth = 1;
-                    for (let s = 0; s < 3; s++) {
-                        ctx.beginPath();
-                        ctx.moveTo(sx + 6 + s * 8, sy + T - 8);
-                        ctx.lineTo(sx + 6 + s * 8, sy + T - 2);
-                        ctx.stroke();
+                }
+            } else if (r.tile === '~') {
+                if (!usedSheet) drawTile(ctx, sx, sy, '#1a3a4a', true, r.isVisible ? 'rgba(91,206,250,0.45)' : null, null);
+            } else if (r.tile === 'T') {
+                if (!usedSheet) {
+                    drawTile(ctx, sx, sy, '#1a0a14', true, null, null);
+                    if (r.isVisible) {
+                        ctx.fillStyle = '#FF71CE';
+                        ctx.fillRect(sx + 2, sy + 4, T - 4, T - 12);
+                        ctx.fillStyle = '#FFD700';
+                        ctx.fillRect(sx + 2, sy + 4, T - 4, 3);
                     }
                 }
             } else {
-                const floorColor = r.isVisible ? '#0a0a0a' : '#030303';
-                const glowColor = r.isVisible ? 'rgba(1,205,254,0.3)' : null;
-                drawTile(ctx, sx, sy, floorColor, false, glowColor, r.isVisible ? patterns.floor : null);
+                if (!usedSheet) {
+                    const floorColor = r.isVisible ? '#0a0a0a' : '#030303';
+                    const glowColor = r.isVisible ? 'rgba(1,205,254,0.3)' : null;
+                    drawTile(ctx, sx, sy, floorColor, false, glowColor, r.isVisible ? patterns.floor : null);
+                }
                 if (r.tile === '>') {
-                    ctx.globalAlpha = 1.0;
-                    ctx.fillStyle = '#01CDFE';
-                    // Faux-glow arc
-                    ctx.globalAlpha = 0.3;
-                    ctx.beginPath(); ctx.arc(sx + T/2, sy + T/2, 12, 0, Math.PI*2); ctx.fill();
-                    ctx.globalAlpha = 1.0;
-                    ctx.beginPath(); ctx.arc(sx + T/2, sy + T/2, 8, 0, Math.PI*2); ctx.fill();
-                    ctx.shadowBlur = 0;
+                    // Pulsing glow ring on top of the portal sprite — sells "exit here".
+                    if (r.isVisible) {
+                        const pulse = 0.5 + 0.5 * Math.sin(game.animFrame * 0.18);
+                        ctx.globalAlpha = 0.3 + 0.3 * pulse;
+                        ctx.fillStyle = '#01CDFE';
+                        ctx.beginPath(); ctx.arc(sx + T/2, sy + T/2, 12 + pulse * 3, 0, Math.PI*2); ctx.fill();
+                        ctx.globalAlpha = 1.0;
+                    }
+                    if (!usedSheet) {
+                        ctx.fillStyle = '#01CDFE';
+                        ctx.beginPath(); ctx.arc(sx + T/2, sy + T/2, 8, 0, Math.PI*2); ctx.fill();
+                    }
                 } else if (r.tile === '=') {
-                    // One-way platform: a thin neon ledge along the top of the tile.
-                    ctx.globalAlpha = 1.0;
-                    ctx.fillStyle = '#FF71CE';
-                    ctx.shadowBlur = 12; ctx.shadowColor = '#FF71CE';
-                    ctx.fillRect(sx + 1, sy, T - 2, 4);
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.fillRect(sx + 1, sy, T - 2, 1);
-                    ctx.shadowBlur = 0;
+                    if (!usedSheet) {
+                        ctx.fillStyle = '#FF71CE';
+                        ctx.shadowBlur = 12; ctx.shadowColor = '#FF71CE';
+                        ctx.fillRect(sx + 1, sy, T - 2, 4);
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(sx + 1, sy, T - 2, 1);
+                        ctx.shadowBlur = 0;
+                    }
                 } else if (r.tile === 'C') {
-                    // Crumbling platform — fades from cyan to red as it cracks.
+                    // Crumbling tile fades cyan → red as it cracks. Tint the
+                    // sprite with a colored overlay rather than drawing from
+                    // scratch, so the underlying tilesheet art still reads.
                     const st = game.crumbleState && game.crumbleState[`${r.x},${r.y}`];
                     const aged = st ? Math.min(1, (game.animFrame - st.started) / 30) : 0;
-                    ctx.globalAlpha = 1.0;
-                    const col = aged > 0
-                        ? `rgb(${255}, ${Math.floor(215 * (1 - aged))}, ${Math.floor(64 * (1 - aged))})`
-                        : '#01CDFE';
-                    ctx.fillStyle = col;
-                    ctx.shadowBlur = aged > 0 ? 14 : 10;
-                    ctx.shadowColor = col;
-                    ctx.fillRect(sx + 1, sy, T - 2, 4);
-                    // Cracks scribbled across the platform when aging.
-                    if (aged > 0.2) {
-                        ctx.strokeStyle = '#000';
-                        ctx.lineWidth = 1;
-                        ctx.shadowBlur = 0;
-                        ctx.beginPath();
-                        ctx.moveTo(sx + 4, sy + 1); ctx.lineTo(sx + 8, sy + 3);
-                        ctx.lineTo(sx + 14, sy + 1); ctx.lineTo(sx + 22, sy + 3);
-                        ctx.stroke();
+                    if (aged > 0) {
+                        ctx.globalAlpha = 0.55 * aged;
+                        ctx.fillStyle = `rgb(255, ${Math.floor(50 * (1 - aged))}, ${Math.floor(60 * (1 - aged))})`;
+                        ctx.fillRect(sx, sy, T, T);
+                        ctx.globalAlpha = 1.0;
                     }
-                    ctx.shadowBlur = 0;
+                    if (!usedSheet) {
+                        ctx.fillStyle = aged > 0 ? `rgb(255, ${Math.floor(215 * (1 - aged))}, ${Math.floor(64 * (1 - aged))})` : '#01CDFE';
+                        ctx.fillRect(sx + 1, sy, T - 2, 4);
+                    }
                 } else if (r.tile === '^') {
-                    // Spikes — pointed teeth glowing red along the top of the tile.
-                    ctx.globalAlpha = 1.0;
-                    ctx.fillStyle = '#C0C0C0';
-                    const teeth = 4;
-                    const tw = (T - 4) / teeth;
-                    for (let s = 0; s < teeth; s++) {
-                        ctx.beginPath();
-                        ctx.moveTo(sx + 2 + s * tw,        sy + T);
-                        ctx.lineTo(sx + 2 + s * tw + tw/2, sy + 4);
-                        ctx.lineTo(sx + 2 + (s + 1) * tw,  sy + T);
-                        ctx.closePath();
-                        ctx.fill();
+                    if (!usedSheet) {
+                        ctx.fillStyle = '#C0C0C0';
+                        const teeth = 4;
+                        const tw = (T - 4) / teeth;
+                        for (let s = 0; s < teeth; s++) {
+                            ctx.beginPath();
+                            ctx.moveTo(sx + 2 + s * tw,        sy + T);
+                            ctx.lineTo(sx + 2 + s * tw + tw/2, sy + 4);
+                            ctx.lineTo(sx + 2 + (s + 1) * tw,  sy + T);
+                            ctx.closePath();
+                            ctx.fill();
+                        }
                     }
                 }
             }
+            ctx.globalAlpha = 1.0;
         } else {
             ctx.globalAlpha = 1.0;
             const drawX = sx + T / 2;

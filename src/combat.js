@@ -152,6 +152,50 @@ const COMBO_WINDOW = 60;       // frames a combo is alive after a successful hit
 const COMBO_MAX = 3;           // cap chain length
 const COMBO_DAMAGE_SCALE = [1.0, 1.15, 1.5]; // step 1, 2, 3 scaling
 
+// ---------------------------------------------------------------------------
+// Melee-style knockback profiles. Borrowed from meleelight (schmooblidon's
+// Smash Bros recreation). Each attack carries:
+//   bk  — base knockback: applied even at 0%, sets the "feel" of a fresh hit
+//   kg  — knockback growth: how hard the hit scales with damage * percent
+//   angle — trajectory in *Melee* degrees (0=right, 90=up, 270=down)
+//   hitlagBase / hitlagScale — frames of hitstop (game.hitStop) on impact;
+//     this is the universal "punch freeze" that sells every connect.
+// Final velocity = kb * 0.03 * (cos(angle), -sin(angle)) with a horizontal
+// flip baked from facing direction. Hitstun = kb * 0.4 frames.
+const KB_PROFILES = {
+    quick_0:  { bk: 12, kg: 75,  angle: 32,  hitlagBase: 3, hitlagScale: 0.30 }, // Slash
+    quick_1:  { bk: 14, kg: 80,  angle: 38,  hitlagBase: 3, hitlagScale: 0.30 }, // Strike
+    finisher: { bk: 55, kg: 110, angle: 48,  hitlagBase: 6, hitlagScale: 0.45 }, // 3rd hit launch
+    power:    { bk: 45, kg: 115, angle: 42,  hitlagBase: 7, hitlagScale: 0.55 }, // charged smash
+    launcher: { bk: 35, kg: 100, angle: 82,  hitlagBase: 5, hitlagScale: 0.35 }, // uppercut
+    diveStab: { bk: 30, kg: 90,  angle: 270, hitlagBase: 6, hitlagScale: 0.45 }, // meteor / spike
+    blast:    { bk: 40, kg: 80,  angle: 65,  hitlagBase: 5, hitlagScale: 0.35 }  // glitter bomb AoE
+};
+
+// Melee getKnockback formula (variable-knockback branch; sk == 0 path):
+//   kb = ((0.01 * kg) * ((1.4 * inner) + 18) + bk
+// with `inner` rolling damage and percent against weight. Capped at 250 so a
+// finisher to a 999% boss doesn't sling them out of the map.
+function calcKB(profile, damage, percent, weight) {
+    const w = (weight || 100) * 0.01;
+    const inner = ((0.05 * (damage * (damage + percent))) + (damage + percent) * 0.1) *
+                  (2 - 2 * w / (1 + w));
+    const kb = ((0.01 * profile.kg) * ((1.4 * inner) + 18)) + profile.bk;
+    return Math.min(kb, 250);
+}
+
+function kbHitstun(kb) { return Math.floor(kb * 0.4); }
+function kbHitlag(profile, damage) { return Math.floor(profile.hitlagBase + damage * profile.hitlagScale); }
+
+// Convert KB + Melee-angle to canvas-space velocity. dirSign flips the X axis
+// so attacks aimed left actually fling enemies left. Positive Y is *down* in
+// canvas space, hence the negation on sin().
+function kbToVelocity(kb, angleDeg, dirSign) {
+    const r = angleDeg * Math.PI / 180;
+    const v = kb * 0.03;
+    return { vx: Math.cos(r) * v * dirSign, vy: -Math.sin(r) * v };
+}
+
 export function tickCombo(game) {
     const p = game.player;
     if (p.comboTimer > 0) {
@@ -252,19 +296,17 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
         damage = Math.ceil(damage * 1.25);
     }
 
-    // MELEE LIGHT: Scaling Knockback Logic
+    // Per-enemy weight (heavier mobs eat KB; bosses are stone). Default 100.
+    let weight = enemy.weight;
+    if (weight === undefined) {
+        if (enemy.enemyType === 'boss')        weight = 220;
+        else if (enemy.enemyType === 'gatekeeper') weight = 140;
+        else if (enemy.enemyType === 'concern' || enemy.enemyType === 'police') weight = 110;
+        else if (enemy.enemyType === 'wraith' || enemy.enemyType === 'swarm')   weight = 70;
+        else weight = 100;
+    }
+    enemy.weight = weight;
     enemy.percent = (enemy.percent || 0) + damage;
-    const weight = enemy.weight || 100;
-    const baseKB = 2;
-    const growth = 1.2;
-    // KB = (((damage/10 + damage*percent/20) * 200 / (weight + 100) * 1.4) + baseKB) * growth
-    const kb = (((damage / 10 + (damage * enemy.percent) / 20) * 200 / (weight + 100) * 1.4) + baseKB) * growth;
-    
-    // Apply velocity (enemies are now physics-driven)
-    enemy.vx = (dx || (enemy.x > px ? 1 : -1)) * kb * 0.15;
-    enemy.vy = -kb * 0.1; // Pop up
-    enemy.hitstun = Math.floor(kb * 1.5);
-    enemy.onGround = false;
 
     // Big Mood: damage swings wildly between 0.5x and 2.5x
     if (hasTrait(game.player, 'bipolar')) {
@@ -345,6 +387,51 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
     }
     // Frozen enemies take +50% damage.
     if (isFrozen(enemy)) damage = Math.ceil(damage * 1.5);
+
+    // === Melee-style hitlag + knockback resolution =====================
+    // Pick the KB profile that matches the *intent* of this swing — the
+    // directional finishers override quick/power, so a launcher Q sends the
+    // enemy skyward even though the underlying attack type is 'quick'.
+    let profileKey;
+    if (isDiveStab)       profileKey = 'diveStab';
+    else if (isLauncher)  profileKey = 'launcher';
+    else if (isFinisher)  profileKey = 'finisher';
+    else if (type === 'blast') profileKey = 'blast';
+    else if (type === 'power') profileKey = 'power';
+    else                       profileKey = comboStep === 1 ? 'quick_1' : 'quick_0';
+    const profile = KB_PROFILES[profileKey];
+
+    const kb = calcKB(profile, damage, enemy.percent, weight);
+    const dirSign = (dx !== 0 ? Math.sign(dx) : (enemy.x >= px ? 1 : -1));
+    const vel = kbToVelocity(kb, profile.angle, dirSign);
+    enemy.vx = vel.vx;
+    enemy.vy = vel.vy;
+    enemy.hitstun = kbHitstun(kb);
+    enemy.onGround = false;
+
+    // Hitlag freezes the entire scene for a few frames — that's the universal
+    // "punch hit" feel from Smash. game.hitStop is consumed in main.js:gameLoop.
+    const hitlag = kbHitlag(profile, damage);
+    game.hitStop = Math.max(game.hitStop || 0, hitlag);
+
+    // Bigger hits shake harder. Floor of 0.35 so even a jab nudges the camera.
+    const shake = Math.min(1.2, 0.35 + kb * 0.012);
+    game.screenShake = Math.max(game.screenShake || 0, shake);
+
+    // KB-launch trail particles — more streaks at higher KB to signal heft.
+    const streakCount = Math.min(20, 4 + Math.floor(kb * 0.18));
+    for (let i = 0; i < streakCount; i++) {
+        game.particles.push({
+            x: enemy.x + 0.5, y: enemy.y + 0.5,
+            vx: -vel.vx * (0.3 + Math.random() * 0.4),
+            vy: -vel.vy * (0.3 + Math.random() * 0.4) - Math.random() * 0.3,
+            life: 0.6 + Math.random() * 0.4,
+            color: profileKey === 'finisher' ? '#FFD700' :
+                   profileKey === 'launcher' ? '#01CDFE' :
+                   profileKey === 'diveStab' ? '#FF71CE' : '#FFFFFF',
+            size: 2 + Math.random() * 2
+        });
+    }
 
     enemy.health -= damage;
     UI.addMessage(`${crit ? 'CRIT! ' : ''}${comboLabel ? comboLabel + ' ' : ''}Hit ${enemy.enemyType} for ${damage}!`, 'combat');
@@ -474,14 +561,20 @@ export function takeDamage(game, amount = 1) {
     // Combo broken on damage taken — punishes greedy play, rewards spacing.
     resetCombo(game);
 
-    // MELEE LIGHT: Player Knockback
+    // MELEE LIGHT: Player Knockback. Player weighs ~95 (light fighter feel),
+    // and uses a fixed mid-angle (~55°) so hits send them up-and-away rather
+    // than slamming them into the floor.
     game.player.percent = (game.player.percent || 0) + amount;
-    const pKB = 4 + (game.player.percent * 0.1);
+    const playerProfile = { bk: 22, kg: 90, angle: 55, hitlagBase: 4, hitlagScale: 0.4 };
+    const pkb = calcKB(playerProfile, amount, game.player.percent, 95);
     const pDir = (game.player.vx >= 0 ? -1 : 1);
-    game.player.vx = pDir * pKB;
-    game.player.vy = -pKB * 0.5;
+    const pVel = kbToVelocity(pkb, playerProfile.angle, pDir);
+    game.player.vx = pVel.vx;
+    game.player.vy = pVel.vy;
     game.player.onGround = false;
-    game.player.hitstun = 12;
+    game.player.hitstun = Math.max(12, kbHitstun(pkb));
+    // Pause the world for a beat so the hit reads — same hitlag system as offense.
+    game.hitStop = Math.max(game.hitStop || 0, kbHitlag(playerProfile, amount));
 
     // Chronic pain doubles i-frames; insomnia leaves you alert with shorter recovery
     let iframes = 3;
