@@ -296,19 +296,77 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
         applyStatus(enemy, 'shock', 60, 1);
         applyStatus(enemy, 'burn', 120, 1);
     }
-    // 3-step quick-finisher branches: AoE shock to nearby enemies
+    // 3-step quick-finisher → POWER MOVE.
+    // Doubles the chain damage on top of COMBO_DAMAGE_SCALE, hits everything
+    // in a 2-tile radius (was 1), drops a brief hitstop for impact, and fires
+    // the on-screen "POWER MOVE!" flash. Also shocks + ignites the AoE so the
+    // chain leaves a status-effect crater behind it.
     if (isFinisher) {
-        applyStatus(enemy, 'shock', 45, 1);
+        comboLabel = 'POWER MOVE!';
+        damage = Math.ceil(damage * 2.0); // double what scaling already applied
+        applyStatus(enemy, 'shock', 60, 2);
+        applyStatus(enemy, 'burn',  120, 1);
         knockback = true;
+        // 8-frame hitstop = ~133 ms freeze, makes the impact land.
+        game.hitStop = Math.max(game.hitStop || 0, 8);
+        // Heavier knockback velocity on the primary target.
+        enemy.vx *= 1.6;
+        enemy.vy = Math.min(enemy.vy, -1.4);
+
+        // Wider AoE: anything within Chebyshev distance 2 takes splash damage.
         for (const other of game.trolls) {
             if (other === enemy) continue;
-            const d = Math.abs(other.x - enemy.x) + Math.abs(other.y - enemy.y);
-            if (d <= 1) {
-                other.health -= Math.max(1, Math.floor(damage * 0.5));
-                applyStatus(other, 'shock', 30, 1);
-                game.floatingText.push({ x: other.x, y: other.y, text: '⚡SPLASH', life: 24, color: '#FFD700' });
+            const dxT = other.x - enemy.x;
+            const dyT = other.y - enemy.y;
+            const d = Math.max(Math.abs(dxT), Math.abs(dyT));
+            if (d <= 2) {
+                const splash = Math.max(1, Math.floor(damage * 0.6));
+                other.health -= splash;
+                applyStatus(other, 'shock', 45, 1);
+                applyStatus(other, 'burn',  90, 1);
+                // Knock outwards from the impact center.
+                const mag = Math.hypot(dxT, dyT) || 1;
+                other.vx = (dxT / mag) * 0.55;
+                other.vy = -0.45;
+                other.hitstun = Math.max(other.hitstun || 0, 14);
+                other.onGround = false;
+                game.floatingText.push({
+                    x: other.x, y: other.y,
+                    text: `💥 -${splash}`, life: 30, color: '#FFD700'
+                });
             }
         }
+
+        // Big rainbow particle burst centered on the impact.
+        const palette = ['#FFD700', '#FF71CE', '#01CDFE', '#39FF14', '#B967DB', '#FFFFFF'];
+        for (let i = 0; i < 80; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 0.4 + Math.random() * 1.0;
+            game.particles.push({
+                x: enemy.x + 0.5,
+                y: enemy.y + 0.4,
+                vx: Math.cos(a) * sp,
+                vy: Math.sin(a) * sp - 0.2,
+                life: 1.0,
+                color: palette[i % palette.length],
+                size: 2 + Math.random() * 2.5
+            });
+        }
+
+        // On-screen "POWER MOVE!" flash overlay (DOM, not canvas — sits above
+        // the canvas so it reads even with the screen shaking).
+        const flash = document.getElementById('power-move-flash');
+        if (flash) {
+            flash.style.display = 'flex';
+            // Restart the CSS animation by removing + re-adding the node.
+            flash.style.animation = 'none';
+            flash.offsetHeight; // reflow
+            flash.style.animation = '';
+            setTimeout(() => { flash.style.display = 'none'; }, 560);
+        }
+
+        UI.addMessage('💥 POWER MOVE! 💥', 'special');
+        if (Audio.playPower) Audio.playPower();
     }
     // Up-input launcher pops the enemy upward & extends combo
     if (isLauncher) {

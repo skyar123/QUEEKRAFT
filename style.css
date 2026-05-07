@@ -165,252 +165,311 @@ body, html {
 .msg-combat { color: #FF9900; }
 .msg-healing { color: var(--punk-cyan); font-weight: bold; text-shadow: 0 0 5px var(--punk-cyan); }
 
-/* ─── Mobile controls panel ─────────────────────────────────────── */
-#controls {
-    background: #050505;
-    border-top: 2px solid rgba(185, 103, 219, 0.4);
-    display: flex;
-    flex-direction: row;
-    align-items: stretch;
-    gap: 10px;
-    padding: 8px 10px calc(10px + env(safe-area-inset-bottom)) 10px;
-    box-shadow: 0 -4px 18px rgba(185, 103, 219, 0.18);
-    min-height: 160px;
-    position: relative;
-}
-
-/* Hide on non-touch devices */
-@media (pointer: fine) {
-    #controls { display: none; }
-}
-
-/* ─── Floating joystick zone (left half) ─────────────────────────── */
-#joystick-zone {
-    flex: 1;
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1.5px solid rgba(1, 205, 254, 0.18);
-    border-radius: 12px;
-    background: rgba(1, 205, 254, 0.03);
-    touch-action: none;
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
-    overflow: hidden;
-}
-
-.joy-label {
-    font-family: 'VT323', monospace;
-    font-size: 12px;
-    color: rgba(1, 205, 254, 0.25);
-    letter-spacing: 3px;
-    pointer-events: none;
-    user-select: none;
-}
-
-/* Joystick visual — positioned by JS at the touch origin */
-#joystick-vis {
+/* ─── Touch controls (overlay over canvas; hidden on desktop) ─────────
+   Design notes:
+   - Floating analog joystick (left half) — partial tilt = slower walk,
+     so the player can place themselves carefully on platforms.
+   - Dedicated buttons for Jump / Attack / Dash / Power / Use on the right.
+     No gestures — Dead Cells learned the hard way that swipe-to-dodge
+     and combined gesture buttons fail in playtesting.
+   - Tiny pause button top-right requires a long-press (visible fill ring)
+     so it can never trigger by accident.
+   - Combo counter readout above the action buttons gives haptic-free
+     feedback that the next attack is the FINISHER.
+*/
+#touch-controls {
     position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 30;
     display: none;
+    font-family: 'VT323', monospace;
+}
+@media (pointer: coarse) {
+    #touch-controls { display: block; }
+}
+
+/* — Joystick zone covers the bottom-left third — */
+#tj-zone {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 45%;
+    height: 55%;
+    pointer-events: auto;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#tj-base {
+    position: absolute;
+    width: 130px; height: 130px;
+    border-radius: 50%;
+    border: 2px solid rgba(1, 205, 254, 0.55);
+    background: radial-gradient(circle, rgba(1,205,254,0.10), rgba(1,205,254,0.02) 70%);
+    box-shadow: 0 0 18px rgba(1, 205, 254, 0.25);
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    transition: opacity 0.08s;
+    pointer-events: none;
+}
+#tj-base.active { opacity: 0.9; }
+
+#tj-stick {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 56px; height: 56px;
+    margin: -28px 0 0 -28px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(1,205,254,0.95), rgba(1,205,254,0.35) 70%);
+    box-shadow: 0 0 16px rgba(1, 205, 254, 0.85), inset 0 0 8px rgba(255,255,255,0.4);
+    transform: translate(0, 0);
     pointer-events: none;
 }
 
-#joystick-ring {
-    position: absolute;
-    width: 108px;
-    height: 108px;
-    border-radius: 50%;
-    border: 2.5px solid rgba(1, 205, 254, 0.55);
-    background: rgba(1, 205, 254, 0.05);
-    transform: translate(-50%, -50%);
-    box-shadow: 0 0 18px rgba(1, 205, 254, 0.2);
-}
-
-#joystick-knob {
-    position: absolute;
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(1, 205, 254, 0.85) 0%, rgba(1, 205, 254, 0.3) 100%);
-    transform: translate(-50%, -50%);
-    box-shadow: 0 0 14px rgba(1, 205, 254, 0.7);
-}
-
-/* ─── Action button zone (right side arc) ────────────────────────── */
-#action-zone {
-    position: relative;
-    width: 196px;
-    flex-shrink: 0;
-    align-self: center;
-}
-
-/* Base style for all action buttons */
-.action-btn {
+/* — Action buttons (right side cluster) — */
+.t-btn {
     position: absolute;
     border-radius: 50%;
     border: 2px solid;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: auto;
     touch-action: manipulation;
+    cursor: pointer;
+    font-family: 'VT323', monospace;
+    font-weight: bold;
     -webkit-user-select: none;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
     transition: transform 0.06s, opacity 0.06s, box-shadow 0.06s;
-    cursor: pointer;
-    font-family: 'VT323', monospace;
-    font-weight: bold;
-    opacity: 0.72;
+    opacity: 0.55;
+    backdrop-filter: blur(2px);
 }
-.action-btn.pressed {
-    transform: scale(0.88) !important;
+.t-btn.pressed {
+    transform: scale(0.92);
     opacity: 1;
 }
 
-/* JUMP — top-right, largest, neon green */
-.btn-jump {
-    width: 80px; height: 80px; font-size: 15px;
-    right: 0; top: 0;
+/* JUMP — bottom-right, largest, neon green */
+.t-jump {
+    width: 92px; height: 92px; font-size: 18px;
+    right: calc(20px + env(safe-area-inset-right));
+    bottom: calc(110px + env(safe-area-inset-bottom));
     border-color: #39FF14;
     color: #39FF14;
-    background: rgba(57, 255, 20, 0.10);
-    box-shadow: 0 0 14px rgba(57, 255, 20, 0.3), inset 0 0 8px rgba(57, 255, 20, 0.15);
+    background: rgba(57, 255, 20, 0.18);
+    box-shadow: 0 0 18px rgba(57, 255, 20, 0.45), inset 0 0 10px rgba(57, 255, 20, 0.25);
 }
-.btn-jump.pressed {
-    background: rgba(57, 255, 20, 0.32);
-    box-shadow: 0 0 22px rgba(57, 255, 20, 0.65), inset 0 0 14px rgba(57, 255, 20, 0.35);
+.t-jump.pressed {
+    background: rgba(57, 255, 20, 0.45);
+    box-shadow: 0 0 28px rgba(57, 255, 20, 0.85);
 }
 
-/* ATK — bottom-right, large, punk pink */
-.btn-atk {
-    width: 80px; height: 80px; font-size: 15px;
-    right: 0; bottom: 0;
+/* ATK — sits left of jump, same size, punk pink */
+.t-atk {
+    width: 92px; height: 92px; font-size: 18px;
+    right: calc(120px + env(safe-area-inset-right));
+    bottom: calc(40px + env(safe-area-inset-bottom));
     border-color: var(--punk-pink);
     color: var(--punk-pink);
-    background: rgba(255, 113, 206, 0.10);
-    box-shadow: 0 0 14px rgba(255, 113, 206, 0.3), inset 0 0 8px rgba(255, 113, 206, 0.15);
+    background: rgba(255, 113, 206, 0.18);
+    box-shadow: 0 0 18px rgba(255, 113, 206, 0.45), inset 0 0 10px rgba(255, 113, 206, 0.25);
 }
-.btn-atk.pressed {
-    background: rgba(255, 113, 206, 0.32);
-    box-shadow: 0 0 22px rgba(255, 113, 206, 0.65), inset 0 0 14px rgba(255, 113, 206, 0.35);
+.t-atk.pressed {
+    background: rgba(255, 113, 206, 0.45);
+    box-shadow: 0 0 28px rgba(255, 113, 206, 0.85);
+}
+.t-atk.combo-ready {
+    border-color: #FFD700;
+    color: #FFD700;
+    background: rgba(255, 215, 0, 0.30);
+    box-shadow: 0 0 28px rgba(255, 215, 0, 0.85), inset 0 0 14px rgba(255, 215, 0, 0.45);
+    animation: comboReadyPulse 0.6s ease-in-out infinite alternate;
+}
+@keyframes comboReadyPulse {
+    from { box-shadow: 0 0 18px rgba(255, 215, 0, 0.6), inset 0 0 8px rgba(255, 215, 0, 0.3); }
+    to   { box-shadow: 0 0 32px rgba(255, 215, 0, 1.0), inset 0 0 16px rgba(255, 215, 0, 0.6); }
 }
 
-/* DASH — middle, cyan */
-.btn-dash {
-    width: 60px; height: 60px; font-size: 13px;
-    right: 86px; top: 50%; transform: translateY(-50%);
+/* DASH — smaller, above ATK */
+.t-dash {
+    width: 64px; height: 64px; font-size: 14px;
+    right: calc(38px + env(safe-area-inset-right));
+    bottom: calc(216px + env(safe-area-inset-bottom));
     border-color: var(--punk-cyan);
     color: var(--punk-cyan);
-    background: rgba(1, 205, 254, 0.09);
-    box-shadow: 0 0 10px rgba(1, 205, 254, 0.25), inset 0 0 6px rgba(1, 205, 254, 0.12);
+    background: rgba(1, 205, 254, 0.16);
+    box-shadow: 0 0 12px rgba(1, 205, 254, 0.4);
 }
-.btn-dash.pressed {
-    background: rgba(1, 205, 254, 0.28);
-    box-shadow: 0 0 18px rgba(1, 205, 254, 0.55), inset 0 0 10px rgba(1, 205, 254, 0.3);
-    transform: translateY(-50%) scale(0.88) !important;
-}
+.t-dash.pressed { background: rgba(1, 205, 254, 0.42); }
 
-/* USE — upper-left of cluster, small rounded square */
-.btn-use {
-    width: 46px; height: 46px; font-size: 12px;
-    right: 152px; top: 4px;
-    border-radius: 8px;
-    border-color: rgba(255,255,255,0.5);
-    color: rgba(255,255,255,0.7);
-    background: rgba(255,255,255,0.07);
-    box-shadow: inset 0 0 6px rgba(255,255,255,0.1);
-}
-.btn-use.pressed {
-    background: rgba(255,255,255,0.2);
-    box-shadow: 0 0 12px rgba(255,255,255,0.4);
-}
-
-/* PWR — lower-left of cluster, gold rounded square */
-.btn-pwr {
-    width: 46px; height: 46px; font-size: 12px;
-    right: 152px; bottom: 4px;
-    border-radius: 8px;
-    border-color: rgba(255, 215, 0, 0.6);
+/* PWR — smaller, gold */
+.t-pwr {
+    width: 64px; height: 64px; font-size: 14px;
+    right: calc(140px + env(safe-area-inset-right));
+    bottom: calc(150px + env(safe-area-inset-bottom));
+    border-color: #FFD700;
     color: #FFD700;
-    background: rgba(255, 215, 0, 0.08);
-    box-shadow: inset 0 0 6px rgba(255, 215, 0, 0.12);
+    background: rgba(255, 215, 0, 0.16);
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
 }
-.btn-pwr.pressed {
-    background: rgba(255, 215, 0, 0.28);
-    box-shadow: 0 0 14px rgba(255, 215, 0, 0.5);
-}
+.t-pwr.pressed { background: rgba(255, 215, 0, 0.42); }
 
-/* ─── Touch HUD (pause / quest / AI) — top-right corner overlay ──── */
-#touch-hud {
+/* USE — small square next to dash */
+.t-use {
+    width: 48px; height: 48px; font-size: 12px;
+    right: calc(32px + env(safe-area-inset-right));
+    bottom: calc(296px + env(safe-area-inset-bottom));
+    border-radius: 10px;
+    border-color: rgba(255,255,255,0.55);
+    color: rgba(255,255,255,0.85);
+    background: rgba(255,255,255,0.10);
+}
+.t-use.pressed { background: rgba(255,255,255,0.32); }
+
+/* — Tiny top-right cluster (mini buttons) — */
+.t-mini {
     position: absolute;
-    top: calc(8px + env(safe-area-inset-top));
-    right: calc(8px + env(safe-area-inset-right));
-    display: none; /* shown by media query below */
-    flex-direction: column;
-    gap: 5px;
-    z-index: 20;
-}
-
-@media (pointer: coarse) {
-    #touch-hud { display: flex; }
-}
-
-.hud-btn {
-    width: 42px; height: 36px;
-    border: 1.5px solid rgba(185, 103, 219, 0.5);
-    background: rgba(5, 5, 5, 0.75);
-    color: var(--punk-purple);
-    border-radius: 7px;
+    pointer-events: auto;
+    touch-action: manipulation;
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    border: 1.5px solid rgba(185, 103, 219, 0.55);
+    background: rgba(5, 5, 12, 0.55);
+    color: rgba(255,255,255,0.75);
     font-size: 16px;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     -webkit-user-select: none;
     user-select: none;
-    touch-action: manipulation;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(3px);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0.7;
+}
+.t-mini:active { opacity: 1; transform: scale(0.92); }
+
+.t-ai    { top: calc(56px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); }
+.t-quest { top: calc(98px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); }
+
+/* Pause needs a long-press; the SVG ring fills as the user holds. */
+.t-pause-wrap {
+    position: absolute;
+    top: calc(8px + env(safe-area-inset-top));
+    right: calc(8px + env(safe-area-inset-right));
+    width: 40px; height: 40px;
+    pointer-events: auto;
+}
+.t-pause {
+    position: absolute;
+    inset: 2px;
+    width: 36px; height: 36px;
+    z-index: 2;
+}
+.t-pause-ring {
+    position: absolute;
+    inset: 0;
+    width: 40px; height: 40px;
+    pointer-events: none;
+    transform: rotate(-90deg);
+    z-index: 1;
+}
+.t-pause-ring circle {
+    fill: none;
+    stroke: rgba(255, 113, 206, 0.85);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 100.53; /* 2π·16 */
+    stroke-dashoffset: 100.53;
+    transition: stroke-dashoffset 0.05s linear;
+    filter: drop-shadow(0 0 4px rgba(255, 113, 206, 0.7));
+}
+.t-pause-wrap.holding .t-pause-ring circle {
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 0.6s linear;
+}
+.t-pause-wrap.holding .t-pause {
+    background: rgba(255, 113, 206, 0.4);
+    border-color: var(--punk-pink);
+    color: #fff;
+}
+
+/* — Combo HUD (semi-transparent above the ATK button) — */
+#t-combo {
+    position: absolute;
+    right: calc(120px + env(safe-area-inset-right));
+    bottom: calc(146px + env(safe-area-inset-bottom));
+    pointer-events: none;
     display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid rgba(255, 215, 0, 0.45);
+    border-radius: 6px;
+    background: rgba(0,0,0,0.55);
+    color: #FFD700;
+    text-shadow: 0 0 6px #FFD700;
+    font-size: 18px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    backdrop-filter: blur(3px);
+}
+#t-combo.active { opacity: 1; }
+#t-combo.ready  {
+    border-color: #FFD700;
+    background: rgba(255, 215, 0, 0.22);
+    animation: comboReadyPulse 0.45s ease-in-out infinite alternate;
+}
+#t-combo-count { font-weight: bold; font-size: 22px; }
+#t-combo-label { font-size: 12px; letter-spacing: 2px; opacity: 0.85; }
+
+/* Power-move flash — overlaid on canvas when the 3-hit finisher lands */
+#power-move-flash {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 25;
+    display: none;
     align-items: center;
     justify-content: center;
+    font-family: 'VT323', monospace;
+    font-size: 72px;
+    font-weight: bold;
+    color: #FFD700;
+    text-shadow:
+        0 0 20px #FFD700,
+        0 0 40px #FF71CE,
+        0 0 80px #01CDFE;
+    background: radial-gradient(circle, rgba(255, 215, 0, 0.18) 0%, transparent 65%);
+    animation: powerMoveFlash 0.55s ease-out forwards;
 }
-.hud-btn:active {
-    background: rgba(185, 103, 219, 0.3);
-    transform: scale(0.92);
-}
-
-/* ─── Hint text ──────────────────────────────────────────────────── */
-#control-hint {
-    position: absolute;
-    bottom: 2px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 10px;
-    color: rgba(1, 205, 254, 0.3);
-    white-space: nowrap;
-    pointer-events: none;
-    letter-spacing: 0.3px;
-    text-transform: uppercase;
+@keyframes powerMoveFlash {
+    0%   { opacity: 0; transform: scale(0.6); }
+    25%  { opacity: 1; transform: scale(1.15); }
+    100% { opacity: 0; transform: scale(1.5); }
 }
 
-/* ─── Compact landscape mode ─────────────────────────────────────── */
-@media (max-height: 500px) {
-    #controls { min-height: 120px; gap: 6px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) 8px; }
-    #action-zone { width: 164px; }
-    .btn-jump, .btn-atk { width: 66px; height: 66px; font-size: 13px; }
-    .btn-dash { width: 50px; height: 50px; right: 72px; }
-    .btn-use  { width: 40px; height: 40px; right: 126px; top: 2px; }
-    .btn-pwr  { width: 40px; height: 40px; right: 126px; bottom: 2px; }
-    #joystick-ring { width: 88px; height: 88px; }
-    #joystick-knob { width: 38px; height: 38px; }
-    #message-area { height: 36px; font-size: 12px; }
-    #status-line { font-size: 13px; padding: 2px 6px; }
-}
-
-/* ─── Desktop: hide controls, show only hint ─────────────────────── */
-@media (hover: hover) and (pointer: fine) {
-    #controls { display: none; }
+/* Compact tweaks for short-screen landscape phones */
+@media (max-height: 480px) {
+    .t-jump { width: 78px; height: 78px; font-size: 16px;
+              bottom: calc(56px + env(safe-area-inset-bottom));
+              right: calc(14px + env(safe-area-inset-right)); }
+    .t-atk  { width: 78px; height: 78px; font-size: 16px;
+              bottom: calc(20px + env(safe-area-inset-bottom));
+              right: calc(96px + env(safe-area-inset-right)); }
+    .t-dash { width: 54px; height: 54px;
+              bottom: calc(140px + env(safe-area-inset-bottom));
+              right: calc(28px + env(safe-area-inset-right)); }
+    .t-pwr  { width: 54px; height: 54px;
+              bottom: calc(96px + env(safe-area-inset-bottom));
+              right: calc(120px + env(safe-area-inset-right)); }
+    .t-use  { width: 42px; height: 42px;
+              bottom: calc(196px + env(safe-area-inset-bottom));
+              right: calc(22px + env(safe-area-inset-right)); }
+    #tj-base { width: 100px; height: 100px; }
+    #tj-stick { width: 44px; height: 44px; margin: -22px 0 0 -22px; }
+    #t-combo { right: calc(96px + env(safe-area-inset-right));
+               bottom: calc(112px + env(safe-area-inset-bottom)); }
 }
 
 .modal {
@@ -626,55 +685,8 @@ body, html {
     background: rgba(10, 10, 10, 0.85) !important;
 }
 
-/* ===== MOBILE FULLSCREEN + GLITTER-PUNK OVERLAY CONTROLS ===== */
-
-/* Transparent overlay: hidden by default, shown on touch devices */
-#touch-overlay {
-    display: none;
-    position: absolute;
-    inset: 0;
-    z-index: 20;
-    pointer-events: none;
-    overflow: hidden;
-}
-
-.touch-zone {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    pointer-events: all;
-    touch-action: none;
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-}
-
-/* Left 42% = movement zone, right 58% = action zone */
-#touch-zone-move   { left: 0;   width: 42%; }
-#touch-zone-action { right: 0;  width: 58%; }
-
-/* Neon glow dot that appears under each finger */
-.touch-glow {
-    position: absolute;
-    border-radius: 50%;
-    width: 80px;
-    height: 80px;
-    margin: -40px 0 0 -40px;
-    pointer-events: none;
-    animation: touchGlowIn 0.12s ease-out forwards;
-}
-
-@keyframes touchGlowIn {
-    from { transform: scale(0.2); opacity: 0; }
-    to   { transform: scale(1);   opacity: 1; }
-}
-
-/* Mobile: full-screen canvas, overlay visible, bottom controls hidden */
+/* ===== MOBILE: fullscreen canvas, controls layered as overlay ===== */
 @media (pointer: coarse) {
-    #game-container {
-        /* keep safe-area padding from notch/home bar, just strip inner gap */
-    }
-
     #game-area {
         padding: 0;
     }
@@ -691,19 +703,11 @@ body, html {
         border-radius: 0;
     }
 
-    /* Hide the classic button panel on touch devices */
-    #controls {
-        display: none !important;
-    }
-
-    #touch-overlay {
-        display: block;
-    }
-
-    /* Compact HUD text so it doesn't eat into game view */
+    /* Compact HUD text so it doesn't eat into the game view */
     #message-area {
         height: 34px;
         font-size: 11px;
+        right: 56px; /* leave room for the top-right mini button cluster */
     }
 
     #status-line {

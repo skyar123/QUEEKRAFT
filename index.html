@@ -16,52 +16,59 @@
         <div id="game-area">
             <canvas id="game-canvas" tabindex="0"></canvas>
 
-            <!-- Transparent gesture zones layered over the canvas on mobile.
-                 Left zone: move left/right by touch position.
-                 Right zone: tap=attack, swipe-up=jump, long-press=interact, double-tap=pause. -->
-            <div id="touch-overlay">
-                <div id="touch-zone-move"   class="touch-zone"></div>
-                <div id="touch-zone-action" class="touch-zone"></div>
-            </div>
-
             <div id="message-area"></div>
-            
+
             <div id="status-line">
-                <span id="player-name">Skylar</span> the Survivor | 
+                <span id="player-name">Skylar</span> the Survivor |
                 Lvl <span id="player-level">1</span> |
                 <div id="xp-bar-container"><div id="xp-bar-fill"></div></div> |
-                Depth:<span id="depth">1</span> | 
+                Depth:<span id="depth">1</span> |
                 Hearts:<span id="player-hearts"></span> |
-                Archives:<span id="zines">0</span>/19 | 
-                Survivors:<span id="figures">0</span>/9 | 
+                Archives:<span id="zines">0</span>/19 |
+                Survivors:<span id="figures">0</span>/9 |
                 Scrap:<span id="treasures">0</span>
             </div>
-            <!-- Touch HUD: pause/quest/AI in top-right corner, far from action buttons -->
-            <div id="touch-hud">
-                <button class="hud-btn" id="ai-btn" aria-label="AI Terminal">🤖</button>
-                <button class="hud-btn" id="quest-btn" aria-label="Quest log">📋</button>
-                <button class="hud-btn" id="pause-btn" aria-label="Pause">⏸</button>
-            </div>
-        </div>
 
-        <div id="controls">
-            <!-- Left half: floating virtual joystick — touch anywhere to spawn -->
-            <div id="joystick-zone" aria-label="Movement zone">
-                <div id="joystick-vis">
-                    <div id="joystick-ring"></div>
-                    <div id="joystick-knob"></div>
+            <!-- Touch controls: semi-transparent overlay laid directly over the
+                 canvas on touch devices. Hidden on desktop via CSS. -->
+            <div id="touch-controls">
+                <!-- Analog joystick (left side) — base spawns where the finger
+                     lands; partial tilt = slower movement. -->
+                <div id="tj-zone" aria-label="Move">
+                    <div id="tj-base">
+                        <div id="tj-stick"></div>
+                    </div>
                 </div>
-                <span class="joy-label">MOVE</span>
+
+                <!-- Action cluster (right side) — dedicated jump/atk/dash/pwr.
+                     Big enough for thumbs, never gestures. -->
+                <button class="t-btn t-jump"  id="t-jump"  aria-label="Jump">JUMP</button>
+                <button class="t-btn t-atk"   id="t-atk"   aria-label="Attack">ATK</button>
+                <button class="t-btn t-dash"  id="t-dash"  aria-label="Dash">DASH</button>
+                <button class="t-btn t-pwr"   id="t-pwr"   aria-label="Class power">PWR</button>
+                <button class="t-btn t-use"   id="t-use"   aria-label="Use / Interact">USE</button>
+
+                <!-- Tiny top-right cluster. Pause requires a long-press
+                     (visible fill ring) so it can't trigger by accident. -->
+                <button class="t-mini t-ai"    id="t-ai"    aria-label="AI Terminal">🤖</button>
+                <button class="t-mini t-quest" id="t-quest" aria-label="Quest log">📋</button>
+                <div class="t-pause-wrap">
+                    <button class="t-mini t-pause" id="t-pause" aria-label="Pause (hold)">⏸</button>
+                    <svg class="t-pause-ring" viewBox="0 0 36 36" aria-hidden="true">
+                        <circle cx="18" cy="18" r="16" />
+                    </svg>
+                </div>
+
+                <!-- Combo HUD — shows current chain count and "POWER READY" when
+                     the next quick attack will trigger the finisher. -->
+                <div id="t-combo">
+                    <span id="t-combo-count">x0</span>
+                    <span id="t-combo-label">COMBO</span>
+                </div>
             </div>
-            <!-- Right: action buttons in thumb-natural arc -->
-            <div id="action-zone">
-                <button class="action-btn btn-use"  id="interact"     aria-label="Use / Interact">USE</button>
-                <button class="action-btn btn-jump" id="jump-btn"     aria-label="Jump">JUMP</button>
-                <button class="action-btn btn-dash" id="dash-btn"     aria-label="Dash">DASH</button>
-                <button class="action-btn btn-atk"  id="attack-btn"   aria-label="Attack">ATK</button>
-                <button class="action-btn btn-pwr"  id="class-power"  aria-label="Class power">PWR</button>
-            </div>
-            <div id="control-hint">drag left · swipe ↑ jump · swipe ↓ drop · ⏸ top-right</div>
+
+            <!-- Power-move flash: shown for ~550 ms when the 3-hit finisher lands. -->
+            <div id="power-move-flash">POWER MOVE!</div>
         </div>
     </div>
 
@@ -128,14 +135,16 @@
                     </div>
                     <div class="ctrl-col">
                         <div class="ctrl-col-head">📱 TOUCH</div>
-                        <div class="ctrl-row"><span class="key tkey">← → drag</span> <span>move</span></div>
-                        <div class="ctrl-row"><span class="key tkey">↑ swipe</span> <span>jump</span></div>
-                        <div class="ctrl-row"><span class="key tkey">↓ swipe</span> <span>drop through</span></div>
-                        <div class="ctrl-row"><span class="key tkey">ATK tap</span> <span>attack</span></div>
+                        <div class="ctrl-row"><span class="key tkey">🕹 joystick</span> <span>tilt = speed</span></div>
+                        <div class="ctrl-row"><span class="key tkey">JUMP</span> <span>tap = hop</span></div>
+                        <div class="ctrl-row"><span class="key tkey">JUMP hold</span> <span>higher leap</span></div>
+                        <div class="ctrl-row"><span class="key tkey">↓ + JUMP</span> <span>drop through</span></div>
+                        <div class="ctrl-row"><span class="key tkey">ATK</span> <span>attack</span></div>
+                        <div class="ctrl-row"><span class="key tkey">ATK x3</span> <span>POWER MOVE 💥</span></div>
                         <div class="ctrl-row"><span class="key tkey">ATK hold</span> <span>charge strike</span></div>
-                        <div class="ctrl-row"><span class="key tkey">DASH</span> <span>dodge</span></div>
+                        <div class="ctrl-row"><span class="key tkey">DASH</span> <span>i-frame dodge</span></div>
                         <div class="ctrl-row"><span class="key tkey">PWR</span> <span>class power</span></div>
-                        <div class="ctrl-row"><span class="key tkey">⏸ corner</span> <span>pause</span></div>
+                        <div class="ctrl-row"><span class="key tkey">⏸ hold</span> <span>pause</span></div>
                     </div>
                 </div>
             </div>
@@ -544,28 +553,28 @@
             <div class="tut-title">TOUCH CONTROLS</div>
             <div class="tut-grid">
                 <div class="tut-item">
-                    <div class="tut-icon">←→</div>
-                    <div class="tut-lbl">Drag left zone<br><em>to move</em></div>
+                    <div class="tut-icon">🕹</div>
+                    <div class="tut-lbl">Drag joystick<br><em>tilt = speed</em></div>
                 </div>
                 <div class="tut-item">
-                    <div class="tut-icon">↑</div>
-                    <div class="tut-lbl">Swipe up<br><em>or tap JUMP</em></div>
-                </div>
-                <div class="tut-item">
-                    <div class="tut-icon">↓</div>
-                    <div class="tut-lbl">Swipe down<br><em>drop through</em></div>
+                    <div class="tut-icon">⬆</div>
+                    <div class="tut-lbl">JUMP<br><em>hold = higher</em></div>
                 </div>
                 <div class="tut-item">
                     <div class="tut-icon">⚔</div>
-                    <div class="tut-lbl">Tap ATK<br><em>hold = charge</em></div>
+                    <div class="tut-lbl">ATK x3<br><em>= POWER MOVE</em></div>
                 </div>
                 <div class="tut-item">
                     <div class="tut-icon">💨</div>
                     <div class="tut-lbl">DASH<br><em>i-frame dodge</em></div>
                 </div>
                 <div class="tut-item">
+                    <div class="tut-icon">⚡</div>
+                    <div class="tut-lbl">PWR<br><em>class power</em></div>
+                </div>
+                <div class="tut-item">
                     <div class="tut-icon">⏸</div>
-                    <div class="tut-lbl">Top-right<br><em>to pause</em></div>
+                    <div class="tut-lbl">Hold pause<br><em>to confirm</em></div>
                 </div>
             </div>
             <button id="tutorial-dismiss">GOT IT ▶</button>
