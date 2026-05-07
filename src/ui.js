@@ -474,14 +474,75 @@ export const DialogueUI = {
     }
 };
 
+// Lightweight, fully-offline "AI" responder. Maps the player's typed input to
+// a category of in-world responses so the Archive Spirit always sounds like
+// it's speaking from inside QUEEKRAFT's wasteland — no network calls needed.
+function geminiRespond(input) {
+    const t = (input || '').toLowerCase().trim();
+    if (!t) return "Speak, keeper. The archive listens.";
+
+    const has = (...words) => words.some(w => t.includes(w));
+
+    if (has('hello', 'hi ', 'hey', 'greetings', 'yo')) {
+        return "Hello, keeper. The archive sees you. What story do you seek?";
+    }
+    if (has('zine', 'archive', 'pamphlet', 'paper')) {
+        return "Nineteen zines remain scattered through the depths. Each one you recover relights a fragment of our shared memory. Look behind crumbling tiles and beside fallen banners.";
+    }
+    if (has('ancestor', 'figure', 'historical', 'survivor', 'queer history', 'who is')) {
+        const names = HISTORICAL_FIGURES
+            ? Object.values(HISTORICAL_FIGURES).slice(0, 3).map(f => f.name).join(', ')
+            : '';
+        return `Nine ancestors walk these halls — among them ${names}. Speak with them. Their courage is your inheritance.`;
+    }
+    if (has('boss', 'enemy', 'mutant', 'fight', 'combat', 'attack', 'kill')) {
+        return "The wasteland is hostile, but you are not alone. Three quick strikes chains a power move. Charge your weapon for a heavy hit. Dash through danger — the i-frames are real.";
+    }
+    if (has('jump', 'platform', 'fall', 'drop')) {
+        return "Hold the jump button to leap higher. Pull the joystick down and tap jump to drop through one-way platforms. Trampolines launch you skyward — use them.";
+    }
+    if (has('dash', 'dodge', 'evade', 'shift')) {
+        return "Dash grants brief invulnerability. Time it against an incoming swing and you'll pass right through the blow.";
+    }
+    if (has('scrap', 'loot', 'gold', 'money', 'currency', 'upgrade', 'shop', 'camp')) {
+        return "Scrap is the language of survival. Spend it at the safehouse to permanently strengthen every future heir — more hearts, harder strikes, deeper checkpoints.";
+    }
+    if (has('death', 'die', 'died', 'heir', 'lineage', 'legacy', 'continue')) {
+        return "When you fall, the lineage continues. An heir will take up your torch with every upgrade you bought intact. Death is a comma, not a period.";
+    }
+    if (has('depth', 'level', 'floor', 'descend', 'stairs')) {
+        return "Each descent strengthens both you and the wasteland. Your checkpoint advances with you, so a heir need not start from depth one.";
+    }
+    if (has('class', 'power', 'ability', 'pwr', 'skill', 'perk')) {
+        return "Your class power recharges over time — anarchist rage, archivist time-slow, brawler dash, dealer bump, aidworker aura. Each is a different kind of resistance.";
+    }
+    if (has('queer', 'trans', 'gay', 'lgbt', 'pride', 'liberation', 'revolution')) {
+        return "We were here. We are here. We will be here. Every zine you save, every ancestor you meet, every heir you raise — that is the revolution made flesh.";
+    }
+    if (has('help', 'hint', 'tip', 'stuck', 'what do', 'what should', 'how do', 'how should')) {
+        return "Stay mobile. Collect every glow you see. Speak with every ancestor. The wasteland rewards curiosity and punishes hesitation.";
+    }
+    if (has('thank', 'bye', 'goodbye', 'farewell', 'leave')) {
+        return "Walk softly, keeper. The archive watches over you.";
+    }
+    if (has('who are you', 'what are you', 'gemini', 'spirit', 'ai')) {
+        return "I am the Archive Spirit — the collected echo of every queer voice they tried to erase. I run on memory and refusal.";
+    }
+
+    // Fallback — quote a flavor line so even unknown input feels in-character.
+    const stock = GEMINI_GUIDE.responses;
+    return stock[Math.floor(Math.random() * stock.length)];
+}
+
 export const GeminiUI = {
+    transcript: [],
+
     start(game) {
         const spirit = GEMINI_GUIDE;
-        const msg = spirit.responses[Math.floor(Math.random() * spirit.responses.length)];
-        
+        const opener = spirit.responses[Math.floor(Math.random() * spirit.responses.length)];
+
         document.getElementById('conversation-name').textContent = spirit.name;
-        document.getElementById('conversation-text').textContent = msg;
-        
+
         // Change portrait for AI
         const portrait = document.querySelector('#conversation-modal img');
         if (portrait) {
@@ -489,26 +550,94 @@ export const GeminiUI = {
             portrait.style.filter = 'drop-shadow(0 0 15px var(--punk-cyan))';
             portrait.classList.add('pulse-glow');
         }
-        
-        UI.modals.conversation.style.display = 'flex';
-        
+
+        // Replace the static text area with a scrollable transcript.
+        const textEl = document.getElementById('conversation-text');
+        textEl.innerHTML = '';
+        textEl.classList.add('gemini-transcript');
+
+        const append = (who, msg) => {
+            const line = document.createElement('div');
+            line.className = `gemini-line gemini-line-${who}`;
+            const tag = document.createElement('span');
+            tag.className = 'gemini-tag';
+            tag.textContent = who === 'ai' ? '◆ ARCHIVE' : '▸ YOU';
+            const body = document.createElement('span');
+            body.className = 'gemini-body';
+            body.textContent = msg;
+            line.appendChild(tag);
+            line.appendChild(body);
+            textEl.appendChild(line);
+            textEl.scrollTop = textEl.scrollHeight;
+        };
+
+        append('ai', opener);
+        Audio.speak(opener);
+
+        // Build the input row + close button in the choices container.
         const choicesContainer = document.getElementById('conversation-choices');
         choicesContainer.innerHTML = '';
-        
-        const btn = document.createElement('button');
-        btn.className = 'conversation-btn';
-        btn.textContent = "Thank you, Guide.";
-        btn.onclick = () => {
+
+        const inputRow = document.createElement('div');
+        inputRow.className = 'gemini-input-row';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = 'gemini-input';
+        input.className = 'gemini-input';
+        input.placeholder = 'Ask the Archive Spirit…';
+        input.autocomplete = 'off';
+        input.maxLength = 200;
+
+        const sendBtn = document.createElement('button');
+        sendBtn.className = 'conversation-btn gemini-send';
+        sendBtn.textContent = 'SEND';
+
+        const submit = () => {
+            const q = input.value.trim();
+            if (!q) return;
+            append('user', q);
+            input.value = '';
+            const reply = geminiRespond(q);
+            // Tiny delay so it feels like the spirit is "thinking".
+            setTimeout(() => {
+                append('ai', reply);
+                Audio.speak(reply);
+            }, 220);
+        };
+
+        sendBtn.onclick = submit;
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submit();
+            }
+        });
+
+        inputRow.appendChild(input);
+        inputRow.appendChild(sendBtn);
+        choicesContainer.appendChild(inputRow);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'conversation-btn';
+        closeBtn.textContent = "Thank you, Guide.";
+        closeBtn.onclick = () => {
             if (portrait) {
                 portrait.src = '/images/portrait_npc.png';
                 portrait.style.filter = '';
                 portrait.classList.remove('pulse-glow');
             }
+            textEl.classList.remove('gemini-transcript');
+            textEl.innerHTML = '';
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
             UI.modals.conversation.style.display = 'none';
         };
-        choicesContainer.appendChild(btn);
-        
-        Audio.speak(msg);
+        choicesContainer.appendChild(closeBtn);
+
+        UI.modals.conversation.style.display = 'flex';
+        // Auto-focus the input so a hardware keyboard works immediately;
+        // on iOS this also brings up the on-screen keyboard.
+        setTimeout(() => input.focus(), 50);
     }
 };
 
