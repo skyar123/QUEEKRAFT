@@ -1004,18 +1004,18 @@ const stars = [];
 // === Platformer physics constants (Rogue Legacy inspired) ===
 const PLAYER_W = 0.65; // Slightly narrower for better platforming
 const PLAYER_H = 0.9;
-const GRAVITY = 0.75; // Slightly gentler gravity for more hangtime
-const TERMINAL_VY = 14;
-const JUMP_SPEED = -9.2; // Compensating for lower gravity
+const GRAVITY = 0.65;
+const TERMINAL_VY = 12;
+const JUMP_SPEED = -7.5;
 const COYOTE_FRAMES = 10;
 const JUMP_BUFFER_FRAMES = 10;
 const DASH_FRAMES = 8;
 const DASH_COOLDOWN = 35;
 const DASH_SPEED = 0.6;
-const ACCEL = 1.2;          // Horizontal acceleration
-const FRICTION_GROUND = 0.78; // Ground friction
-const FRICTION_AIR = 0.92;    // Air resistance
-const MAX_VX = 5.5;          // Speed limit
+const ACCEL = 0.65;          // Horizontal acceleration
+const FRICTION_GROUND = 0.72; // Ground friction
+const FRICTION_AIR = 0.86;    // Air resistance
+const MAX_VX = 3.5;          // Speed limit
 
 // Returns true if (px, py) lies inside any solid wall.
 // One-way platforms are NOT considered solid by this — use isOneWayBlocking
