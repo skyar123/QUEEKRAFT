@@ -232,30 +232,19 @@ setTimeout(() => { if (!initStarted) { initStarted = true; initGame(); } }, 5000
 function imgReady(img) { return img && img.complete && img.naturalWidth > 0; }
 
 function updateResolution() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const isMobile = ('ontouchstart' in window || navigator.maxTouchPoints > 0) && w <= 1100;
-    const isPortrait = h > w;
-
-    if (isMobile) {
-        // Show fewer tiles so the player feels closer to the action.
-        // Height is derived from screen ratio so the canvas fills without distortion.
-        if (isPortrait) {
-            game.camera.width  = 10;
-            game.camera.height = Math.max(14, Math.min(game.mapHeight - 2,
-                                    Math.round(10 * h / w)));
-        } else {
-            game.camera.width  = 16;
-            game.camera.height = Math.max(8, Math.min(14,
-                                    Math.round(16 * h / w)));
-        }
+    const isPortrait = window.innerHeight > window.innerWidth;
+    if (isPortrait) {
+        // Vertical/Portrait Mode (iPhone)
+        game.camera.width = 12;
+        game.camera.height = 20;
     } else {
-        game.camera.width  = isPortrait ? 12 : 24;
-        game.camera.height = isPortrait ? 20 : 16;
+        // Landscape (Desktop/Tablet)
+        game.camera.width = 24;
+        game.camera.height = 16;
     }
-
-    canvas.width  = game.camera.width  * T;
+    canvas.width = game.camera.width * T;
     canvas.height = game.camera.height * T;
+    // ensure pixel art isn't blurry when resized
     ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener('resize', updateResolution);
@@ -525,20 +514,6 @@ async function descend() {
 }
 
 function startDungeon() {
-    // Show touch controls tutorial once on first mobile session
-    if (window.matchMedia('(pointer: coarse)').matches &&
-        !localStorage.getItem('queekraft_touch_tut_v1')) {
-        const tut = document.getElementById('touch-tutorial');
-        const btn = document.getElementById('tutorial-dismiss');
-        if (tut && btn) {
-            tut.style.display = 'flex';
-            btn.onclick = () => {
-                tut.style.display = 'none';
-                localStorage.setItem('queekraft_touch_tut_v1', '1');
-            };
-        }
-    }
-
     // Reset transient dungeon state but apply persistent upgrades
     const p = game.player;
     p.alive = true;
@@ -1037,10 +1012,10 @@ const JUMP_BUFFER_FRAMES = 10;
 const DASH_FRAMES = 8;
 const DASH_COOLDOWN = 35;
 const DASH_SPEED = 0.6;
-const ACCEL = 0.65;
-const FRICTION_GROUND = 0.72;
-const FRICTION_AIR = 0.86;
-const MAX_VX = 3.5;
+const ACCEL = 0.65;          // Horizontal acceleration
+const FRICTION_GROUND = 0.72; // Ground friction
+const FRICTION_AIR = 0.86;    // Air resistance
+const MAX_VX = 3.5;          // Speed limit
 
 // Returns true if (px, py) lies inside any solid wall.
 // One-way platforms are NOT considered solid by this — use isOneWayBlocking
@@ -2578,20 +2553,7 @@ function setupControls() {
         }
     });
 
-    // -----------------------------------------------------------------------
-    // Touch input model
-    //
-    // touchInput.dir is an analog -1..+1 value sourced from the on-screen
-    // joystick (or +/-1 from the d-pad fallback when no joystick is active).
-    // The wrapped update loop multiplies acceleration AND the speed clamp by
-    // |dir| × MOBILE_SPEED_MULT, so a partial joystick tilt walks the player
-    // forward slowly. This solves "moves WAY too fast" on touch without
-    // touching the keyboard physics constants (ACCEL/MAX_VX).
-    // -----------------------------------------------------------------------
-    const MOBILE_SPEED_MULT = 0.7; // touch top speed = 70% of keyboard top speed
-    const touchInput = { dir: 0, downHeld: false };
-
-    // Wrap update for held-key + analog touch horizontal movement.
+    // Wrap update for held-key horizontal movement
     const originalUpdate = update;
     update = (dt) => {
         const p = game.player;
@@ -2601,34 +2563,18 @@ function setupControls() {
         if (p.traits && p.traits.some(t => t.id === 'chronic')) accel *= 0.7;
 
         if (p.hitstun > 0) {
-            // Melee-style DI: allow slight horizontal nudge while in hitstun.
+            // Melee-style DI: allow slight horizontal nudge while in hitstun
             if (keys['ArrowLeft'] || keys['KeyA']) p.vx -= 0.15;
             if (keys['ArrowRight'] || keys['KeyD']) p.vx += 0.15;
         } else if (p.dashTimer <= 0) {
-            const kbLeft  = keys['ArrowLeft']  || keys['KeyA'];
-            const kbRight = keys['ArrowRight'] || keys['KeyD'];
-            if (kbLeft) {
+            if (keys['ArrowLeft'] || keys['KeyA'] || touchHeld.left) {
                 p.vx -= accel;
                 p.facingX = -1;
-            } else if (kbRight) {
+            } else if (keys['ArrowRight'] || keys['KeyD'] || touchHeld.right) {
                 p.vx += accel;
                 p.facingX = 1;
-            } else if (Math.abs(touchInput.dir) > 0.05) {
-                // Analog touch input. Magnitude scales acceleration AND clamp
-                // so a half-tilt walks at half-ish speed.
-                const mag = Math.min(1, Math.abs(touchInput.dir));
-                const sign = touchInput.dir < 0 ? -1 : 1;
-                p.vx += sign * accel * mag * MOBILE_SPEED_MULT;
-                p.facingX = sign;
-                // Per-frame clamp to the analog ceiling so partial tilts
-                // don't accumulate to full speed over many frames.
-                let lim = MAX_VX * (p.trait?.id === 'adhd' ? 1.3 : 1.0);
-                if (p.hasSpeedPerk) lim *= 1.25;
-                lim *= mag * MOBILE_SPEED_MULT;
-                if (p.vx >  lim) p.vx =  lim;
-                if (p.vx < -lim) p.vx = -lim;
             }
-            // Absolute clamp (keyboard or whatever).
+            // Clamp speed
             let limit = MAX_VX * (p.trait?.id === 'adhd' ? 1.3 : 1.0);
             if (p.hasSpeedPerk) limit *= 1.25;
             if (p.vx > limit) p.vx = limit;
@@ -2637,11 +2583,8 @@ function setupControls() {
         originalUpdate(dt);
     };
 
-    // -----------------------------------------------------------------------
-    // Held-button helper. Pointer events handle touch + mouse + pen uniformly
-    // on iOS Safari ≥13. We re-fire release on pointercancel/leave so a finger
-    // sliding off the button releases cleanly.
-    // -----------------------------------------------------------------------
+    // On-screen / touch controls — held-state via pointer events so a finger
+    // resting on Left actually keeps walking left, not just one tap of motion.
     function bindHold(id, onPress, onRelease) {
         const el = document.getElementById(id);
         if (!el) return;
@@ -2660,152 +2603,65 @@ function setupControls() {
             el.classList.remove('pressed');
             onRelease && onRelease();
         };
-        el.addEventListener('pointerdown',  press);
-        el.addEventListener('pointerup',    release);
-        el.addEventListener('pointercancel',release);
+        // Pointer events handle touch + mouse + pen uniformly on iOS Safari ≥13.
+        el.addEventListener('pointerdown', press);
+        el.addEventListener('pointerup', release);
+        el.addEventListener('pointercancel', release);
         el.addEventListener('pointerleave', release);
-        el.addEventListener('touchstart',   press,   { passive: false });
-        el.addEventListener('touchend',     release, { passive: false });
-        el.addEventListener('touchcancel',  release, { passive: false });
+        // Belt-and-suspenders for older iOS that fire touch but not pointer.
+        el.addEventListener('touchstart', press, { passive: false });
+        el.addEventListener('touchend', release, { passive: false });
     }
 
-    // -----------------------------------------------------------------------
-    // Floating analog joystick — base spawns at the touch origin in the
-    // bottom-left half of the screen. Tilt magnitude (clamped to the base
-    // radius) drives touchInput.dir as -1..+1.
-    // -----------------------------------------------------------------------
-    (function setupAnalogJoystick() {
-        const zone  = document.getElementById('tj-zone');
-        const base  = document.getElementById('tj-base');
-        const stick = document.getElementById('tj-stick');
-        if (!zone || !base || !stick) return;
-
-        const RADIUS  = 60;   // px clamp radius (matches CSS base / 2)
-        const DEAD    = 0.12; // analog deadzone — masks finger jitter
-        let joyId  = null;
-        let joyOrigin = { x: 0, y: 0 };
-
-        function showAt(cx, cy) {
-            const r = zone.getBoundingClientRect();
-            // Pin the visible base inside the zone so it never clips off-screen
-            // when the user starts a touch near the edge.
-            const pad = RADIUS + 8;
-            const lx = Math.max(pad, Math.min(r.width  - pad, cx - r.left));
-            const ly = Math.max(pad, Math.min(r.height - pad, cy - r.top));
-            joyOrigin.x = r.left + lx;
-            joyOrigin.y = r.top  + ly;
-            base.style.left = lx + 'px';
-            base.style.top  = ly + 'px';
-            base.classList.add('active');
-            stick.style.transform = 'translate(0, 0)';
+    // Held-state flags drive the wrapped update loop.
+    const touchHeld = { left: false, right: false };
+    bindHold('left',  () => { touchHeld.left = true;  game.player.facingX = -1; },
+                      () => { touchHeld.left = false; });
+    bindHold('right', () => { touchHeld.right = true; game.player.facingX = 1; },
+                      () => { touchHeld.right = false; });
+    bindHold('jump-btn', () => {
+        keys['Space'] = true; // Suppress per-frame velocity cut while finger is held
+        if (!tryJump()) {
+            game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
         }
-
-        function moveTo(cx, cy) {
-            const dx = cx - joyOrigin.x;
-            const dy = cy - joyOrigin.y;
-            const dist = Math.sqrt(dx*dx + dy*dy);
-            const k = dist > RADIUS ? RADIUS / dist : 1;
-            const sx = dx * k, sy = dy * k;
-            stick.style.transform = `translate(${sx}px, ${sy}px)`;
-
-            // Analog X with deadzone and normalization across the live range.
-            let nx = sx / RADIUS; // -1..+1
-            const am = Math.abs(nx);
-            if (am < DEAD) {
-                touchInput.dir = 0;
-            } else {
-                const t = (am - DEAD) / (1 - DEAD); // re-normalize past deadzone
-                touchInput.dir = (nx < 0 ? -1 : 1) * t;
-            }
-            // Down-hold for drop-through interaction with ATK/Down combos.
-            touchInput.downHeld = (sy / RADIUS) > 0.55;
-
-            // Quick swipe-down on the joystick still drops through one-way
-            // platforms — handy when you don't want to take your right thumb
-            // off the action cluster to do it.
-            if (touchInput.downHeld && game.player.onGround) {
-                const px = Math.floor(game.player.x + PLAYER_W / 2);
-                const pyFeet = Math.floor(game.player.y + PLAYER_H + 0.1);
-                if (game.map[`${px},${pyFeet}`] === '=') {
-                    game.player.dropThrough = 8;
-                    game.player.onGround = false;
-                    game.player.vy = 1.5;
-                }
-            }
-        }
-
-        function end() {
-            joyId = null;
-            touchInput.dir = 0;
-            touchInput.downHeld = false;
-            base.classList.remove('active');
-            stick.style.transform = 'translate(0, 0)';
-        }
-
-        zone.addEventListener('touchstart', e => {
-            e.preventDefault();
-            if (joyId !== null) return;
-            const t = e.changedTouches[0];
-            joyId = t.identifier;
-            showAt(t.clientX, t.clientY);
-            moveTo(t.clientX, t.clientY);
-        }, { passive: false });
-
-        zone.addEventListener('touchmove', e => {
-            e.preventDefault();
-            for (const t of e.changedTouches) {
-                if (t.identifier === joyId) { moveTo(t.clientX, t.clientY); break; }
-            }
-        }, { passive: false });
-
-        const onEnd = e => {
-            e.preventDefault();
-            for (const t of e.changedTouches) {
-                if (t.identifier === joyId) { end(); break; }
-            }
-        };
-        zone.addEventListener('touchend',    onEnd, { passive: false });
-        zone.addEventListener('touchcancel', onEnd, { passive: false });
-    })();
-
-    // -----------------------------------------------------------------------
-    // JUMP — tap to hop, hold for a higher leap (variable jump height is
-    // implemented in keyup; we mirror it on release here).
-    // -----------------------------------------------------------------------
-    bindHold('t-jump', () => {
-        // Down-tilt + jump = drop through one-way platforms.
-        if (touchInput.downHeld && game.player.onGround) {
-            const px = Math.floor(game.player.x + PLAYER_W / 2);
-            const pyFeet = Math.floor(game.player.y + PLAYER_H + 0.1);
-            if (game.map[`${px},${pyFeet}`] === '=') {
-                game.player.dropThrough = 8;
-                game.player.onGround = false;
-                game.player.vy = 1.5;
-                return;
-            }
-        }
-        if (!tryJump()) game.player.jumpBuffer = JUMP_BUFFER_FRAMES;
     }, () => {
-        // Variable jump height — short tap = small hop.
+        keys['Space'] = false;
+        // Variable jump on touch release too.
         if (game.player.vy < -3.5) game.player.vy *= 0.45;
     });
+    bindHold('down', () => { 
+        touchHeld.down = true; 
+        const px = Math.floor(game.player.x + PLAYER_W / 2);
+        const pyFeet = Math.floor(game.player.y + PLAYER_H + 0.1);
+        if (game.player.onGround && game.map[`${px},${pyFeet}`] === '=') {
+            game.player.dropThrough = 8;
+            game.player.onGround = false;
+            game.player.vy = 1.5;
+        } else if (game.map[`${px},${Math.floor(game.player.y + PLAYER_H - 0.1)}`] === '>') {
+            descend();
+        }
+    }, () => { touchHeld.down = false; });
 
-    // ATTACK — short tap = quick attack (chains the 3-hit combo); hold = charge.
-    bindHold('t-atk',
+    // Action buttons.
+    bindHold('dash-btn', tryDash);
+    bindHold('interact', interact);
+    // Power attack: hold to charge, release to fire (short tap = quick attack).
+    bindHold('attack-btn',
         () => { game.player.chargeAttack = 1; game.player.chargeReady = false; },
         () => {
             if (game.player.chargeAttack <= 0) return;
             const charged = game.player.chargeAttack >= 60;
             const overcharge = game.player.chargeAttack >= 110;
             const fx = game.player.facingX || 1;
-            // Joystick tilt-down + ATK in mid-air = dive stab.
-            const dirY = (touchInput.downHeld && !game.player.onGround) ? 1 : 0;
+            // Touch directional inputs: hold down dpad while tapping ATK = dive stab.
+            let dirY = 0;
+            if (touchHeld.down && !game.player.onGround) dirY = 1;
             if (overcharge) {
                 UI.addMessage("OVERCHARGED STRIKE! 🔥", 'special');
                 game.screenShake = Math.max(game.screenShake, 0.8);
                 attackEnemy(game, fx, 0, 'power');
                 attackEnemy(game, fx, -1, 'power');
-                attackEnemy(game, fx,  1, 'power');
+                attackEnemy(game, fx, 1, 'power');
             } else if (charged) {
                 attackEnemy(game, fx, 0, 'power');
             } else {
@@ -2813,82 +2669,19 @@ function setupControls() {
             }
             game.player.chargeAttack = 0;
             game.player.chargeReady = false;
-        }
-    );
+        });
+    bindHold('class-power', activateClassPower);
 
-    bindHold('t-dash',  tryDash);
-    bindHold('t-pwr',   activateClassPower);
-    bindHold('t-use',   interact);
-    bindHold('t-quest', () => { questLogVisible = !questLogVisible; });
-    bindHold('t-ai',    () => { GeminiUI.start(game); });
+    // Top-row UI buttons.
+    bindHold('pause-btn', () => { paused = !paused; });
+    bindHold('quest-btn', () => { questLogVisible = !questLogVisible; });
 
-    // -----------------------------------------------------------------------
-    // PAUSE — long-press only, with a visible fill ring. Solves the original
-    // "pause triggers constantly" complaint because:
-    //   - the button is tiny + isolated in the very top-right corner, and
-    //   - it requires holding for ~600ms (matches the SVG ring transition),
-    //     so accidental brushes never fire it.
-    // -----------------------------------------------------------------------
-    (function setupLongPressPause() {
-        const wrap = document.querySelector('.t-pause-wrap');
-        const btn  = document.getElementById('t-pause');
-        if (!wrap || !btn) return;
-        const HOLD_MS = 600;
-        let holdId = null;
-        const begin = (e) => {
-            if (e && e.cancelable) e.preventDefault();
-            if (holdId) return;
-            wrap.classList.add('holding');
-            holdId = setTimeout(() => {
-                paused = !paused;
-                holdId = null;
-                wrap.classList.remove('holding');
-                // Tiny haptic if the device supports it.
-                if (navigator.vibrate) navigator.vibrate(20);
-            }, HOLD_MS);
-        };
-        const cancel = (e) => {
-            if (e && e.cancelable) e.preventDefault();
-            wrap.classList.remove('holding');
-            if (holdId) { clearTimeout(holdId); holdId = null; }
-        };
-        btn.addEventListener('pointerdown',  begin);
-        btn.addEventListener('pointerup',    cancel);
-        btn.addEventListener('pointerleave', cancel);
-        btn.addEventListener('pointercancel',cancel);
-        btn.addEventListener('touchstart',   begin,  { passive: false });
-        btn.addEventListener('touchend',     cancel, { passive: false });
-        btn.addEventListener('touchcancel',  cancel, { passive: false });
-    })();
-
-    // -----------------------------------------------------------------------
-    // Combo HUD — keeps the on-screen indicator + ATK button glow in sync
-    // with the player's combo state. Runs every animation frame.
-    // -----------------------------------------------------------------------
-    (function setupComboHud() {
-        const hud   = document.getElementById('t-combo');
-        const cnt   = document.getElementById('t-combo-count');
-        const lbl   = document.getElementById('t-combo-label');
-        const atk   = document.getElementById('t-atk');
-        if (!hud || !cnt || !lbl || !atk) return;
-        function tick() {
-            const c = game.player.comboCount || 0;
-            const ready = (c % 3) === 2; // next quick attack will be the FINISHER
-            if (game.player.comboTimer > 0 || c > 0) {
-                hud.classList.add('active');
-                cnt.textContent = 'x' + c;
-                lbl.textContent = ready ? 'POWER READY' : 'COMBO';
-                hud.classList.toggle('ready', ready);
-                atk.classList.toggle('combo-ready', ready);
-            } else {
-                hud.classList.remove('active');
-                hud.classList.remove('ready');
-                atk.classList.remove('combo-ready');
-            }
-            requestAnimationFrame(tick);
-        }
-        requestAnimationFrame(tick);
-    })();
+    // Hook touch held-state into the per-frame velocity assignment.
+    const updateRefForTouch = () => {
+        // Touch now shares the same acceleration logic as keyboard via the shared flags in touchHeld
+    };
+    const prevUpdate = update;
+    update = (dt) => { updateRefForTouch(); prevUpdate(dt); };
 
     // iOS requires a user gesture to start audio. Resume on first interaction.
     const unlockAudio = () => {
