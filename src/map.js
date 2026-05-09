@@ -233,14 +233,31 @@ export function generateMap(game) {
     const healingKeys = Object.keys(HEALING_ITEMS);
     if (usable.length > 0 && healingKeys.length > 0) {
         const room = popRandomRoom();
-        const pos = inRoomFloorTile(room);
-        const healingKey = pick(healingKeys);
-        game.items.push({ x: pos.x, y: pos.y, type: 'healing', healingKey, name: HEALING_ITEMS[healingKey].name });
+        if (room) {
+            const pos = inRoomFloorTile(room);
+            const healingKey = pick(healingKeys);
+            game.items.push({ x: pos.x, y: pos.y, type: 'healing', healingKey, name: HEALING_ITEMS[healingKey].name });
+        }
+    }
+
+    // Chance to spawn a second healing item at deeper depths
+    if (game.depth >= 3 && usable.length > 0 && healingKeys.length > 0 && Math.random() < 0.4) {
+        const room = popRandomRoom();
+        if (room) {
+            const pos = inRoomFloorTile(room);
+            const healingKey = pick(healingKeys);
+            game.items.push({ x: pos.x, y: pos.y, type: 'healing', healingKey, name: HEALING_ITEMS[healingKey].name });
+        }
     }
 
     const baseTypes = ['troll', 'wraith', 'concern', 'police'];
-    const advancedTypes = ['swarm', 'bigot'];
-    const enemyPool = game.depth >= 3 ? baseTypes.concat(advancedTypes) : baseTypes;
+    const advancedTypes = ['swarm', 'bigot', 'hb2_enforcer', 'erasure_wraith'];
+    const lateTypes = ['golem', 'flood_phantom', 'tourist_trap'];
+    const enemyPool = game.depth >= 5
+        ? baseTypes.concat(advancedTypes).concat(lateTypes)
+        : game.depth >= 3
+            ? baseTypes.concat(advancedTypes)
+            : baseTypes;
 
     for (const room of usable) {
         const baseCount = Math.min(3, 1 + Math.floor(game.depth / 2));
@@ -254,19 +271,28 @@ export function generateMap(game) {
 
             const eType = pick(enemyPool);
             let hp = 2, mDelay = 3, alertRad = 4;
-            if (eType === 'wraith')  { hp = 1; mDelay = 1; alertRad = 8; }
-            if (eType === 'concern') { hp = 3; mDelay = 2; alertRad = 6; }
-            if (eType === 'police')  { hp = 3; mDelay = 1; alertRad = 9; }
-            if (eType === 'swarm')   { hp = 1; mDelay = 1; alertRad = 7; }
-            if (eType === 'bigot')   { hp = 2; mDelay = 4; alertRad = 6; }
+            if (eType === 'wraith')        { hp = 1; mDelay = 1; alertRad = 8; }
+            if (eType === 'concern')       { hp = 3; mDelay = 2; alertRad = 6; }
+            if (eType === 'police')        { hp = 3; mDelay = 1; alertRad = 9; }
+            if (eType === 'swarm')         { hp = 1; mDelay = 1; alertRad = 7; }
+            if (eType === 'bigot')         { hp = 2; mDelay = 4; alertRad = 6; }
+            if (eType === 'hb2_enforcer')  { hp = 1; mDelay = 1; alertRad = 7; }
+            if (eType === 'erasure_wraith'){ hp = 2; mDelay = 2; alertRad = 6; }
+            if (eType === 'golem')         { hp = 8; mDelay = 5; alertRad = 4; }
+            if (eType === 'flood_phantom') { hp = 3; mDelay = 2; alertRad = 7; }
+            if (eType === 'tourist_trap')  { hp = 4; mDelay = 99; alertRad = 2; }
             hp = Math.max(1, hp + Math.floor(game.depth / 3));
 
+            const extraProps = {};
+            if (eType === 'golem')        extraProps.weight = 280; // heavy = less knockback
+            if (eType === 'tourist_trap') extraProps.revealed = false;
             game.trolls.push({
                 x: cx, y: cy,
                 enemyType: eType, health: hp, maxHealth: hp,
                 patrolPath: [], patrolIndex: 0, direction: 1,
                 moveDelay: 0, maxMoveDelay: mDelay,
-                alertRadius: alertRad, chasingTurns: 0
+                alertRadius: alertRad, chasingTurns: 0,
+                ...extraProps
             });
         }
 
@@ -287,6 +313,30 @@ export function generateMap(game) {
                 game.items.push({ x: pos.x, y: pos.y, type: 'gender-reveal', name: 'Gender Reveal Chest' });
             }
         }
+    }
+
+    // Lore murals / graffiti: occasional rooms get an Asheville mural item
+    const MURALS = [
+        "You are powerful, you are loved — Southern Equality Studios",
+        "We are still here — Tranzmission, Asheville NC",
+        "The Phoenix rises — Holly Boswell, 1986",
+        "⚧ Created in Asheville, 1993",
+        "Read banned books — Firestorm Books & Coffee",
+        "Trans lives matter in Appalachia — Queer Appalachia",
+        "Kindred Spirits find each other — Blue Ridge Mountains",
+        "The Asheville Blade: Truth is resistance",
+        "GRAVL Girls Rock Asheville — she/her/theirs",
+        "Hurricane Helene can't erase us — River Arts District"
+    ];
+    if (usable.length > 0 && Math.random() < 0.6) {
+        const muralRoom = usable[Math.floor(Math.random() * usable.length)];
+        const muralPos = inRoomFloorTile(muralRoom);
+        game.items.push({
+            x: muralPos.x, y: muralPos.y,
+            type: 'mural',
+            name: 'Asheville Mural',
+            muralText: MURALS[Math.floor(Math.random() * MURALS.length)]
+        });
     }
 
     if (game.depth % 5 === 0) {

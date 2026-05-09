@@ -292,11 +292,11 @@ body, html {
     to   { box-shadow: 0 0 32px rgba(255, 215, 0, 1.0), inset 0 0 16px rgba(255, 215, 0, 0.6); }
 }
 
-/* DASH — smaller, above ATK */
+/* DASH — smaller, top position (was USE spot) */
 .t-dash {
     width: 64px; height: 64px; font-size: 14px;
-    right: calc(38px + env(safe-area-inset-right));
-    bottom: calc(216px + env(safe-area-inset-bottom));
+    right: calc(32px + env(safe-area-inset-right));
+    bottom: calc(296px + env(safe-area-inset-bottom));
     border-color: var(--punk-cyan);
     color: var(--punk-cyan);
     background: rgba(1, 205, 254, 0.16);
@@ -316,11 +316,11 @@ body, html {
 }
 .t-pwr.pressed { background: rgba(255, 215, 0, 0.42); }
 
-/* USE — small square next to dash */
+/* USE — accessible, where DASH used to be */
 .t-use {
     width: 48px; height: 48px; font-size: 12px;
-    right: calc(32px + env(safe-area-inset-right));
-    bottom: calc(296px + env(safe-area-inset-bottom));
+    right: calc(38px + env(safe-area-inset-right));
+    bottom: calc(216px + env(safe-area-inset-bottom));
     border-radius: 10px;
     border-color: rgba(255,255,255,0.55);
     color: rgba(255,255,255,0.85);

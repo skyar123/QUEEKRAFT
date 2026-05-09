@@ -539,6 +539,8 @@ function startDungeon() {
     p.xp = 0; p.level = 1; p.xpToNext = 100;
     p.percent = 0; p.hitstun = 0;
     p.extraJumps = 0; p.critBonus = 0; p.hasRegen = false; p.hasSpeedPerk = false;
+    p.erasureTimer = 0;
+    p.tempRegen = 0;
 
     // Checkpoint resume: next heir starts at the highest depth previously
     // reached (mediated by `checkpointDepth`). First-ever run is depth 1.
@@ -725,6 +727,82 @@ function processTurn() {
             return;
         }
 
+        // GENTRIFICATION GOLEM: slow, tanky, heavy damage — luxury condo monster
+        if (troll.enemyType === 'golem') {
+            if (dist === 1) {
+                takeDamage(game, 2);
+                UI.addMessage("Gentrification Golem: 'This area is being revitalized!'", 'death');
+                return;
+            }
+            if (dist <= alertRadius) stepToward(); // slow single step
+            return;
+        }
+
+        // HB2 ENFORCER: fast, fragile, blocks path with red tape
+        if (troll.enemyType === 'hb2_enforcer') {
+            if (dist === 1) {
+                takeDamage(game, 1);
+                UI.addMessage("HB2 Enforcer: 'You don't belong in this bathroom!'", 'death');
+                return;
+            }
+            if (dist <= alertRadius) { stepToward(); stepToward(); } // double-step = fast
+            return;
+        }
+
+        // ERASURE WRAITH: drains your visibility + health — makes you fade
+        if (troll.enemyType === 'erasure_wraith') {
+            if (dist <= 2) {
+                takeDamage(game, 1);
+                game.player.erasureTimer = Math.max(game.player.erasureTimer || 0, 150);
+                UI.addMessage("The Erasure Wraith is fading you away...", 'death');
+            } else if (dist <= alertRadius && Math.random() < 0.65) {
+                stepToward();
+            }
+            return;
+        }
+
+        // FLOOD PHANTOM: water-elemental — surges toward you then retreats
+        if (troll.enemyType === 'flood_phantom') {
+            troll.surgeTimer = (troll.surgeTimer || 0) + 1;
+            const surging = troll.surgeTimer % 80 < 40;
+            if (dist === 1 && surging) {
+                takeDamage(game, 1);
+                UI.addMessage("The Flood Phantom surges over you!", 'death');
+                return;
+            }
+            if (surging && dist <= alertRadius) {
+                stepToward(); stepToward();
+            } else if (!surging && dist <= alertRadius + 3) {
+                // Retreat phase — move away from player
+                const rdx = px > troll.x ? -1 : px < troll.x ? 1 : 0;
+                const rdy = py > troll.y ? -1 : py < troll.y ? 1 : 0;
+                if (isPassable(troll.x + rdx, troll.y + rdy) && !game.trolls.find(t => t !== troll && t.x === troll.x + rdx && t.y === troll.y + rdy)) {
+                    troll.x += rdx; troll.y += rdy;
+                }
+            }
+            return;
+        }
+
+        // TOURIST TRAP: mimic — stays still until player is very close, then lunges
+        if (troll.enemyType === 'tourist_trap') {
+            if (dist <= 2) {
+                if (!troll.revealed) {
+                    troll.revealed = true;
+                    UI.addMessage("Tourist Trap REVEALED! It wasn't what it seemed!", 'death');
+                    game.screenShake = Math.max(game.screenShake || 0, 0.7);
+                    for (let i = 0; i < 20; i++) game.particles.push({
+                        x: troll.x, y: troll.y,
+                        vx: (Math.random() - 0.5) * 0.5, vy: -Math.random() * 0.4,
+                        life: 1.0, color: '#388E3C'
+                    });
+                }
+                takeDamage(game, 2);
+            }
+            // Stays still until revealed, then slowly chases
+            if (troll.revealed && dist <= alertRadius) stepToward();
+            return;
+        }
+
         // DEFAULT TROLL: chase forever once alerted, 1 damage on contact
         if (dist === 1) { takeDamage(game, 1); return; }
         if (dist <= alertRadius) {
@@ -813,9 +891,14 @@ function interact() {
             const healing = HEALING_ITEMS[item.healingKey];
             let healAmount = healing.healing;
             if (game.player.trait && game.player.trait.id === 't4t') healAmount *= 2; // T4T healing buff
-            
+
             game.player.health = Math.min(game.player.maxHealth, game.player.health + healAmount);
             UI.addMessage(`Used ${item.name}. Healed ${healAmount} HP.`, "healing");
+            // Bodhi Tree Leaf — enables temporary regen for ~30 seconds
+            if (healing.regen) {
+                game.player.tempRegen = Math.max(game.player.tempRegen || 0, 1800);
+                UI.addMessage('Bodhi mediation — regen active (30s)', 'healing');
+            }
             Audio.playLoot();
         } else if (item.type === 'treasure') {
             game.treasures++;
@@ -861,6 +944,13 @@ function interact() {
                 saveGame();
                 UI.addMessage('PERMANENT +1 HEART. The lineage grows stronger.', 'special');
             }
+        } else if (item.type === 'mural') {
+            UI.addMessage(`🎨 "${item.muralText}"`, 'special');
+            addXP(30);
+            Audio.playLoot();
+            // Small healing from encountering community affirmation
+            game.player.health = Math.min(game.player.maxHealth, game.player.health + 0.5);
+            UI.updateStatus(game);
         } else if (item.type === 'gender-reveal') {
             // EXPLORATION MECHANIC: Gender Reveal Chest
             if (Math.random() > 0.5) {
@@ -897,7 +987,10 @@ function checkPickups() {
     const item = game.items.find(i => entityNear(i));
     const npc = game.npcs.find(n => entityNear(n));
     if (item) {
-        UI.addMessage(`You see: ${item.name}. Press USE/F to interact.`);
+        const prompt = item.type === 'mural'
+            ? `You see a mural. Press USE/F to read it.`
+            : `You see: ${item.name}. Press USE/F to interact.`;
+        UI.addMessage(prompt);
         lastPromptTile = key;
     } else if (npc) {
         UI.addMessage(`You see a historical figure. Press USE/F to speak.`);
@@ -1257,6 +1350,8 @@ function update(dt) {
     // Combo timer — resets the chain after 1 second of inaction.
     tickCombo(game);
     if (p.hitstun > 0) p.hitstun--;
+    // Erasure Wraith effect — tick down the fade timer
+    if (p.erasureTimer > 0) p.erasureTimer--;
 
     // Charge meter ticks while E is held (capped at 120).
     if (p.chargeAttack > 0 && p.chargeAttack < 120) p.chargeAttack++;
@@ -1372,6 +1467,15 @@ function update(dt) {
         p.health = Math.min(p.maxHealth, p.health + 1);
         game.floatingText.push({ x: p.x, y: p.y, text: '+1', life: 40, color: '#39FF14' });
         UI.updateStatus(game);
+    }
+    // Bodhi Tree Leaf temp regen
+    if (p.tempRegen > 0) {
+        p.tempRegen--;
+        if (game.animFrame % 300 === 0 && p.health < p.maxHealth) {
+            p.health = Math.min(p.maxHealth, p.health + 0.5);
+            game.floatingText.push({ x: p.x, y: p.y, text: '+½', life: 30, color: '#66BB6A' });
+            UI.updateStatus(game);
+        }
     }
 
     // Update Enemies (Melee Light Physics)
@@ -1669,6 +1773,24 @@ function draw() {
                         });
                     }
                     ctx.shadowBlur = 0;
+                } else if (r.entity.type === 'mural') {
+                    // Asheville graffiti/mural — paint roller icon with rainbow stripes
+                    const bob = Math.sin(game.animFrame * 0.2) * 1;
+                    const palette = ['#FF71CE','#01CDFE','#FFD700','#39FF14','#B967DB'];
+                    for (let s = 0; s < 5; s++) {
+                        ctx.fillStyle = palette[s];
+                        ctx.globalAlpha = 0.75;
+                        ctx.fillRect(drawX - 12, drawY - 20 + bob + s * 4, 24, 4);
+                    }
+                    ctx.globalAlpha = 1;
+                    // Star burst glyph to mark it as special
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 14px VT323';
+                    ctx.textAlign = 'center';
+                    ctx.shadowBlur = 8; ctx.shadowColor = '#FF71CE';
+                    ctx.fillText('✦', drawX, drawY - 22 + bob);
+                    ctx.shadowBlur = 0;
+                    ctx.textAlign = 'left';
                 } else {
                     const bob = Math.sin(game.animFrame * 0.3) * 1;
                     if (imgReady(images.chest)) {
@@ -1786,6 +1908,130 @@ function draw() {
                         ctx.fillStyle = '#FF0000';
                         ctx.fillRect(drawX - 6, drawY - 24 + bob, 4, 3);
                         ctx.fillRect(drawX + 2, drawY - 24 + bob, 4, 3);
+                    } else if (et === 'golem') {
+                        // Slow tanky condo-monster: blocky brown form with luxury signs
+                        size = 28; h = 32;
+                        ctx.fillStyle = '#8B6914';
+                        ctx.fillRect(drawX - 14, drawY - h + bob, 28, h);
+                        // Gold trim
+                        ctx.strokeStyle = '#D4AF37';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(drawX - 14, drawY - h + bob, 28, h);
+                        // "LUXURY CONDO" text on chest
+                        ctx.fillStyle = '#D4AF37';
+                        ctx.font = 'bold 7px VT323';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('LUXURY', drawX, drawY - 20 + bob);
+                        ctx.fillText('CONDOS', drawX, drawY - 12 + bob);
+                        ctx.textAlign = 'left';
+                        // Glowing red eyes
+                        ctx.fillStyle = '#FF0040';
+                        ctx.fillRect(drawX - 7, drawY - h + 6 + bob, 5, 5);
+                        ctx.fillRect(drawX + 2, drawY - h + 6 + bob, 5, 5);
+                    } else if (et === 'hb2_enforcer') {
+                        // Bureaucratic drone in gray with red tape
+                        ctx.fillStyle = '#888888';
+                        ctx.fillRect(drawX - 10, drawY - 24 + bob, 20, 24);
+                        // Red tape straps
+                        ctx.fillStyle = '#FF0040';
+                        ctx.fillRect(drawX - 14, drawY - 16 + bob, 28, 3);
+                        ctx.fillRect(drawX - 14, drawY - 8 + bob, 28, 3);
+                        // Badge / ID
+                        ctx.fillStyle = '#DDDDDD';
+                        ctx.fillRect(drawX - 5, drawY - 20 + bob, 10, 7);
+                        ctx.fillStyle = '#888';
+                        ctx.font = '6px VT323';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('HB2', drawX, drawY - 15 + bob);
+                        ctx.textAlign = 'left';
+                        // Eyes
+                        ctx.fillStyle = '#FF0040';
+                        ctx.fillRect(drawX - 6, drawY - 22 + bob, 3, 3);
+                        ctx.fillRect(drawX + 3, drawY - 22 + bob, 3, 3);
+                    } else if (et === 'erasure_wraith') {
+                        // Translucent form that flickers in and out of visibility
+                        const fadeAmt = 0.3 + Math.sin(game.animFrame * 0.15) * 0.25;
+                        ctx.globalAlpha = fadeAmt;
+                        ctx.fillStyle = '#CCCCCC';
+                        // Flowing ghostly robe shape
+                        ctx.beginPath();
+                        ctx.ellipse(drawX, drawY - 12 + bob, 11, 16, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                        // Wispy tendrils
+                        for (let t = 0; t < 3; t++) {
+                            ctx.beginPath();
+                            ctx.moveTo(drawX - 8 + t * 8, drawY + bob);
+                            ctx.lineTo(drawX - 10 + t * 10, drawY + 8 + bob + Math.sin(game.animFrame * 0.2 + t) * 3);
+                            ctx.strokeStyle = '#CCCCCC';
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                        }
+                        ctx.globalAlpha = 0.8;
+                        // Hollow eyes
+                        ctx.fillStyle = '#FF0040';
+                        ctx.fillRect(drawX - 4, drawY - 16 + bob, 2, 2);
+                        ctx.fillRect(drawX + 2, drawY - 16 + bob, 2, 2);
+                        ctx.globalAlpha = 1;
+                    } else if (et === 'flood_phantom') {
+                        // Water wave shape — surges forward in rhythm
+                        const surging = ((troll.surgeTimer || 0) % 80) < 40;
+                        const waveShift = surging ? Math.sin(game.animFrame * 0.3) * 3 : 0;
+                        ctx.globalAlpha = 0.55 + Math.sin(game.animFrame * 0.2) * 0.2;
+                        ctx.fillStyle = surging ? '#1a8fd1' : '#1a5fa8';
+                        // Cresting wave body
+                        ctx.beginPath();
+                        ctx.moveTo(drawX - 14, drawY + bob + waveShift);
+                        ctx.quadraticCurveTo(drawX - 4, drawY - 26 + bob + waveShift, drawX + 4, drawY - 20 + bob);
+                        ctx.quadraticCurveTo(drawX + 12, drawY - 28 + bob, drawX + 14, drawY + bob + waveShift);
+                        ctx.closePath();
+                        ctx.fill();
+                        // White foam crest
+                        ctx.globalAlpha = 0.9;
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.beginPath();
+                        ctx.arc(drawX - 2, drawY - 24 + bob + waveShift, 5, 0, Math.PI);
+                        ctx.fill();
+                        // Eyes like whirlpools
+                        ctx.fillStyle = '#000033';
+                        ctx.fillRect(drawX - 5, drawY - 18 + bob, 3, 3);
+                        ctx.fillRect(drawX + 2, drawY - 18 + bob, 3, 3);
+                        ctx.globalAlpha = 1;
+                    } else if (et === 'tourist_trap') {
+                        if (!r.entity.revealed) {
+                            // Disguised as a friendly "INFO" landmark sign
+                            ctx.fillStyle = '#4CAF50';
+                            ctx.fillRect(drawX - 14, drawY - 28 + bob, 28, 28);
+                            ctx.strokeStyle = '#FFFFFF';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(drawX - 14, drawY - 28 + bob, 28, 28);
+                            ctx.fillStyle = '#FFFFFF';
+                            ctx.font = 'bold 9px VT323';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('ℹ INFO', drawX, drawY - 14 + bob);
+                            ctx.fillText('ASHEVILLE', drawX, drawY - 6 + bob);
+                            ctx.textAlign = 'left';
+                            // Friendly little eyes
+                            ctx.fillStyle = '#4CAF50';
+                            ctx.fillRect(drawX - 4, drawY - 22 + bob, 3, 3);
+                            ctx.fillRect(drawX + 1, drawY - 22 + bob, 3, 3);
+                        } else {
+                            // Revealed: monstrous with snapping sign-teeth
+                            ctx.fillStyle = '#1B5E20';
+                            ctx.fillRect(drawX - 16, drawY - 30 + bob, 32, 30);
+                            // Gaping maw with teeth
+                            ctx.fillStyle = '#FF0040';
+                            ctx.fillRect(drawX - 12, drawY - 10 + bob, 24, 8);
+                            ctx.fillStyle = '#FFFFFF';
+                            for (let t = 0; t < 5; t++) {
+                                ctx.fillRect(drawX - 11 + t * 6, drawY - 10 + bob, 3, 6);
+                            }
+                            // Manic red eyes
+                            ctx.fillStyle = '#FF0040';
+                            ctx.shadowColor = '#FF0040'; ctx.shadowBlur = 8;
+                            ctx.fillRect(drawX - 8, drawY - 26 + bob, 5, 5);
+                            ctx.fillRect(drawX + 3, drawY - 26 + bob, 5, 5);
+                            ctx.shadowBlur = 0;
+                        }
                     } else if (et === 'boss') {
                         size = 64; h = 72;
                         const enraged = r.entity.bossPhase === 2;
@@ -1844,6 +2090,10 @@ function draw() {
                 if (r.entity.hurtCooldown % 2 === 0) {
                     // DRAW PROCEDURAL PUNK PLAYER
                     const bob = Math.sin(game.animFrame * 0.4) * 2;
+                    // Erasure Wraith effect: player fades in and out
+                    if (r.entity.erasureTimer > 0) {
+                        ctx.globalAlpha = 0.35 + Math.sin(game.animFrame * 0.25) * 0.25;
+                    }
                     const pal = PALETTES[r.entity.colorPalette || 0];
                         
                         // Get body and accent colors (cycle for rainbow)
@@ -2302,6 +2552,21 @@ function draw() {
         ctx.fillRect(baseX, baseY + 22, 96 * cFill, 4);
     }
 
+    // Erasure Wraith fade indicator
+    if (game.player.erasureTimer > 0) {
+        const baseX = padding;
+        const baseY = canvas.height - padding - 80;
+        const pulse = 0.6 + Math.sin(game.animFrame * 0.2) * 0.3;
+        ctx.globalAlpha = pulse;
+        ctx.font = 'bold 14px VT323';
+        ctx.fillStyle = '#CCCCCC';
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = '#FFFFFF';
+        ctx.fillText(`ERASURE (${Math.ceil(game.player.erasureTimer / 60)}s)`, baseX, baseY);
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+    }
+
     // Loot buff indicator — small +1 DMG sigil under the combo HUD.
     if (game.player.lootBuff > 0) {
         const baseX = padding;
@@ -2755,37 +3020,85 @@ function setupControls() {
 
         function clearCombo() { mobileCombo = 0; syncComboHud(); }
 
+        // Returns true if any enemy is within melee range of the player.
+        function hasNearbyEnemy() {
+            const px = game.player.x + PLAYER_W / 2;
+            const py = game.player.y + PLAYER_H / 2;
+            return game.trolls.some(t => Math.abs(t.x - px) < 2.8 && Math.abs(t.y - py) < 2.8);
+        }
+
         if (atkEl) {
+            // Hold ATK to charge — same as keyboard E-hold
+            let atkHoldTimer = null;
             atkEl.addEventListener('pointerdown', (e) => {
                 if (e.cancelable) e.preventDefault();
                 atkEl.classList.add('pressed');
+                // Start charge meter
+                game.player.chargeAttack = 1;
+                game.player.chargeReady = false;
+                atkHoldTimer = null; // no auto-fire; release triggers it
             });
             atkEl.addEventListener('pointerup', (e) => {
                 if (e.cancelable) e.preventDefault();
                 atkEl.classList.remove('pressed');
                 const fx = game.player.facingX || 1;
+
+                // If charge is built up, release as a charge strike (not a combo step)
+                if (game.player.chargeAttack >= 60) {
+                    const overcharge = game.player.chargeAttack >= 110;
+                    if (overcharge) {
+                        UI.addMessage("OVERCHARGED STRIKE! 🔥", 'special');
+                        UI.shakeScreen();
+                        game.screenShake = Math.max(game.screenShake, 0.8);
+                        attackEnemy(game, fx, 0, 'power');
+                        attackEnemy(game, fx, -1, 'power');
+                        attackEnemy(game, fx, 1, 'power');
+                    } else {
+                        attackEnemy(game, fx, 0, 'power');
+                    }
+                    game.player.chargeAttack = 0;
+                    game.player.chargeReady = false;
+                    clearCombo();
+                    return;
+                }
+                game.player.chargeAttack = 0;
+                game.player.chargeReady = false;
+
+                // --- Combo logic: only advance when an enemy is present ---
                 if (mobileCombo >= 2) {
                     clearTimeout(comboTimeout);
                     clearCombo();
-                    attackEnemy(game, fx, 0, 'power');
-                    game.screenShake = Math.max(game.screenShake || 0, 0.9);
-                    for (let i = 0; i < 16; i++) spawnParticle(
-                        game.player.x + PLAYER_W / 2,
-                        game.player.y + PLAYER_H / 2,
-                        i % 2 ? '#FFD700' : '#FF71CE', 1
-                    );
-                    UI.addMessage('POWER MOVE! 💥', 'special');
-                    showPowerFlash();
+                    if (hasNearbyEnemy()) {
+                        attackEnemy(game, fx, 0, 'power');
+                        game.screenShake = Math.max(game.screenShake || 0, 0.9);
+                        for (let i = 0; i < 16; i++) spawnParticle(
+                            game.player.x + PLAYER_W / 2,
+                            game.player.y + PLAYER_H / 2,
+                            i % 2 ? '#FFD700' : '#FF71CE', 1
+                        );
+                        UI.addMessage('POWER MOVE! 💥', 'special');
+                        showPowerFlash();
+                    } else {
+                        // No enemy in range — swing misses, combo resets
+                        attackEnemy(game, fx, 0, 'quick');
+                    }
                 } else {
                     const dirY = touchAxis.y > 0.4 && !game.player.onGround ? 1 : 0;
-                    attackEnemy(game, fx, 0, 'quick', dirY);
-                    mobileCombo++;
-                    clearTimeout(comboTimeout);
-                    comboTimeout = setTimeout(clearCombo, COMBO_MS);
-                    syncComboHud();
+                    const hit = attackEnemy(game, fx, 0, 'quick', dirY);
+                    // Only advance combo counter when an enemy was actually hit
+                    if (hit) {
+                        mobileCombo++;
+                        clearTimeout(comboTimeout);
+                        comboTimeout = setTimeout(clearCombo, COMBO_MS);
+                        syncComboHud();
+                    }
                 }
             });
-            atkEl.addEventListener('pointercancel', () => atkEl.classList.remove('pressed'));
+            atkEl.addEventListener('pointercancel', () => {
+                atkEl.classList.remove('pressed');
+                game.player.chargeAttack = 0;
+                game.player.chargeReady = false;
+            });
         }
     }
     bindHold('t-dash', tryDash);

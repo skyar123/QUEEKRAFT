@@ -17,7 +17,9 @@ export const ZINES = {
     'theywalk': { title: 'They Walk', content: '<h3>Nonbinary Identity</h3><p>"They/them/theirs not because I\'m confused but because I\'m clear. Walking toward the family that chooses me back."</p>' },
     'alexlearns': { title: 'Alex Learns about Gender Identity', content: '<h3>Educational Zine</h3><p>"Gender is not your body, clothes, name, or toys. Gender is YOU. Only you can know what feels right for you."</p>' },
     'euphoria': { title: 'Gender Euphoria', content: '<h3>Celebrating Trans Joy</h3><p>"Trans nonbinary/genderqueer is not a problem to be solved. It\'s a joy to be celebrated. Euphoria comes in waves."</p>' },
-    'menstruation': { title: 'Zine on Menstruation', content: '<h3>Questioning Binaries</h3><p>"Not all women menstruate, not all who menstruate are women. Periods ≠ womanhood, bleeding ≠ binary."</p>' }
+    'menstruation': { title: 'Zine on Menstruation', content: '<h3>Questioning Binaries</h3><p>"Not all women menstruate, not all who menstruate are women. Periods ≠ womanhood, bleeding ≠ binary."</p>' },
+    'electric_dirt': { title: 'Electric Dirt Zine', content: '<h3>Queer Appalachia</h3><p>"We exist at the intersection of queer and rural. We built our own networks because no one else was coming. Electric Dirt — by us, for us, in the hollers and on the mountains."</p><p>Published by Queer Appalachia collective. You are powerful. You are loved.</p>' },
+    'firestorm': { title: 'Firestorm Pages', content: '<h3>Firestorm Books & Coffee</h3><p>"A worker-owned radical bookstore in Asheville since 2008. Every page is an act of resistance. Read banned books. Support your local radical bookseller."</p><p>Pack Square, Asheville NC. Community is our shelving system.</p>' }
 };
 
 export const HISTORICAL_FIGURES = {
@@ -215,8 +217,8 @@ export const HISTORICAL_FIGURES = {
         },
         fact: "Christine Jorgensen became an international media sensation in 1952 as the first American to publicly transition, using her platform to advocate for transgender visibility."
     },
-    'lucy': { 
-        name: 'Lucy Hicks Anderson', 
+    'lucy': {
+        name: 'Lucy Hicks Anderson',
         era: 'Mid 20th Century',
         dialogue: {
             greeting: {
@@ -233,6 +235,148 @@ export const HISTORICAL_FIGURES = {
             }
         },
         fact: "Lucy Hicks Anderson was a Black trans socialite who fiercely defended her right to live and marry as a woman, stating: 'I defy any doctor in the world to prove that I am not a woman.'"
+    },
+    'holly': {
+        name: 'Holly Boswell',
+        era: 'Asheville, 1950–2017',
+        dialogue: {
+            greeting: {
+                text: "Welcome, traveler. I am Holly Boswell of Asheville. I spent my life seeking the sacred in gender — in these very mountains.",
+                choices: [
+                    { text: "Tell me about the Phoenix group.", next: "phoenix" },
+                    { text: "You created the transgender symbol?", next: "symbol" }
+                ]
+            },
+            phoenix: {
+                text: "In 1986 I co-founded the Phoenix Transgender Support Group. We created sanctuary here in Asheville, long before the world knew we existed. Take this feather — it carries that flame.",
+                reward: 'item_phoenix',
+                choices: [{ text: "The symbol you created...", next: "symbol" }]
+            },
+            symbol: {
+                text: "The ⚧ symbol — I created it in 1993. A circle of wholeness, a cross of earthly existence, an arrow and a Venus, all united. We are not half of anything. We are complete.",
+                choices: [{ text: "Thank you for seeing us whole.", next: "retreat" }]
+            },
+            retreat: {
+                text: "I founded Kindred Spirits retreats in these mountains — a place where trans folk could find themselves away from the noise. The mountains hold our secrets safely. Here, take this crystal.",
+                reward: 'item_kindred',
+                choices: [{ text: "I'll carry your light forward.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Find your sacred identity, wherever it lives. In the mountains, in the body, in community. You are powerful. You are loved.",
+                choices: []
+            }
+        },
+        fact: "Holly Boswell (1950–2017) was a trans elder and spiritual guide who co-founded the Phoenix Transgender Support Group (1986), created the transgender symbol ⚧ (1993), published 'The Transgender Alternative' (1991), and founded Kindred Spirits retreats in the Appalachian Mountains."
+    },
+    'zeke': {
+        name: 'Zeke C.',
+        era: 'Asheville, Present Day',
+        dialogue: {
+            greeting: {
+                text: "Hey! Zeke here — Tranzmission. We fight HB2-style legislation every day. You look like someone who knows which way the wind is blowing.",
+                choices: [
+                    { text: "What is Tranzmission?", next: "tranzmission" },
+                    { text: "I need a mission.", next: "quest" }
+                ]
+            },
+            tranzmission: {
+                text: "Tranzmission is an Asheville-based trans advocacy organization. We run support, we fight legislation, and we run a prison project for trans folks inside. The revolution includes everyone.",
+                choices: [{ text: "What can I do?", next: "quest" }]
+            },
+            quest: {
+                text: "Every room in the wasteland has an HB2 Enforcer. They're fragile but fast — they'll try to block you with bureaucratic red tape. Hit them hard and keep moving. Here's something to help.",
+                effect: "rage_vial",
+                choices: [{ text: "I'll dismantle every one.", next: "farewell" }]
+            },
+            farewell: {
+                text: "The Tranzmission Prison Project needs your energy. Trans liberation means nobody left behind — not in the streets, not behind bars. Now go.",
+                choices: []
+            }
+        },
+        fact: "Zeke C. is an Asheville activist and organizer with Tranzmission, an organization that provides trans-affirming support, advocacy against discriminatory legislation like HB2, and runs the Tranzmission Prison Project supporting incarcerated trans people."
+    },
+    'blade_reporters': {
+        name: 'The Blade Reporters',
+        era: 'Asheville, Present Day',
+        dialogue: {
+            greeting: {
+                text: "Two reporters, one mission. The Asheville Blade — worker-owned, trans-led journalism. We reveal the truth they want buried.",
+                choices: [
+                    { text: "What have you uncovered?", next: "reveal" },
+                    { text: "Show me the hidden map.", next: "map" }
+                ]
+            },
+            reveal: {
+                text: "The Golem of Gentrification is real — we tracked the luxury condo deals. Priced out: 40% of our queer community in 5 years. Data is resistance. Here's the dossier.",
+                choices: [{ text: "Show me where they're hiding.", next: "map" }]
+            },
+            map: {
+                text: "We've mapped the wasteland — every hidden room, every greedy developer's stronghold. This intel reveals secrets in your current floor. The pen is mightier, but so is a good map.",
+                effect: "reveal_map",
+                choices: [{ text: "The truth will win.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Report back when you've beaten the Golem. We'll run the story. Solidarity forever — The Asheville Blade cooperative.",
+                choices: []
+            }
+        },
+        fact: "The Asheville Blade is a worker-owned, trans-led news cooperative in Asheville, NC, covering LGBTQ+ issues with community accountability and investigative journalism about housing, politics, and queer life in Appalachia."
+    },
+    'divine_bearded': {
+        name: 'DIVINE the Bearded Lady',
+        era: 'Asheville, Since 1993',
+        dialogue: {
+            greeting: {
+                text: "Darling, welcome to my safe house! DIVINE, bearded and beautiful since 1993. Sit, rest — this is a sanctuary. What do you need?",
+                choices: [
+                    { text: "I need healing.", next: "heal" },
+                    { text: "Tell me about this place.", next: "story" }
+                ]
+            },
+            heal: {
+                text: "*presses a mug of sweet tea and a glitter charm into your hands* Sweet tea, honey — brewed with love and a little magic. The charm will protect you from the worst hits.",
+                effect: "heal_full",
+                reward: "item_charm",
+                choices: [{ text: "This place feels safe.", next: "story" }]
+            },
+            story: {
+                text: "I've been running this safe house since 1993 — before most of these young queens were born! Thirty years of performing, of feeding people, of refusing to disappear. That's the only power they can't take.",
+                choices: [{ text: "You are legendary.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Come back anytime, gorgeous. The door is always open, the tea is always hot, and this beard is always fabulous. Now go fight.",
+                choices: []
+            }
+        },
+        fact: "DIVINE the Bearded Lady is an Asheville drag performer and community fixture who has been creating safe spaces for queer people through performance, community building, and hospitality since 1993."
+    },
+    'andrea': {
+        name: 'The Archive Library',
+        era: 'Pack Memorial, Asheville',
+        dialogue: {
+            greeting: {
+                text: "You've found the secret stacks. This is the Pack Memorial Library's basement — zines, banned books, trans theory. Andrea Long Chu's shelf is here. What do you seek?",
+                choices: [
+                    { text: "Show me the Chu collection.", next: "chu" },
+                    { text: "I want the zine archive.", next: "zines" }
+                ]
+            },
+            chu: {
+                text: "'Females' changed how we think about gender. Her Pulitzer Prize-winning criticism proved that trans thought belongs at the highest levels of letters. Take a page — let it fortify you.",
+                reward: "item_pages",
+                choices: [{ text: "What else is here?", next: "zines" }]
+            },
+            zines: {
+                text: "Every zine ever published in Asheville, preserved. The Electric Dirt collection. Firestorm's chapbooks. The Phoenix Group newsletters. Knowledge is our ammunition.",
+                effect: "reveal_zines",
+                choices: [{ text: "I'll protect these archives.", next: "farewell" }]
+            },
+            farewell: {
+                text: "The library remembers everything. Even what they tried to erase. You are powerful. You are loved. Now go write your own chapter.",
+                choices: []
+            }
+        },
+        fact: "Andrea Long Chu is a trans critic and author who won the Pulitzer Prize for Criticism. Her work 'Females' and essays for n+1, The New Yorker, and New York Magazine have reshaped contemporary literary and gender theory."
     }
 };
 
@@ -250,7 +394,9 @@ export const TREASURES = {
 export const HEALING_ITEMS = {
     'tea': { name: 'Healing Tea', desc: 'Chamomile and lavender restore you.', healing: 1, image: '/images/items/tea.png' },
     'book': { name: 'Book of Affirmations', desc: 'Self-love heals wounds.', healing: 2, image: '/images/items/book.png' },
-    'crystal': { name: 'Healing Crystal', desc: 'Amethyst radiates healing energy.', healing: 3, image: '/images/items/crystal.png' }
+    'crystal': { name: 'Healing Crystal', desc: 'Amethyst radiates healing energy.', healing: 3, image: '/images/items/crystal.png' },
+    'sweet_tea': { name: 'Sweet Tea', desc: 'From the Asheville FM radio show — brewed with community love.', healing: 1.5, image: '/images/items/tea.png' },
+    'bodhi_leaf': { name: 'Bodhi Tree Leaf', desc: 'From Black Mountain\'s Bodhi Tree House. Meditate and recover.', healing: 2, regen: true, image: '/images/items/crystal.png' }
 };
 
 export const GEMINI_GUIDE = {
@@ -293,22 +439,22 @@ export const LOOT_TIERS = {
     },
     uncommon: {
         weight: 28, color: '#39FF14', glow: '#39FF14', scrap: 2,
-        names: ['Resistance Pin', 'Liberation Pamphlet', 'Pride Shoelace', 'Borrowed Lipstick', 'Recovered Photo'],
+        names: ['Resistance Pin', 'Liberation Pamphlet', 'Pride Shoelace', 'Borrowed Lipstick', 'Recovered Photo', 'Bodhi Tree Leaf', 'Firestorm Pages'],
         effect: 'small_heal'   // +1 hp
     },
     rare: {
         weight: 12, color: '#01CDFE', glow: '#01CDFE', scrap: 4,
-        names: ['Solidarity Charm', 'Mutual-Aid Token', 'Marsha\'s Hairpin', 'Sylvia\'s Lighter', 'Stonewall Coin'],
+        names: ['Solidarity Charm', 'Mutual-Aid Token', 'Marsha\'s Hairpin', 'Sylvia\'s Lighter', 'Stonewall Coin', 'GRAVL Guitar Pick', 'Sweet Tea Flask', 'Electric Dirt Zine'],
         effect: 'big_heal'     // +2 hp + +1 next hit
     },
     epic: {
         weight: 4, color: '#B967DB', glow: '#B967DB', scrap: 8,
-        names: ['Hirschfeld\'s Notes', 'Christine\'s Letter', 'Gilded Pronoun Pin', 'Eleanor\'s Diary'],
+        names: ['Hirschfeld\'s Notes', 'Christine\'s Letter', 'Gilded Pronoun Pin', 'Eleanor\'s Diary', '⚧ Symbol Charm', 'Holly\'s Kindred Crystal'],
         effect: 'rage_vial'    // +3 hp + 6s damage boost
     },
     legendary: {
         weight: 1, color: '#FFD700', glow: '#FFD700', scrap: 20,
-        names: ['Stonewall Brick', 'Compton\'s Cafeteria Sugar Shaker', 'Crown of Eleanor Rykener', 'Lili\'s Last Brushstroke'],
+        names: ['Stonewall Brick', 'Compton\'s Cafeteria Sugar Shaker', 'Crown of Eleanor Rykener', 'Lili\'s Last Brushstroke', 'Phoenix Feather', 'Kindred Spirit Crystal'],
         effect: 'permanent_heart'  // permanent +1 max health (lineage)
     }
 };
