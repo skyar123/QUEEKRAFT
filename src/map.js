@@ -1,5 +1,13 @@
 import { ZINES, HISTORICAL_FIGURES, TREASURES, HEALING_ITEMS } from './data.js';
 
+const MURAL_MESSAGES = [
+    "You are powerful, you are loved",
+    "Chosen family is real family",
+    "We mother each other",
+    "The mountains remember us",
+    "Trans joy is resistance"
+];
+
 export function pick(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -125,6 +133,11 @@ export function generateMap(game) {
     game.npcs = [];
     game.trolls = [];
 
+    // Special room tracking for rendering and mechanics
+    game.hearthRooms = new Set();
+    game.safeShelterRooms = new Set();
+    game.muralTiles = {};
+
     game.mapWidth = ROOMS_X * ROOM_W;
     game.mapHeight = ROOMS_Y * ROOM_H;
 
@@ -236,6 +249,89 @@ export function generateMap(game) {
         const pos = inRoomFloorTile(room);
         const healingKey = pick(healingKeys);
         game.items.push({ x: pos.x, y: pos.y, type: 'healing', healingKey, name: HEALING_ITEMS[healingKey].name });
+    }
+
+    // ── Hearth room (every 3 levels) ─────────────────────────────────────────
+    // Warm community space: campfire, community_mothers NPC, Hearth Stone item.
+    // Enemies will not path into these rooms (checked in main.js processTurn).
+    const isHearthLevel = game.depth % 3 === 0;
+    if (isHearthLevel && usable.length > 0) {
+        const hearthRoom = popRandomRoom();
+        const roomKey = `${hearthRoom.rx},${hearthRoom.ry}`;
+        game.hearthRooms.add(roomKey);
+        const pos = inRoomFloorTile(hearthRoom);
+        if (!game.persistent.seenFigures['community_mothers']) {
+            game.npcs.push({ x: pos.x, y: pos.y, figureKey: 'community_mothers', type: 'historical' });
+        }
+        // Spawn a Hearth Stone item near the campfire
+        const stoneX = roomCenterX(hearthRoom.rx) + 2;
+        const stoneY = roomFloorY(hearthRoom.ry) - 1;
+        game.items.push({
+            x: stoneX, y: stoneY,
+            type: 'loot', tier: 'legendary',
+            name: 'Hearth Stone',
+            scrap: 20, effect: 'hearth_stone',
+            color: '#FFD700', glow: '#FFD700'
+        });
+    }
+
+    // ── Safe Shelter room ─────────────────────────────────────────────────────
+    // Trans flag blue/pink tint; enemies won't enter; slow heal inside.
+    if (usable.length > 0 && Math.random() < 0.55) {
+        const shelterRoom = popRandomRoom();
+        game.safeShelterRooms.add(`${shelterRoom.rx},${shelterRoom.ry}`);
+        // Peyton O'Connor spawns in the safe room on even depths
+        if (game.depth % 2 === 0 && !game.persistent.seenFigures['peyton_oconner']) {
+            const pos = inRoomFloorTile(shelterRoom);
+            game.npcs.push({ x: pos.x, y: pos.y, figureKey: 'peyton_oconner', type: 'historical' });
+        }
+    }
+
+    // ── Allison Scott near a mural room ──────────────────────────────────────
+    if (usable.length > 0 && !game.persistent.seenFigures['allison_scott'] && game.depth >= 2 && Math.random() < 0.4) {
+        const muralRoom = popRandomRoom();
+        const muralRoomKey = `${muralRoom.rx},${muralRoom.ry}`;
+        // Mark a ceiling tile in this room as a mural
+        const wallX = roomCenterX(muralRoom.rx);
+        const wallY = muralRoom.ry * ROOM_H;
+        game.muralTiles[`${wallX},${wallY}`] = pick(MURAL_MESSAGES);
+        const pos = inRoomFloorTile(muralRoom);
+        game.npcs.push({ x: pos.x, y: pos.y, figureKey: 'allison_scott', type: 'historical' });
+    }
+
+    // ── Blade Journalists near mural areas ────────────────────────────────────
+    if (usable.length > 0 && !game.persistent.seenFigures['blade_journalists'] && game.depth >= 3 && Math.random() < 0.35) {
+        const bladRoom = popRandomRoom();
+        const wallX = roomCenterX(bladRoom.rx) - 1;
+        const wallY = bladRoom.ry * ROOM_H;
+        game.muralTiles[`${wallX},${wallY}`] = "The Blade doesn't stop printing";
+        const pos = inRoomFloorTile(bladRoom);
+        game.npcs.push({ x: pos.x, y: pos.y, figureKey: 'blade_journalists', type: 'historical' });
+    }
+
+    // ── Scatter mural tiles on ceiling walls throughout the level ─────────────
+    for (let i = 0; i < 4; i++) {
+        const rx = Math.floor(Math.random() * ROOMS_X);
+        const ry = Math.floor(Math.random() * ROOMS_Y);
+        const wx = rx * ROOM_W + 1 + Math.floor(Math.random() * (ROOM_W - 2));
+        const wy = ry * ROOM_H; // ceiling row
+        const key = `${wx},${wy}`;
+        if (!game.muralTiles[key]) {
+            game.muralTiles[key] = MURAL_MESSAGES[i % MURAL_MESSAGES.length];
+        }
+    }
+
+    // ── Archival Fragment items ───────────────────────────────────────────────
+    if (usable.length > 0) {
+        const fragRoom = usable[Math.floor(Math.random() * usable.length)];
+        const pos = inRoomFloorTile(fragRoom);
+        game.items.push({
+            x: pos.x, y: pos.y,
+            type: 'loot', tier: 'common',
+            name: 'Archival Fragment',
+            scrap: 1, effect: 'archival_fragment',
+            color: '#CCCCCC', glow: '#FFFFFF'
+        });
     }
 
     const baseTypes = ['troll', 'wraith', 'concern', 'police'];

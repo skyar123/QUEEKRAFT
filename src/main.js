@@ -1,7 +1,7 @@
 import { UI, DialogueUI, GeminiUI } from './ui.js';
 import { generateMap } from './map.js';
 import { attackEnemy, takeDamage, tickStatus, tickCombo, resetCombo, applyStatus, isFrozen } from './combat.js';
-import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES } from './data.js';
+import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES, NAMED_ITEM_EFFECTS } from './data.js';
 import { Audio } from './audio.js';
 
 const canvas = document.getElementById('game-canvas');
@@ -64,6 +64,11 @@ const game = {
         comboPeak: 0,
         // Loot-side temp buff: rare+ pickups grant +1 damage for a few seconds.
         lootBuff: 0,
+        // Trans motherhood status effects
+        damageImmune: 0,    // frames of damage immunity (Shield of Civic Courage)
+        bloomRegen: 0,      // frames of HP regen remaining
+        bloomRate: 0,       // HP per frame during bloom regen
+        defenseBuff: 0,     // frames of reduced incoming damage
         // Lineage stat tracking
         kills: 0, depthReached: 1, scrapEarned: 0
     },
@@ -539,6 +544,7 @@ function startDungeon() {
     p.xp = 0; p.level = 1; p.xpToNext = 100;
     p.percent = 0; p.hitstun = 0;
     p.extraJumps = 0; p.critBonus = 0; p.hasRegen = false; p.hasSpeedPerk = false;
+    p.damageImmune = 0; p.bloomRegen = 0; p.bloomRate = 0; p.defenseBuff = 0;
 
     // Checkpoint resume: next heir starts at the highest depth previously
     // reached (mediated by `checkpointDepth`). First-ever run is depth 1.
@@ -625,14 +631,25 @@ function processTurn() {
         if (game.player.trait && game.player.trait.id === 'clocked') alertRadius += 3;
         if (game.player.trait && game.player.trait.id === 'stealth') alertRadius = 1;
 
+        // Returns true if (ex, ey) is inside a protected room (safe shelter or hearth).
+        const isProtectedRoom = (ex, ey) => {
+            const erx = Math.floor(ex / 10), ery = Math.floor(ey / 10);
+            const rk = `${erx},${ery}`;
+            return (game.safeShelterRooms && game.safeShelterRooms.has(rk)) ||
+                   (game.hearthRooms && game.hearthRooms.has(rk));
+        };
+
         const stepToward = () => {
             const tdx = px > troll.x ? 1 : px < troll.x ? -1 : 0;
             const tdy = py > troll.y ? 1 : py < troll.y ? -1 : 0;
-            if (isPassable(troll.x + tdx, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x + tdx && t.y === troll.y + tdy)) {
+            const nx1 = troll.x + tdx, ny1 = troll.y + tdy;
+            const nx2 = troll.x + tdx, ny2 = troll.y;
+            const nx3 = troll.x,       ny3 = troll.y + tdy;
+            if (isPassable(nx1, ny1) && !isProtectedRoom(nx1, ny1) && !game.trolls.find(t => t !== troll && t.x === nx1 && t.y === ny1)) {
                 troll.x += tdx; troll.y += tdy;
-            } else if (isPassable(troll.x + tdx, troll.y) && !game.trolls.find(t => t !== troll && t.x === troll.x + tdx && t.y === troll.y)) {
+            } else if (isPassable(nx2, ny2) && !isProtectedRoom(nx2, ny2) && !game.trolls.find(t => t !== troll && t.x === nx2 && t.y === ny2)) {
                 troll.x += tdx;
-            } else if (isPassable(troll.x, troll.y + tdy) && !game.trolls.find(t => t !== troll && t.x === troll.x && t.y === troll.y + tdy)) {
+            } else if (isPassable(nx3, ny3) && !isProtectedRoom(nx3, ny3) && !game.trolls.find(t => t !== troll && t.x === nx3 && t.y === ny3)) {
                 troll.y += tdy;
             }
         };
@@ -844,7 +861,75 @@ function interact() {
                     size: 2 + Math.random() * 2
                 });
             }
-            if (item.effect === 'small_heal') {
+            // Named item effect override — check NAMED_ITEM_EFFECTS first
+            const resolvedEffect = (item.name && NAMED_ITEM_EFFECTS[item.name]) ? NAMED_ITEM_EFFECTS[item.name] : item.effect;
+            if (resolvedEffect === 'hearth_stone') {
+                game.player.health = game.player.maxHealth;
+                game.player.defenseBuff = Math.max(game.player.defenseBuff || 0, 200);
+                UI.addMessage('The Hearth Stone warms you. Full heal + defense for 200 frames!', 'healing');
+                for (let i = 0; i < 30; i++) game.particles.push({
+                    x: tileX(), y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.7,
+                    life: 1.2, color: i % 2 ? '#FFD700' : '#FF8C00', size: 3
+                });
+            } else if (resolvedEffect === 'mothers_light') {
+                UI.addMessage("Mother's Fierce Light erupts! AOE damage burst!", 'special');
+                for (const troll of [...game.trolls]) {
+                    const dx = troll.x - tileX(), dy = troll.y - tileY();
+                    if (Math.sqrt(dx*dx + dy*dy) <= 3) {
+                        troll.health -= 4;
+                        game.floatingText.push({ x: troll.x, y: troll.y, text: '-4 🔥', life: 30, color: '#FFD700' });
+                        if (troll.health <= 0) {
+                            game.trolls = game.trolls.filter(t => t !== troll);
+                            game.player.kills = (game.player.kills || 0) + 1;
+                            addXP(20);
+                        }
+                    }
+                }
+                for (let i = 0; i < 60; i++) game.particles.push({
+                    x: tileX()+0.5, y: tileY(), vx: (Math.random()-0.5)*1.2, vy: (Math.random()-0.5)*1.2,
+                    life: 1.0, color: ['#FFD700','#F5A9B8','#5BCEFA','#FFFFFF'][i%4], size: 3
+                });
+                game.screenShake = Math.max(game.screenShake || 0, 0.9);
+            } else if (resolvedEffect === 'youth_badge') {
+                addXP(50);
+                UI.addMessage('Youth OUTright Badge! +50 XP bonus!', 'special');
+            } else if (resolvedEffect === 'safe_key') {
+                // Reveal a safe shelter room on the current level
+                if (game.safeShelterRooms && game.safeShelterRooms.size === 0) {
+                    const rx = Math.floor(Math.random() * 4), ry = Math.floor(Math.random() * 3);
+                    game.safeShelterRooms.add(`${rx},${ry}`);
+                }
+                UI.addMessage('Safe Shelter Key glows. A refuge reveals itself!', 'special');
+            } else if (resolvedEffect === 'homegrown_blessing') {
+                game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 300);
+                game.player.bloomRate = 0.01;
+                UI.addMessage('Homegrown Families Blessing: gentle regen for 300 frames.', 'healing');
+            } else if (resolvedEffect === 'archival_fragment') {
+                addXP(30);
+                const fragments = [
+                    "Fragment: 'We were here before. We will be here after.'",
+                    "Fragment: 'The archive holds what they tried to burn.'",
+                    "Fragment: 'Every name erased becomes a star in our sky.'",
+                    "Fragment: 'Trans mothers built this community. Remember them.'"
+                ];
+                UI.addMessage(fragments[Math.floor(Math.random() * fragments.length)], 'special');
+            } else if (resolvedEffect === 'small_heal') {
+                game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
+            } else if (resolvedEffect === 'big_heal') {
+                game.player.health = Math.min(game.player.maxHealth, game.player.health + 2);
+                game.player.lootBuff = Math.max(game.player.lootBuff || 0, 240);
+                UI.addMessage('Solidarity surges through you (+1 dmg / 4s)', 'healing');
+            } else if (resolvedEffect === 'rage_vial') {
+                game.player.health = Math.min(game.player.maxHealth, game.player.health + 3);
+                game.player.lootBuff = Math.max(game.player.lootBuff || 0, 360);
+                UI.addMessage('Ancestor rage in your veins (+1 dmg / 6s)', 'healing');
+            } else if (resolvedEffect === 'permanent_heart') {
+                game.persistent.permanentHearts = (game.persistent.permanentHearts || 0) + 1;
+                game.player.maxHealth += 1;
+                game.player.health = game.player.maxHealth;
+                saveGame();
+                UI.addMessage('PERMANENT +1 HEART. The lineage grows stronger.', 'special');
+            } else if (item.effect === 'small_heal') {
                 game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
             } else if (item.effect === 'big_heal') {
                 game.player.health = Math.min(game.player.maxHealth, game.player.health + 2);
@@ -900,11 +985,35 @@ function checkPickups() {
         UI.addMessage(`You see: ${item.name}. Press USE/F to interact.`);
         lastPromptTile = key;
     } else if (npc) {
-        UI.addMessage(`You see a historical figure. Press USE/F to speak.`);
+        const fig = HISTORICAL_FIGURES[npc.figureKey];
+        UI.addMessage(`You see ${fig ? fig.name : 'a historical figure'}. Press USE/F to speak.`);
         lastPromptTile = key;
     } else if (game.map[key] === '>') {
         UI.addMessage(`Stairs down. Press USE/F to descend.`);
         lastPromptTile = key;
+    }
+
+    // Mural reading — check adjacent ceiling tiles for mural messages
+    if (game.muralTiles) {
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                const mk = `${px + dx},${py + dy}`;
+                if (game.muralTiles[mk] && mk !== lastPromptTile) {
+                    const msg = game.muralTiles[mk];
+                    UI.addMessage(`🎨 "${msg}" (+0.5 HP)`, 'healing');
+                    game.player.health = Math.min(game.player.maxHealth, game.player.health + 0.5);
+                    UI.updateStatus(game);
+                    lastPromptTile = mk;
+                    // Golden sparkle on reading
+                    for (let i = 0; i < 10; i++) game.particles.push({
+                        x: px + dx, y: py + dy,
+                        vx: (Math.random()-0.5)*0.3, vy: -Math.random()*0.4,
+                        life: 1.0, color: '#FFD700', size: 2
+                    });
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -1254,6 +1363,45 @@ function update(dt) {
     if (p.powerActive > 0) p.powerActive--;
     if (p.dropThrough > 0) p.dropThrough--;
     if (p.lootBuff > 0) p.lootBuff--;
+    if (p.damageImmune > 0) p.damageImmune--;
+    if (p.defenseBuff > 0) p.defenseBuff--;
+    if (p.bloomRegen > 0) {
+        p.bloomRegen--;
+        p.health = Math.min(p.maxHealth, p.health + (p.bloomRate || 0.02));
+        if (game.animFrame % 90 === 0) {
+            game.floatingText.push({ x: p.x, y: p.y, text: '+✿', life: 30, color: '#F5A9B8' });
+            UI.updateStatus(game);
+        }
+    }
+
+    // Safe shelter slow heal — player heals 0.005 HP/frame while standing inside
+    if (game.safeShelterRooms && game.safeShelterRooms.size > 0) {
+        const prx = Math.floor((p.x + PLAYER_W / 2) / 10);
+        const pry = Math.floor((p.y + PLAYER_H / 2) / 10);
+        if (game.safeShelterRooms.has(`${prx},${pry}`) && p.health < p.maxHealth && game.animFrame % 30 === 0) {
+            p.health = Math.min(p.maxHealth, p.health + 0.05);
+            UI.updateStatus(game);
+        }
+    }
+
+    // Ambient hearth sparkles — golden particles drift upward in hearth rooms
+    if (game.hearthRooms && game.animFrame % 8 === 0) {
+        const prx = Math.floor((p.x + PLAYER_W / 2) / 10);
+        const pry = Math.floor((p.y + PLAYER_H / 2) / 10);
+        if (game.hearthRooms.has(`${prx},${pry}`)) {
+            const cx = prx * 10 + 5 + (Math.random() - 0.5) * 4;
+            const cy = pry * 10 + 8 - Math.random() * 3;
+            game.particles.push({
+                x: cx, y: cy,
+                vx: (Math.random() - 0.5) * 0.08,
+                vy: -0.12 - Math.random() * 0.1,
+                life: 1.2,
+                color: Math.random() < 0.5 ? '#FFD700' : '#FF8C00',
+                size: 1.5 + Math.random() * 1.5
+            });
+        }
+    }
+
     // Combo timer — resets the chain after 1 second of inaction.
     tickCombo(game);
     if (p.hitstun > 0) p.hitstun--;
@@ -1499,10 +1647,35 @@ function draw() {
         ctx.globalAlpha = 1.0;
         
         if (r.type === 'tile') {
+            // Determine special room tint for this tile
+            const tileRx = Math.floor(r.x / 10);
+            const tileRy = Math.floor(r.y / 10);
+            const roomKey = `${tileRx},${tileRy}`;
+            const inHearth = game.hearthRooms && game.hearthRooms.has(roomKey);
+            const inShelter = game.safeShelterRooms && game.safeShelterRooms.has(roomKey);
+
             ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
             if (r.tile === '#') {
-                const glow = r.isVisible ? 'rgba(255,113,206,0.3)' : null;
+                // Hearth rooms use warm amber glow on walls
+                let wallGlow = r.isVisible ? 'rgba(255,113,206,0.3)' : null;
+                if (inHearth && r.isVisible) wallGlow = 'rgba(255,160,50,0.35)';
+                if (inShelter && r.isVisible) wallGlow = 'rgba(91,206,250,0.35)';
+                const glow = wallGlow;
                 drawTile(ctx, sx, sy, '#0a0a0a', true, glow, patterns.wall);
+
+                // Mural text on ceiling walls
+                if (r.isVisible && game.muralTiles && game.muralTiles[`${r.x},${r.y}`]) {
+                    ctx.globalAlpha = 0.85;
+                    ctx.save();
+                    ctx.font = '8px VT323';
+                    ctx.fillStyle = inHearth ? '#FFD700' : '#F5A9B8';
+                    ctx.textAlign = 'center';
+                    const mural = game.muralTiles[`${r.x},${r.y}`];
+                    ctx.fillText(mural, sx + T / 2, sy + T - 2);
+                    ctx.textAlign = 'left';
+                    ctx.restore();
+                    ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+                }
             } else if (r.tile === '~') {
                 // Ice — pale blue floor tile with a glossy highlight.
                 drawTile(ctx, sx, sy, '#1a3a4a', true, r.isVisible ? 'rgba(91,206,250,0.45)' : null, null);
@@ -1535,8 +1708,23 @@ function draw() {
                 }
             } else {
                 const floorColor = r.isVisible ? '#0a0a0a' : '#030303';
-                const glowColor = r.isVisible ? 'rgba(1,205,254,0.3)' : null;
-                drawTile(ctx, sx, sy, floorColor, false, glowColor, r.isVisible ? patterns.floor : null);
+                let floorGlow = r.isVisible ? 'rgba(1,205,254,0.3)' : null;
+                drawTile(ctx, sx, sy, floorColor, false, floorGlow, r.isVisible ? patterns.floor : null);
+                // Hearth warm amber overlay on floor
+                if (inHearth && r.isVisible && r.tile !== '>') {
+                    ctx.globalAlpha = 0.12;
+                    ctx.fillStyle = '#FF8C00';
+                    ctx.fillRect(sx, sy, T, T);
+                    ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+                }
+                // Safe shelter trans flag tint on floor
+                if (inShelter && r.isVisible && r.tile !== '>') {
+                    const shelterColor = (game.animFrame % 120 < 60) ? 'rgba(91,206,250,0.10)' : 'rgba(245,169,184,0.10)';
+                    ctx.globalAlpha = 0.15;
+                    ctx.fillStyle = shelterColor;
+                    ctx.fillRect(sx, sy, T, T);
+                    ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+                }
                 if (r.tile === '>') {
                     ctx.globalAlpha = 1.0;
                     ctx.fillStyle = '#01CDFE';
@@ -2103,6 +2291,74 @@ function draw() {
     }
 
     ctx.globalAlpha = 1.0;
+
+    // ── Hearth room campfire ─────────────────────────────────────────────────
+    if (game.hearthRooms) {
+        for (const roomKey of game.hearthRooms) {
+            const [hrx, hry] = roomKey.split(',').map(Number);
+            const fireWorldX = hrx * 10 + 5;
+            const fireWorldY = hry * 10 + 7; // near floor
+            const fsx = fireWorldX * T + camX;
+            const fsy = fireWorldY * T + camY;
+            // Only render if in view
+            if (fsx < -T || fsx > canvas.width + T || fsy < -T || fsy > canvas.height + T) continue;
+            const flicker = 0.75 + Math.sin(game.animFrame * 0.35) * 0.25;
+            const flicker2 = 0.7 + Math.sin(game.animFrame * 0.55 + 1.2) * 0.3;
+            ctx.save();
+            // Glow halo
+            ctx.globalAlpha = 0.18 * flicker;
+            ctx.fillStyle = '#FF8C00';
+            ctx.beginPath();
+            ctx.arc(fsx + T/2, fsy + T/4, 28, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+            // Log base
+            ctx.fillStyle = '#4a2a0a';
+            ctx.fillRect(fsx + 4, fsy + T/2 + 4, T - 8, 5);
+            // Outer flame (orange)
+            ctx.fillStyle = `rgba(255,${Math.floor(100 + 60 * flicker)},0,${flicker})`;
+            ctx.beginPath();
+            ctx.moveTo(fsx + T/2, fsy - 4);
+            ctx.lineTo(fsx + T/2 + 9, fsy + T/2 + 2);
+            ctx.lineTo(fsx + T/2 - 9, fsy + T/2 + 2);
+            ctx.closePath();
+            ctx.fill();
+            // Inner flame (yellow)
+            ctx.fillStyle = `rgba(255,${Math.floor(200 + 55 * flicker2)},0,${flicker2})`;
+            ctx.beginPath();
+            ctx.moveTo(fsx + T/2, fsy + 4);
+            ctx.lineTo(fsx + T/2 + 5, fsy + T/2 + 2);
+            ctx.lineTo(fsx + T/2 - 5, fsy + T/2 + 2);
+            ctx.closePath();
+            ctx.fill();
+            // Ember tip (white)
+            ctx.fillStyle = `rgba(255,255,220,${flicker})`;
+            ctx.beginPath();
+            ctx.arc(fsx + T/2, fsy + 6, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    // ── Safe shelter trans flag accent strip on floor ─────────────────────────
+    if (game.safeShelterRooms) {
+        for (const roomKey of game.safeShelterRooms) {
+            const [srx, sry] = roomKey.split(',').map(Number);
+            const floorY = sry * 10 + 8; // top of floor row
+            for (let tx = srx * 10 + 1; tx < (srx + 1) * 10 - 1; tx++) {
+                const tsx = tx * T + camX, tsy = floorY * T + camY;
+                if (tsx < -T || tsx > canvas.width + T) continue;
+                // Stripe: trans blue / pink / white cycling
+                const stripeColor = tx % 3 === 0 ? 'rgba(91,206,250,0.55)' :
+                                    tx % 3 === 1 ? 'rgba(245,169,184,0.55)' :
+                                                   'rgba(255,255,255,0.40)';
+                ctx.globalAlpha = 0.5;
+                ctx.fillStyle = stripeColor;
+                ctx.fillRect(tsx, tsy, T, 2);
+            }
+            ctx.globalAlpha = 1.0;
+        }
+    }
 
     // Close vertigo wrapper
     if (isVertigo) ctx.restore();

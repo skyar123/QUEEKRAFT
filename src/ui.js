@@ -456,10 +456,77 @@ export const DialogueUI = {
             UI.addMessage("You are fully healed!", "healing");
             UI.updateStatus(this.currentGame);
         }
+        if (node.effect === 'community_heal') {
+            // Community mothers: full heal + 200-frame defense buff
+            this.currentGame.player.health = this.currentGame.player.maxHealth;
+            this.currentGame.player.defenseBuff = Math.max(this.currentGame.player.defenseBuff || 0, 200);
+            UI.addMessage("The Chosen Family heals you completely. Defense strengthened for 200 frames.", "healing");
+            UI.updateStatus(this.currentGame);
+            for (let i = 0; i < 25; i++) {
+                this.currentGame.particles && this.currentGame.particles.push({
+                    x: this.currentGame.player.x + 0.35,
+                    y: this.currentGame.player.y,
+                    vx: (Math.random() - 0.5) * 0.4,
+                    vy: -Math.random() * 0.5,
+                    life: 1.2,
+                    color: ['#F5A9B8', '#5BCEFA', '#FFD700'][i % 3],
+                    size: 2.5
+                });
+            }
+        }
         if (node.reward) {
-            UI.addMessage(`Received: ${node.reward}`, "special");
             if (node.reward === 'item_brick') {
                 this.currentGame.player.hasBrick = true;
+                UI.addMessage("Received: Stonewall Brick (+1 dmg)", "special");
+            } else if (node.reward === 'item_shield') {
+                // Shield of Civic Courage — 300-frame damage immunity
+                this.currentGame.player.damageImmune = Math.max(this.currentGame.player.damageImmune || 0, 300);
+                UI.addMessage("Received: Shield of Civic Courage (damage immunity 300 frames)!", "special");
+                for (let i = 0; i < 20; i++) {
+                    this.currentGame.particles && this.currentGame.particles.push({
+                        x: this.currentGame.player.x + 0.35,
+                        y: this.currentGame.player.y,
+                        vx: (Math.random() - 0.5) * 0.5,
+                        vy: -Math.random() * 0.6,
+                        life: 1.0,
+                        color: '#5BCEFA',
+                        size: 3
+                    });
+                }
+            } else if (node.reward === 'item_bloom') {
+                // Resilience Bloom — regen 0.02 HP/frame for 600 frames
+                this.currentGame.player.bloomRegen = Math.max(this.currentGame.player.bloomRegen || 0, 600);
+                this.currentGame.player.bloomRate = 0.02;
+                UI.addMessage("Received: Resilience Bloom (regen 0.02 HP/frame for 600 frames)!", "healing");
+            } else if (node.reward === 'reveal_passage') {
+                // Blade journalists reveal hidden mural passages
+                const g = this.currentGame;
+                if (g.muralTiles) {
+                    const msgs = ["The Blade doesn't stop printing", "Press freedom is trans freedom",
+                                  "Every silenced voice echoes here", "We documented this. It happened."];
+                    let revealed = 0;
+                    for (let rx = 0; rx < 4 && revealed < 3; rx++) {
+                        for (let ry = 0; ry < 3 && revealed < 3; ry++) {
+                            const wx = rx * 10 + 1 + Math.floor(Math.random() * 8);
+                            const wy = ry * 10;
+                            const mk = `${wx},${wy}`;
+                            if (!g.muralTiles[mk]) {
+                                g.muralTiles[mk] = msgs[revealed % msgs.length];
+                                if (g.seen) g.seen[mk] = true;
+                                revealed++;
+                            }
+                        }
+                    }
+                }
+                UI.addMessage("The journalists reveal hidden passages through the archive!", "special");
+            } else if (node.reward === 'ability_rage') {
+                this.currentGame.player.hasRage = true;
+                UI.addMessage("Received: Ancestor Rage (2x damage!)", "special");
+            } else if (node.reward === 'ability_vision') {
+                this.currentGame.player.extraJumps = (this.currentGame.player.extraJumps || 0) + 1;
+                UI.addMessage("Received: Artistic Vision (+1 jump)!", "special");
+            } else {
+                UI.addMessage(`Received: ${node.reward}`, "special");
             }
         }
     },

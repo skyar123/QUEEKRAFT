@@ -215,8 +215,8 @@ export const HISTORICAL_FIGURES = {
         },
         fact: "Christine Jorgensen became an international media sensation in 1952 as the first American to publicly transition, using her platform to advocate for transgender visibility."
     },
-    'lucy': { 
-        name: 'Lucy Hicks Anderson', 
+    'lucy': {
+        name: 'Lucy Hicks Anderson',
         era: 'Mid 20th Century',
         dialogue: {
             greeting: {
@@ -233,6 +233,114 @@ export const HISTORICAL_FIGURES = {
             }
         },
         fact: "Lucy Hicks Anderson was a Black trans socialite who fiercely defended her right to live and marry as a woman, stating: 'I defy any doctor in the world to prove that I am not a woman.'"
+    },
+    'peyton_oconner': {
+        name: "Peyton O'Connor",
+        era: 'Contemporary',
+        dialogue: {
+            greeting: {
+                text: "They tried to silence us at the school board... but protecting our children isn't political — it's survival.",
+                choices: [
+                    { text: "What happened?", next: "story" },
+                    { text: "You're still here.", next: "resilience" }
+                ]
+            },
+            story: {
+                text: "First openly trans member of the Asheville Board of Education. Mother of two. They harassed us until I resigned. But they couldn't erase what we built.",
+                choices: [{ text: "Your children are lucky to have you.", next: "farewell" }]
+            },
+            resilience: {
+                text: "They can force a resignation. They cannot force silence. Every parent here knows the truth: trans kids deserve to live, to learn, to be seen.",
+                choices: [{ text: "We'll keep fighting for them.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Protect our children. That's all any of us ever wanted.",
+                reward: 'item_shield',
+                choices: []
+            }
+        },
+        fact: "Peyton O'Connor was the first openly transgender member of the Asheville City Schools Board of Education and a mother of two, who faced sustained harassment campaigns before resigning."
+    },
+    'allison_scott': {
+        name: 'Allison Scott',
+        era: 'Contemporary',
+        dialogue: {
+            greeting: {
+                text: "They grabbed my body to prove I wasn't real. But I'm still here. Still fighting. Still mothering.",
+                choices: [
+                    { text: "Who are you?", next: "identity" },
+                    { text: "That takes real courage.", next: "courage" }
+                ]
+            },
+            identity: {
+                text: "Allison Scott. CSE Director, trans mother, fierce advocate. They thought touching me would diminish me. It made me louder.",
+                choices: [{ text: "What keeps you going?", next: "courage" }]
+            },
+            courage: {
+                text: "My children. Every trans child who needs to see an adult standing firm. We don't disappear. We bloom.",
+                reward: 'item_bloom',
+                choices: [{ text: "Thank you. I'll carry this forward.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Keep blooming, even when they try to cut you down.",
+                choices: []
+            }
+        },
+        fact: "Allison Scott is a CSE Director, trans mother, and community advocate who has spoken publicly about facing physical harassment and continuing to fight for LGBTQ+ rights in Asheville."
+    },
+    'blade_journalists': {
+        name: 'Matilda Bliss & Veronica Coit',
+        era: 'Contemporary',
+        dialogue: {
+            greeting: {
+                text: "They arrested us for telling the truth. The Blade doesn't stop printing.",
+                choices: [
+                    { text: "What happened?", next: "arrest" },
+                    { text: "The truth survives.", next: "truth" }
+                ]
+            },
+            arrest: {
+                text: "Matilda Bliss and Veronica Coit, reporters for the Asheville Blade. We documented a homeless encampment eviction — they handcuffed us for it. But the story got out.",
+                choices: [{ text: "Journalism is resistance.", next: "truth" }]
+            },
+            truth: {
+                text: "Every story they tried to kill, we published anyway. There are passages in these walls they don't know about. We mapped them. Let us show you.",
+                reward: 'reveal_passage',
+                choices: [{ text: "Lead the way.", next: "farewell" }]
+            },
+            farewell: {
+                text: "The archive never sleeps. Neither do we.",
+                choices: []
+            }
+        },
+        fact: "Matilda Bliss and Veronica Coit are journalists for the Asheville Blade who were arrested while documenting a homeless encampment eviction, drawing national attention to press freedom."
+    },
+    'community_mothers': {
+        name: 'The Chosen Family Hearth',
+        era: 'Always',
+        dialogue: {
+            greeting: {
+                text: "Blood doesn't make family, baby. Love does. And we've got plenty.",
+                choices: [
+                    { text: "I need rest.", next: "rest" },
+                    { text: "Tell me about this place.", next: "place" }
+                ]
+            },
+            rest: {
+                text: "Come here, child. Sit down. Let these old hands hold some of that weight for a while. You've been carrying too much alone.",
+                effect: 'community_heal',
+                choices: [{ text: "Thank you, mothers.", next: "farewell" }]
+            },
+            place: {
+                text: "This hearth has always been here, even when they tried to erase us. Trans elders built it. We tend it for every child who comes through.",
+                choices: [{ text: "I need to rest.", next: "rest" }]
+            },
+            farewell: {
+                text: "You are loved. You are powerful. Now go — and carry us with you.",
+                choices: []
+            }
+        },
+        fact: "Chosen family networks of trans elders have sustained LGBTQ+ communities for generations, providing care, housing, and cultural continuity across Appalachia and beyond."
     }
 };
 
@@ -288,29 +396,39 @@ export const DIFFICULTIES = {
 export const LOOT_TIERS = {
     common: {
         weight: 55, color: '#CCCCCC', glow: '#FFFFFF', scrap: 1,
-        names: ['Bent Rebar', 'Scrap Wire', 'Cracked Mirror', 'Old Pamphlet', 'Dented Locket'],
+        names: ['Bent Rebar', 'Scrap Wire', 'Cracked Mirror', 'Old Pamphlet', 'Dented Locket', 'Archival Fragment'],
         effect: null
     },
     uncommon: {
         weight: 28, color: '#39FF14', glow: '#39FF14', scrap: 2,
-        names: ['Resistance Pin', 'Liberation Pamphlet', 'Pride Shoelace', 'Borrowed Lipstick', 'Recovered Photo'],
+        names: ['Resistance Pin', 'Liberation Pamphlet', 'Pride Shoelace', 'Borrowed Lipstick', 'Recovered Photo', 'Homegrown Families Blessing'],
         effect: 'small_heal'   // +1 hp
     },
     rare: {
         weight: 12, color: '#01CDFE', glow: '#01CDFE', scrap: 4,
-        names: ['Solidarity Charm', 'Mutual-Aid Token', 'Marsha\'s Hairpin', 'Sylvia\'s Lighter', 'Stonewall Coin'],
+        names: ['Solidarity Charm', 'Mutual-Aid Token', 'Marsha\'s Hairpin', 'Sylvia\'s Lighter', 'Stonewall Coin', 'Youth OUTright Badge'],
         effect: 'big_heal'     // +2 hp + +1 next hit
     },
     epic: {
         weight: 4, color: '#B967DB', glow: '#B967DB', scrap: 8,
-        names: ['Hirschfeld\'s Notes', 'Christine\'s Letter', 'Gilded Pronoun Pin', 'Eleanor\'s Diary'],
+        names: ['Hirschfeld\'s Notes', 'Christine\'s Letter', 'Gilded Pronoun Pin', 'Eleanor\'s Diary', 'Safe Shelter Key'],
         effect: 'rage_vial'    // +3 hp + 6s damage boost
     },
     legendary: {
         weight: 1, color: '#FFD700', glow: '#FFD700', scrap: 20,
-        names: ['Stonewall Brick', 'Compton\'s Cafeteria Sugar Shaker', 'Crown of Eleanor Rykener', 'Lili\'s Last Brushstroke'],
+        names: ['Stonewall Brick', 'Compton\'s Cafeteria Sugar Shaker', 'Crown of Eleanor Rykener', 'Lili\'s Last Brushstroke', 'Hearth Stone', "Mother's Fierce Light"],
         effect: 'permanent_heart'  // permanent +1 max health (lineage)
     }
+};
+
+// Name-specific effects that override tier defaults when a named item is picked up.
+export const NAMED_ITEM_EFFECTS = {
+    'Hearth Stone':               'hearth_stone',
+    "Mother's Fierce Light":      'mothers_light',
+    'Youth OUTright Badge':       'youth_badge',
+    'Safe Shelter Key':           'safe_key',
+    'Homegrown Families Blessing':'homegrown_blessing',
+    'Archival Fragment':          'archival_fragment'
 };
 
 // Probability table compiled from weights, used by combat.dropLoot.

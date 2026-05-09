@@ -510,9 +510,13 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
 
 export function takeDamage(game, amount = 1) {
     if (game.player.hurtCooldown > 0) return;
+    // Shield of Civic Courage — full damage immunity
+    if (game.player.damageImmune > 0) return;
 
     // Trait-based damage mitigation
     if (hasTrait(game.player, 'dwarfism')) amount = Math.max(1, amount - 1);
+    // Community mothers defense buff — reduce incoming damage by half
+    if (game.player.defenseBuff > 0) amount = Math.max(0.25, amount * 0.5);
 
     // Difficulty scaling: Easy = ¼ heart per "1 damage" hit, Normal = ½, Hard = full.
     const diff = getDifficulty(game);
