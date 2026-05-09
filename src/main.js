@@ -2579,9 +2579,8 @@ function setupControls() {
                 p.vx += accel;
                 p.facingX = 1;
             } else if (Math.abs(tiltX) > 0.18) {
-                // Analog joystick: tilt magnitude scales acceleration so a
-                // partial push walks slowly, full push runs.
-                p.vx += accel * tiltX;
+                // Analog joystick: 0.65x multiplier so mobile feels slower/more precise.
+                p.vx += accel * tiltX * 0.65;
                 p.facingX = tiltX > 0 ? 1 : -1;
             }
             // Clamp speed
@@ -2707,8 +2706,8 @@ function setupControls() {
     // ---- Action buttons -------------------------------------------------
     bindHold('t-jump', () => {
         keys['Space'] = true; // Suppress per-frame velocity cut while finger is held
-        // Joystick pulled down + JUMP = drop through one-way platform.
-        if (touchAxis.y > 0.4 && game.player.onGround) {
+        // Joystick fully down + JUMP = drop through one-way platform (high threshold avoids accidental drops).
+        if (touchAxis.y > 0.8 && game.player.onGround) {
             const px = Math.floor(game.player.x + PLAYER_W / 2);
             const pyFeet = Math.floor(game.player.y + PLAYER_H + 0.1);
             if (game.map[`${px},${pyFeet}`] === '=') {
@@ -2727,32 +2726,68 @@ function setupControls() {
         if (game.player.vy < -3.5) game.player.vy *= 0.45;
     });
 
-    // Power attack: hold to charge, release to fire (short tap = quick attack).
-    bindHold('t-atk',
-        () => { game.player.chargeAttack = 1; game.player.chargeReady = false; },
-        () => {
-            if (game.player.chargeAttack <= 0) return;
-            const charged = game.player.chargeAttack >= 60;
-            const overcharge = game.player.chargeAttack >= 110;
-            const fx = game.player.facingX || 1;
-            // Joystick down while airborne + ATK = dive stab.
-            let dirY = 0;
-            if (touchAxis.y > 0.4 && !game.player.onGround) dirY = 1;
-            else if (touchAxis.y < -0.4) dirY = -1;
-            if (overcharge) {
-                UI.addMessage("OVERCHARGED STRIKE! 🔥", 'special');
-                game.screenShake = Math.max(game.screenShake, 0.8);
-                attackEnemy(game, fx, 0, 'power');
-                attackEnemy(game, fx, -1, 'power');
-                attackEnemy(game, fx, 1, 'power');
-            } else if (charged) {
-                attackEnemy(game, fx, 0, 'power');
-            } else {
-                attackEnemy(game, fx, 0, 'quick', dirY);
-            }
-            game.player.chargeAttack = 0;
-            game.player.chargeReady = false;
-        });
+    // 3-hit combo ATK: tap once/twice = quick attack, third tap = power finisher.
+    {
+        const atkEl        = document.getElementById('t-atk');
+        const comboEl      = document.getElementById('t-combo');
+        const comboCountEl = document.getElementById('t-combo-count');
+        const comboLabelEl = document.getElementById('t-combo-label');
+        const flashEl      = document.getElementById('power-move-flash');
+        let mobileCombo    = 0;
+        let comboTimeout   = null;
+        const COMBO_MS     = 1800;
+
+        function showPowerFlash() {
+            if (!flashEl) return;
+            flashEl.style.display = 'flex';
+            clearTimeout(flashEl._t);
+            flashEl._t = setTimeout(() => { flashEl.style.display = 'none'; }, 580);
+        }
+
+        function syncComboHud() {
+            if (!comboEl) return;
+            comboEl.classList.toggle('active', mobileCombo > 0);
+            comboEl.classList.toggle('ready',  mobileCombo >= 2);
+            if (atkEl) atkEl.classList.toggle('combo-ready', mobileCombo >= 2);
+            if (comboCountEl) comboCountEl.textContent = `x${mobileCombo}`;
+            if (comboLabelEl) comboLabelEl.textContent = mobileCombo >= 2 ? 'POWER READY' : 'COMBO';
+        }
+
+        function clearCombo() { mobileCombo = 0; syncComboHud(); }
+
+        if (atkEl) {
+            atkEl.addEventListener('pointerdown', (e) => {
+                if (e.cancelable) e.preventDefault();
+                atkEl.classList.add('pressed');
+            });
+            atkEl.addEventListener('pointerup', (e) => {
+                if (e.cancelable) e.preventDefault();
+                atkEl.classList.remove('pressed');
+                const fx = game.player.facingX || 1;
+                if (mobileCombo >= 2) {
+                    clearTimeout(comboTimeout);
+                    clearCombo();
+                    attackEnemy(game, fx, 0, 'power');
+                    game.screenShake = Math.max(game.screenShake || 0, 0.9);
+                    for (let i = 0; i < 16; i++) spawnParticle(
+                        game.player.x + PLAYER_W / 2,
+                        game.player.y + PLAYER_H / 2,
+                        i % 2 ? '#FFD700' : '#FF71CE', 1
+                    );
+                    UI.addMessage('POWER MOVE! 💥', 'special');
+                    showPowerFlash();
+                } else {
+                    const dirY = touchAxis.y > 0.4 && !game.player.onGround ? 1 : 0;
+                    attackEnemy(game, fx, 0, 'quick', dirY);
+                    mobileCombo++;
+                    clearTimeout(comboTimeout);
+                    comboTimeout = setTimeout(clearCombo, COMBO_MS);
+                    syncComboHud();
+                }
+            });
+            atkEl.addEventListener('pointercancel', () => atkEl.classList.remove('pressed'));
+        }
+    }
     bindHold('t-dash', tryDash);
     bindHold('t-pwr',  activateClassPower);
     bindHold('t-use',  () => {
@@ -2797,28 +2832,19 @@ function setupControls() {
         pauseBtn.addEventListener('touchend', cancel, { passive: false });
     }
 
-    // ---- Combo HUD overlay -----------------------------------------
-    // Mirrors the in-canvas combo readout to the DOM #t-combo so the
-    // touch UI surfaces "POWER READY" feedback even when fingers obscure
-    // the bottom-left corner of the canvas.
-    const tCombo      = document.getElementById('t-combo');
-    const tComboCount = document.getElementById('t-combo-count');
-    const tComboLabel = document.getElementById('t-combo-label');
-    const atkBtn      = document.getElementById('t-atk');
-    if (tCombo && tComboCount && tComboLabel) {
-        setInterval(() => {
-            const cc = Math.max(game.player.comboCount || 0, game.player.comboPeak || 0);
-            const ready = cc >= 2;
-            if (cc > 0 || (game.player.comboTimer || 0) > 0) {
-                tCombo.classList.add('active');
-                tCombo.classList.toggle('ready', ready);
-                tComboCount.textContent = `x${cc}`;
-                tComboLabel.textContent = ready ? 'POWER READY' : 'COMBO';
-            } else {
-                tCombo.classList.remove('active', 'ready');
-            }
-            if (atkBtn) atkBtn.classList.toggle('combo-ready', ready);
-        }, 100);
+    // Combo HUD is managed by the 3-hit combo ATK block above (syncComboHud).
+
+    // ---- First-visit tutorial (mobile only) ----------------------------
+    {
+        const tutEl  = document.getElementById('touch-tutorial');
+        const dismiss = document.getElementById('tutorial-dismiss');
+        if (tutEl && window.matchMedia('(pointer: coarse)').matches && !localStorage.getItem('tut_seen_v2')) {
+            tutEl.style.display = 'flex';
+            if (dismiss) dismiss.addEventListener('click', () => {
+                tutEl.style.display = 'none';
+                localStorage.setItem('tut_seen_v2', '1');
+            }, { once: true });
+        }
     }
 
     // iOS requires a user gesture to start audio. Resume on first interaction.
