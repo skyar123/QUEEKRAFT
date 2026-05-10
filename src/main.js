@@ -92,6 +92,9 @@ const game = {
     camX: 0, camY: 0,
     camInitialized: false,
     floatingText: [],
+    // Short-lived sprite FX (e.g. opened-chest puff). Each entry:
+    // { sprite: imagesKey, x, y, life, maxLife, rise, w, h }.
+    spriteFX: [],
     attackAnim: null,
     animFrame: 0,
     // Full-screen red flash on hurt; combat.js bumps this to 1.0.
@@ -239,10 +242,82 @@ const ASSET_PATHS = {
     tex_wall:  '/images/tex_wall.png',
     player:    '/images/spr_player.png',
     enemy:     '/images/spr_enemy.png',
-    boss:      '/images/spr_enemy.png',  // 1024x1024 transparent demon — boss only
-    chest:     '/images/spr_chest.png',  // transparent neon chest — treasure / gender-reveal
-    marsha:    '/images/spr_marsha.png', // transparent Marsha — historical NPC
-    zine:      '/images/zine.png'        // zine scroll icon
+    boss:      '/images/spr_dark_beast.png',
+    chest:     '/images/spr_chest.png',
+    chest_open:'/images/spr_chest_open.png',
+    marsha:    '/images/spr_marsha.png',
+    zine:      '/images/spr_zine.png',
+
+    // Per-figure NPC overrides (renderer falls back to procedural filler)
+    npc_community_mothers: '/images/spr_community_mothers.png',
+
+    // Enemy variants — keyed by ENEMY_SPRITES below
+    enemy_dark_beast:      '/images/spr_dark_beast.png',
+    enemy_ghost:           '/images/spr_ghost_enemy.png',
+    enemy_bureaucracy:     '/images/spr_bureaucracy_enemy.png',
+    enemy_corporate_drone: '/images/spr_corporate_drone.png',
+    enemy_gentrifier:      '/images/spr_gentrifier.png',
+    enemy_hb2_enforcer:    '/images/spr_hb2_enforcer.png',
+
+    // Themed loot art — referenced via NAMED_LOOT_SPRITES below
+    loot_crown:              '/images/spr_crown.png',
+    loot_pride_medallion:    '/images/spr_pride_medallion.png',
+    loot_bouquet:            '/images/spr_bouquet.png',
+    loot_banjo:              '/images/spr_banjo.png',
+    loot_chalk_bag:          '/images/spr_chalk_bag.png',
+    loot_bike_lock:          '/images/spr_bike_lock.png',
+    loot_bike_lock_grounded: '/images/spr_bike_lock_grounded.png',
+    loot_forage_basket:      '/images/spr_forage_basket.png',
+    loot_gravl_heart:        '/images/spr_gravl_heart.png',
+    loot_spray_can:          '/images/spr_spray_can.png',
+    loot_tattoo_gun:         '/images/spr_tattoo_gun.png'
+};
+
+// Enemy type → sprite key. Renderer falls back to generic `enemy` art
+// when an enemyType isn't listed (swarm stays procedural; boss uses `boss`).
+const ENEMY_SPRITES = {
+    troll:      'enemy_dark_beast',
+    wraith:     'enemy_ghost',
+    gatekeeper: 'enemy_bureaucracy',
+    concern:    'enemy_corporate_drone',
+    bigot:      'enemy_gentrifier',
+    police:     'enemy_hb2_enforcer'
+};
+
+// Named-loot → sprite key. Renderer looks up loot.name here so themed
+// legendary/epic drops get unique art instead of the generic gem.
+const NAMED_LOOT_SPRITES = {
+    'Crown of Eleanor Rykener':         'loot_crown',
+    "LaBeija's Trophy":                 'loot_pride_medallion',
+    'The Mausoleum Flower':             'loot_bouquet',
+    'Hearth Stone':                     'loot_gravl_heart',
+    "Mother's Fierce Light":            'loot_pride_medallion',
+    "House Mother's Sash":              'loot_pride_medallion',
+    'Stonewall Brick':                  'loot_bike_lock_grounded',
+    "Compton's Cafeteria Sugar Shaker": 'loot_chalk_bag',
+    "Lili's Last Brushstroke":          'loot_spray_can',
+    'Safe Shelter Key':                 'loot_bike_lock',
+    'STAR House Key':                   'loot_bike_lock',
+    "Rivera's Megaphone":               'loot_spray_can',
+    "Mama Gloria's Charm Book":         'loot_forage_basket',
+    "Mariela's Tarot Deck":             'loot_forage_basket',
+    "Boylan's Memoir":                  'loot_forage_basket',
+    'Vicks Touch of Care':              'loot_chalk_bag',
+    "Sawant's Petition":                'loot_banjo',
+    'Homegrown Families Blessing':      'loot_bouquet',
+    "Marsha's Hairpin":                 'loot_pride_medallion',
+    "Sylvia's Lighter":                 'loot_spray_can',
+    'Stonewall Coin':                   'loot_pride_medallion',
+    "Hirschfeld's Notes":               'loot_forage_basket',
+    "Christine's Letter":               'loot_forage_basket',
+    'Gilded Pronoun Pin':               'loot_pride_medallion',
+    "Eleanor's Diary":                  'loot_forage_basket',
+    'Resistance Pin':                   'loot_pride_medallion',
+    'Pride Shoelace':                   'loot_pride_medallion',
+    'Youth OUTright Badge':             'loot_pride_medallion',
+    "Mutual-Aid Token":                 'loot_chalk_bag',
+    'Solidarity Charm':                 'loot_pride_medallion',
+    'Liberation Pamphlet':              'loot_forage_basket'
 };
 
 const images = {};
@@ -1045,7 +1120,7 @@ function interact() {
                 game.player.health = Math.min(game.player.maxHealth, game.player.health + 2);
                 game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 200);
                 game.player.bloomRate = 0.01;
-                UI.addMessage('Vicks Touch of Care: +2 HP + gentle regen. A mother's love has no gender.', 'healing');
+                UI.addMessage("Vicks Touch of Care: +2 HP + gentle regen. A mother's love has no gender.", 'healing');
             } else if (resolvedEffect === 'sawant_petition') {
                 // Sawant's Petition: +20 XP + creates a safe shelter room
                 addXP(20);
@@ -1100,6 +1175,14 @@ function interact() {
                 UI.addMessage('PERMANENT +1 HEART. The lineage grows stronger.', 'special');
             }
         } else if (item.type === 'gender-reveal') {
+            // Pop the open-chest sprite where the closed chest was so the
+            // player gets a brief "it opened!" beat before it disappears.
+            game.spriteFX.push({
+                sprite: 'chest_open',
+                x: item.x, y: item.y,
+                life: 36, maxLife: 36,
+                rise: 0, w: 36, h: 28
+            });
             // EXPLORATION MECHANIC: Gender Reveal Chest
             if (Math.random() > 0.5) {
                 // It's a boy/girl! (Explosion)
@@ -2005,7 +2088,7 @@ function draw() {
                     const pulseSpeed = tier === 'legendary' ? 0.32 : tier === 'epic' ? 0.24 : tier === 'rare' ? 0.18 : 0.12;
                     const bob = Math.sin(game.animFrame * pulseSpeed) * 3;
                     const radius = tier === 'legendary' ? 28 : tier === 'epic' ? 22 : tier === 'rare' ? 18 : 14;
-                    // Halo
+                    // Halo (drawn under both gem & themed sprite for the glow ring)
                     ctx.globalAlpha = 0.35;
                     ctx.fillStyle = glow;
                     ctx.shadowBlur = radius;
@@ -2014,19 +2097,31 @@ function draw() {
                     ctx.arc(drawX, drawY - 10 + bob, radius * 0.4, 0, Math.PI*2);
                     ctx.fill();
                     ctx.globalAlpha = 1.0;
-                    // Gem body
-                    ctx.fillStyle = color;
-                    ctx.beginPath();
-                    ctx.moveTo(drawX,      drawY - 18 + bob);
-                    ctx.lineTo(drawX + 8,  drawY - 10 + bob);
-                    ctx.lineTo(drawX,      drawY - 2 + bob);
-                    ctx.lineTo(drawX - 8,  drawY - 10 + bob);
-                    ctx.closePath();
-                    ctx.fill();
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.globalAlpha = 0.7;
-                    ctx.fillRect(drawX - 2, drawY - 14 + bob, 4, 4);
-                    ctx.globalAlpha = 1.0;
+
+                    // Themed sprite if this loot's name is in the lookup,
+                    // otherwise the generic gem fallback.
+                    const lootSpriteKey = NAMED_LOOT_SPRITES[r.entity.name];
+                    const lootImg = lootSpriteKey && images[lootSpriteKey];
+                    if (lootImg && imgReady(lootImg)) {
+                        const sw = tier === 'legendary' ? 32 : tier === 'epic' ? 26 : 22;
+                        const sh = sw;
+                        ctx.shadowBlur = 0;
+                        ctx.drawImage(lootImg, drawX - sw / 2, drawY - sh - 2 + bob, sw, sh);
+                    } else {
+                        // Gem body
+                        ctx.fillStyle = color;
+                        ctx.beginPath();
+                        ctx.moveTo(drawX,      drawY - 18 + bob);
+                        ctx.lineTo(drawX + 8,  drawY - 10 + bob);
+                        ctx.lineTo(drawX,      drawY - 2 + bob);
+                        ctx.lineTo(drawX - 8,  drawY - 10 + bob);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.globalAlpha = 0.7;
+                        ctx.fillRect(drawX - 2, drawY - 14 + bob, 4, 4);
+                        ctx.globalAlpha = 1.0;
+                    }
                     // Trickle sparkles for higher tiers
                     if ((tier === 'legendary' || tier === 'epic') && game.animFrame % 6 === 0) {
                         game.particles.push({
@@ -2053,10 +2148,13 @@ function draw() {
                 const bob = Math.sin(game.animFrame * 0.3) * 2;
                 const figKey = r.entity.figureKey;
                 const npcC = NPC_FILLER_COLORS[figKey] || NPC_FILLER_COLORS.default;
-                // Use marsha sprite only for marsha/sylvia; everyone else gets colored filler
-                if (imgReady(images.marsha) && (figKey === 'marsha' || figKey === 'sylvia')) {
+                // Per-figure sprite override; everyone else falls back to colored filler.
+                const npcSprite =
+                    (figKey === 'community_mothers' && imgReady(images.npc_community_mothers)) ? images.npc_community_mothers :
+                    ((figKey === 'marsha' || figKey === 'sylvia') && imgReady(images.marsha)) ? images.marsha : null;
+                if (npcSprite) {
                     const sw = 44, h = 56;
-                    ctx.drawImage(images.marsha, drawX - sw/2, drawY - h + bob, sw, h);
+                    ctx.drawImage(npcSprite, drawX - sw/2, drawY - h + bob, sw, h);
                     ctx.fillStyle = '#FFD700';
                     ctx.font = 'bold 14px VT323';
                     ctx.textAlign = 'center';
@@ -2097,10 +2195,30 @@ function draw() {
                 const bob = Math.sin(game.animFrame * 0.4 + r.x) * 2;
                 const et = r.entity.enemyType || 'troll';
                 let size = 20, h = 24;
-                
-                if (imgReady(images.enemy)) {
+
+                // Per-enemy-type sprite if one is loaded; otherwise fall through
+                // to the procedural drawing for that type, then to the generic
+                // enemy texture.
+                const spriteKey = ENEMY_SPRITES[et];
+                const typedImg = spriteKey && images[spriteKey];
+                let drewSprite = false;
+                if (et === 'boss') {
+                    // boss is handled in its own block below
+                } else if (typedImg && imgReady(typedImg)) {
+                    // Wraith / ghost flicker keeps the spectral feel even with sprite
+                    if (et === 'wraith') ctx.globalAlpha = 0.7 + Math.sin(game.animFrame * 0.6) * 0.25;
+                    // Slightly wider footprint for big bruisers
+                    const sw = (et === 'gatekeeper' || et === 'police') ? 30 : (et === 'bigot' ? 28 : 24);
+                    const sh = (et === 'gatekeeper' || et === 'police') ? 36 : (et === 'bigot' ? 32 : 30);
+                    ctx.drawImage(typedImg, drawX - sw / 2, drawY - sh + bob, sw, sh);
+                    if (et === 'wraith') ctx.globalAlpha = 1.0;
+                    size = sw / 2; h = sh;
+                    drewSprite = true;
+                }
+
+                if (!drewSprite && imgReady(images.enemy) && et !== 'boss' && et !== 'swarm') {
                     ctx.drawImage(images.enemy, drawX - size, drawY - h + bob, size * 2, h);
-                } else {
+                } else if (!drewSprite) {
                     if (et === 'troll') {
                         ctx.fillStyle = '#FF0000';
                         ctx.fillRect(drawX - 10, drawY - h + bob, size, h);
@@ -2326,6 +2444,21 @@ function draw() {
         ctx.globalAlpha = p.life;
         ctx.fillStyle = p.color;
         ctx.fillRect((p.x + game.camX/T) * T, (p.y + game.camY/T) * T, p.size, p.size);
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Draw short-lived sprite FX (chest-open puff, etc.) — fade + rise then expire.
+    for (let i = game.spriteFX.length - 1; i >= 0; i--) {
+        const fx = game.spriteFX[i];
+        fx.life -= 1;
+        fx.rise = (fx.rise || 0) + 0.4;
+        if (fx.life <= 0) { game.spriteFX.splice(i, 1); continue; }
+        const img = images[fx.sprite];
+        if (!imgReady(img)) continue;
+        const sx = fx.x * T + camX + T/2 - fx.w / 2;
+        const sy = fx.y * T + camY + T - fx.h - fx.rise;
+        ctx.globalAlpha = Math.max(0, fx.life / fx.maxLife);
+        ctx.drawImage(img, sx, sy, fx.w, fx.h);
     }
     ctx.globalAlpha = 1.0;
     
