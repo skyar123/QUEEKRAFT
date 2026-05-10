@@ -456,6 +456,21 @@ export const DialogueUI = {
             UI.addMessage("You are fully healed!", "healing");
             UI.updateStatus(this.currentGame);
         }
+        if (node.effect === 'charm_lesson') {
+            // Mama Gloria's lesson: permanent +1 max HP + particles
+            this.currentGame.player.maxHealth += 1;
+            this.currentGame.player.health = this.currentGame.player.maxHealth;
+            this.currentGame.persistent.permanentHearts = (this.currentGame.persistent.permanentHearts || 0) + 1;
+            UI.addMessage("Mama Gloria's lesson: head up, shoulders back. PERMANENT +1 HEART.", "special");
+            UI.updateStatus(this.currentGame);
+            for (let i = 0; i < 25; i++) {
+                this.currentGame.particles && this.currentGame.particles.push({
+                    x: this.currentGame.player.x + 0.35, y: this.currentGame.player.y,
+                    vx: (Math.random() - 0.5) * 0.5, vy: -Math.random() * 0.6,
+                    life: 1.2, color: ['#20B2AA', '#98FB98', '#FFD700'][i % 3], size: 2.5
+                });
+            }
+        }
         if (node.effect === 'community_heal') {
             // Community mothers: full heal + 200-frame defense buff
             this.currentGame.player.health = this.currentGame.player.maxHealth;
@@ -525,6 +540,50 @@ export const DialogueUI = {
             } else if (node.reward === 'ability_vision') {
                 this.currentGame.player.extraJumps = (this.currentGame.player.extraJumps || 0) + 1;
                 UI.addMessage("Received: Artistic Vision (+1 jump)!", "special");
+            } else if (node.reward === 'labeija_trophy') {
+                // Crystal LaBeija / MJ Rodriguez: full heal + 6s damage boost
+                this.currentGame.player.health = this.currentGame.player.maxHealth;
+                this.currentGame.player.lootBuff = Math.max(this.currentGame.player.lootBuff || 0, 360);
+                UI.addMessage("LaBeija's Trophy AWARDED! Full heal + damage boost — the floor is yours!", "special");
+                UI.updateStatus(this.currentGame);
+                for (let i = 0; i < 35; i++) {
+                    this.currentGame.particles && this.currentGame.particles.push({
+                        x: this.currentGame.player.x + 0.35, y: this.currentGame.player.y,
+                        vx: (Math.random() - 0.5) * 0.7, vy: -Math.random() * 0.8,
+                        life: 1.4, color: i % 2 ? '#FFD700' : '#FF1493', size: 3
+                    });
+                }
+            } else if (node.reward === 'star_solidarity') {
+                // Kenya Cuevas: full heal + defense buff + shelter revealed
+                const g = this.currentGame;
+                g.player.health = g.player.maxHealth;
+                g.player.defenseBuff = Math.max(g.player.defenseBuff || 0, 300);
+                if (g.safeShelterRooms && g.safeShelterRooms.size === 0) {
+                    const rx = Math.floor(Math.random() * 4), ry = Math.floor(Math.random() * 3);
+                    g.safeShelterRooms.add(`${rx},${ry}`);
+                }
+                UI.addMessage("Kenya's solidarity: full heal + defense 300 frames. A shelter opens.", "healing");
+                UI.updateStatus(g);
+                for (let i = 0; i < 25; i++) {
+                    g.particles && g.particles.push({
+                        x: g.player.x + 0.35, y: g.player.y,
+                        vx: (Math.random() - 0.5) * 0.5, vy: -Math.random() * 0.6,
+                        life: 1.0, color: i % 2 ? '#FF4500' : '#FFD700', size: 2.5
+                    });
+                }
+            } else if (node.reward === 'wewha_blessing') {
+                // We'wha: +1 jump + full heal + earth-tone particles
+                this.currentGame.player.health = this.currentGame.player.maxHealth;
+                this.currentGame.player.extraJumps = (this.currentGame.player.extraJumps || 0) + 1;
+                UI.addMessage("We'wha's blessing: full heal + the river grants you another jump.", "healing");
+                UI.updateStatus(this.currentGame);
+                for (let i = 0; i < 28; i++) {
+                    this.currentGame.particles && this.currentGame.particles.push({
+                        x: this.currentGame.player.x + 0.35, y: this.currentGame.player.y,
+                        vx: (Math.random() - 0.5) * 0.5, vy: -Math.random() * 0.7,
+                        life: 1.1, color: ['#8B4513', '#32CD32', '#98FB98'][i % 3], size: 2
+                    });
+                }
             } else {
                 UI.addMessage(`Received: ${node.reward}`, "special");
             }

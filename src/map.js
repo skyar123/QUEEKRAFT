@@ -5,7 +5,15 @@ const MURAL_MESSAGES = [
     "Chosen family is real family",
     "We mother each other",
     "The mountains remember us",
-    "Trans joy is resistance"
+    "Trans joy is resistance",
+    "Ballroom is our home",
+    "STAR House never closes",
+    "Walk your truth, honey",
+    "Mother is not a noun — it's a verb",
+    "Aaji Cha Ghar: Grandma's Home",
+    "Casa de las Muñecas — we shelter our own",
+    "Motherhood belongs to us",
+    "Every house is built on love"
 ];
 
 export function pick(arr) {
@@ -136,6 +144,9 @@ export function generateMap(game) {
     // Special room tracking for rendering and mechanics
     game.hearthRooms = new Set();
     game.safeShelterRooms = new Set();
+    game.ballroomRooms = new Set();
+    game.starHouseRooms = new Set();
+    game.charmSchoolRooms = new Set();
     game.muralTiles = {};
 
     game.mapWidth = ROOMS_X * ROOM_W;
@@ -235,12 +246,18 @@ export function generateMap(game) {
         });
     }
 
-    const figureKeys = Object.keys(HISTORICAL_FIGURES).filter(k => !game.persistent.seenFigures[k]);
-    if (game.depth <= 8 && figureKeys.length > 0 && usable.length > 0) {
+    // Exclude NPCs already placed in special rooms this run
+    const alreadyPlaced = new Set(game.npcs.map(n => n.figureKey));
+    const figureKeys = Object.keys(HISTORICAL_FIGURES).filter(k =>
+        !game.persistent.seenFigures[k] && !alreadyPlaced.has(k)
+    );
+    if (figureKeys.length > 0 && usable.length > 0) {
         const room = popRandomRoom();
-        const pos = inRoomFloorTile(room);
-        const figureKey = pick(figureKeys);
-        game.npcs.push({ x: pos.x, y: pos.y, figureKey, type: 'historical' });
+        if (room) {
+            const pos = inRoomFloorTile(room);
+            const figureKey = pick(figureKeys);
+            game.npcs.push({ x: pos.x, y: pos.y, figureKey, type: 'historical' });
+        }
     }
 
     const healingKeys = Object.keys(HEALING_ITEMS);
@@ -285,6 +302,66 @@ export function generateMap(game) {
             const pos = inRoomFloorTile(shelterRoom);
             game.npcs.push({ x: pos.x, y: pos.y, figureKey: 'peyton_oconner', type: 'historical' });
         }
+    }
+
+    // ── Ballroom room (every 4th depth starting at 2) ────────────────────────
+    // Gold-shimmer space where enemies can't enter; Ballroom NPCs spawn here.
+    const isBallroomLevel = game.depth >= 2 && game.depth % 4 === 2;
+    if (isBallroomLevel && usable.length > 0) {
+        const ballroomRoom = popRandomRoom();
+        game.ballroomRooms.add(`${ballroomRoom.rx},${ballroomRoom.ry}`);
+        const ballroomFigures = ['crystal_labeija', 'angie_xtravaganza', 'mj_rodriguez'];
+        const availBallroom = ballroomFigures.filter(k => !game.persistent.seenFigures[k]);
+        if (availBallroom.length > 0) {
+            const pos = inRoomFloorTile(ballroomRoom);
+            game.npcs.push({ x: pos.x, y: pos.y, figureKey: pick(availBallroom), type: 'historical' });
+        }
+        game.items.push({
+            x: roomCenterX(ballroomRoom.rx) + 2, y: roomFloorY(ballroomRoom.ry) - 1,
+            type: 'loot', tier: 'legendary',
+            name: "LaBeija's Trophy",
+            scrap: 20, effect: 'labeija_trophy',
+            color: '#FFD700', glow: '#FFD700'
+        });
+    }
+
+    // ── STAR House room (every 5th depth starting at 3) ─────────────────────
+    // Red/orange activist space; community shelter NPCs spawn here.
+    const isStarHouseLevel = game.depth >= 3 && game.depth % 5 === 3;
+    if (isStarHouseLevel && usable.length > 0) {
+        const starRoom = popRandomRoom();
+        game.starHouseRooms.add(`${starRoom.rx},${starRoom.ry}`);
+        const starFigures = ['kenya_cuevas', 'cleopatra_kambugu', 'mariela_munoz'];
+        const availStar = starFigures.filter(k => !game.persistent.seenFigures[k]);
+        if (availStar.length > 0) {
+            const pos = inRoomFloorTile(starRoom);
+            game.npcs.push({ x: pos.x, y: pos.y, figureKey: pick(availStar), type: 'historical' });
+        }
+        game.items.push({
+            x: roomCenterX(starRoom.rx) - 2, y: roomFloorY(starRoom.ry) - 1,
+            type: 'loot', tier: 'rare',
+            name: 'STAR House Key',
+            scrap: 4, effect: 'star_key',
+            color: '#FF4500', glow: '#FF8C00'
+        });
+    }
+
+    // ── Charm School room (30% random chance) ────────────────────────────────
+    // Warm-teal teaching space; Mama Gloria spawns here.
+    if (usable.length > 0 && Math.random() < 0.30) {
+        const charmRoom = popRandomRoom();
+        game.charmSchoolRooms.add(`${charmRoom.rx},${charmRoom.ry}`);
+        if (!game.persistent.seenFigures['mama_gloria']) {
+            const pos = inRoomFloorTile(charmRoom);
+            game.npcs.push({ x: pos.x, y: pos.y, figureKey: 'mama_gloria', type: 'historical' });
+        }
+        game.items.push({
+            x: roomCenterX(charmRoom.rx) + 1, y: roomFloorY(charmRoom.ry) - 1,
+            type: 'loot', tier: 'rare',
+            name: "Mama Gloria's Charm Book",
+            scrap: 4, effect: 'charm_book',
+            color: '#20B2AA', glow: '#48D1CC'
+        });
     }
 
     // ── Allison Scott near a mural room ──────────────────────────────────────

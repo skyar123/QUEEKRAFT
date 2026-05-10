@@ -179,6 +179,38 @@ const PALETTES = [
         colors: ['#E40303','#FF8C00','#FFED00','#008026','#24408E','#732982','#FFFFFF','#FFAFC8','#74D7EE','#613915','#000000'] }
 ];
 
+// Per-figure filler colors used when no sprite asset exists.
+// body = main silhouette, accent = flower/decoration, hat = hat brim color (null = no hat)
+const NPC_FILLER_COLORS = {
+    default:             { body: '#B967DB', accent: '#FF71CE', hat: null },
+    // Existing figures
+    marsha:              { body: '#FF8C00', accent: '#FFD700', hat: '#FF4500' },
+    sylvia:              { body: '#FF4500', accent: '#FF8C00', hat: '#CC0000' },
+    eleanor:             { body: '#8B4513', accent: '#DEB887', hat: null },
+    dora:                { body: '#4682B4', accent: '#87CEEB', hat: null },
+    alan:                { body: '#228B22', accent: '#90EE90', hat: null },
+    charley:             { body: '#8B4513', accent: '#D2691E', hat: '#5F3A1B' },
+    lili:                { body: '#DA70D6', accent: '#FFB6C1', hat: null },
+    christine:           { body: '#FF69B4', accent: '#FFB6C1', hat: null },
+    lucy:                { body: '#4B0082', accent: '#DDA0DD', hat: null },
+    peyton_oconner:      { body: '#2E8B57', accent: '#98FB98', hat: null },
+    allison_scott:       { body: '#DC143C', accent: '#FF6B6B', hat: null },
+    blade_journalists:   { body: '#1C1C1C', accent: '#FFFFFF', hat: null },
+    community_mothers:   { body: '#8B0000', accent: '#FFD700', hat: null },
+    // Trans motherhood icons
+    crystal_labeija:     { body: '#FFD700', accent: '#FF1493', hat: '#DAA520' },
+    angie_xtravaganza:   { body: '#FF69B4', accent: '#FFD700', hat: '#FF1493' },
+    mama_gloria:         { body: '#20B2AA', accent: '#98FB98', hat: null },
+    kenya_cuevas:        { body: '#B22222', accent: '#FFD700', hat: null },
+    gauri_sawant:        { body: '#FF8C00', accent: '#FF69B4', hat: null },
+    mariela_munoz:       { body: '#9370DB', accent: '#FFD700', hat: null },
+    cleopatra_kambugu:   { body: '#4169E1', accent: '#FFD700', hat: null },
+    wewha:               { body: '#8B4513', accent: '#32CD32', hat: null },
+    jennifer_boylan:     { body: '#4682B4', accent: '#FFFFFF', hat: null },
+    mj_rodriguez:        { body: '#FF1493', accent: '#FFD700', hat: '#C71585' },
+    coccinelle:          { body: '#DC143C', accent: '#FFF8DC', hat: null },
+};
+
 function generateHeirs() {
     const heirs = [];
     for (let i = 0; i < 3; i++) {
@@ -913,6 +945,127 @@ function interact() {
                     "Fragment: 'Trans mothers built this community. Remember them.'"
                 ];
                 UI.addMessage(fragments[Math.floor(Math.random() * fragments.length)], 'special');
+            } else if (resolvedEffect === 'labeija_trophy') {
+                // Ballroom crown: stun all nearby enemies + full heal + 6s dmg buff
+                game.player.health = game.player.maxHealth;
+                game.player.lootBuff = Math.max(game.player.lootBuff || 0, 360);
+                let stunned = 0;
+                for (const troll of game.trolls) {
+                    const dx = troll.x - tileX(), dy = troll.y - tileY();
+                    if (Math.sqrt(dx*dx + dy*dy) <= 5) {
+                        if (!troll.status) troll.status = {};
+                        troll.status.shock = { duration: 180 };
+                        stunned++;
+                    }
+                }
+                UI.addMessage(`LaBeija's Trophy crowns you! Full heal + dmg boost + ${stunned} enemies stunned! THE FLOOR IS YOURS!`, 'special');
+                for (let i = 0; i < 50; i++) game.particles.push({
+                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*1.0, vy: (Math.random()-0.5)*1.0,
+                    life: 1.4, color: i % 2 ? '#FFD700' : '#FF1493', size: 3
+                });
+                game.screenShake = Math.max(game.screenShake || 0, 0.6);
+            } else if (resolvedEffect === 'mausoleum_flower') {
+                // Kenya's memorial: +3 HP + long regen + flower particles
+                game.player.health = Math.min(game.player.maxHealth, game.player.health + 3);
+                game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 400);
+                game.player.bloomRate = 0.015;
+                UI.addMessage('The Mausoleum Flower heals the living in honor of the dead. +3 HP + regen.', 'healing');
+                const flowerColors = ['#FF69B4','#FFB6C1','#FF1493','#FFD700','#FFFFFF'];
+                for (let i = 0; i < 30; i++) game.particles.push({
+                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.7, vy: -Math.random()*0.8,
+                    life: 1.3, color: flowerColors[i % flowerColors.length], size: 2.5
+                });
+            } else if (resolvedEffect === 'house_mother_sash') {
+                // Defense sash: 400-frame defense + +1 HP
+                game.player.defenseBuff = Math.max(game.player.defenseBuff || 0, 400);
+                game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
+                UI.addMessage("House Mother's Sash bestows leadership: +1 HP + defense 400 frames.", 'special');
+                for (let i = 0; i < 20; i++) game.particles.push({
+                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.6,
+                    life: 1.0, color: i % 2 ? '#FF69B4' : '#FFD700', size: 2
+                });
+            } else if (resolvedEffect === 'riveras_megaphone') {
+                // AOE knockback + stun 120 frames
+                let hit = 0;
+                for (const troll of game.trolls) {
+                    const dx = troll.x - tileX(), dy = troll.y - tileY();
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist <= 4) {
+                        if (!troll.status) troll.status = {};
+                        troll.status.shock = { duration: 120 };
+                        troll.x += Math.sign(dx) * 2; troll.y += Math.sign(dy);
+                        hit++;
+                    }
+                }
+                UI.addMessage(`Rivera's Megaphone ROARS! ${hit} enemies knocked back + stunned!`, 'special');
+                game.screenShake = Math.max(game.screenShake || 0, 0.8);
+                for (let i = 0; i < 30; i++) game.particles.push({
+                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*1.2, vy: (Math.random()-0.5)*1.2,
+                    life: 1.0, color: i % 2 ? '#FF4500' : '#FF8C00', size: 2.5
+                });
+            } else if (resolvedEffect === 'charm_book') {
+                // Mama Gloria's Charm Book: full heal + permanent +1 HP
+                game.player.health = game.player.maxHealth + 1;
+                game.player.maxHealth += 1;
+                game.persistent.permanentHearts = (game.persistent.permanentHearts || 0) + 1;
+                saveGame();
+                UI.addMessage("Mama Gloria's Charm Book: full heal + PERMANENT +1 HEART. Head up. Shoulders back.", 'special');
+                for (let i = 0; i < 25; i++) game.particles.push({
+                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.7,
+                    life: 1.2, color: i % 2 ? '#20B2AA' : '#98FB98', size: 2
+                });
+            } else if (resolvedEffect === 'tarot_deck') {
+                // Mariela's Tarot: fortune — random good or bad + XP
+                addXP(40);
+                const fortunes = [
+                    { good: true,  msg: "The Star: hope restored. +3 HP!", hp: 3 },
+                    { good: true,  msg: "The Empress: nurturing power. +2 HP + regen.", hp: 2, regen: true },
+                    { good: false, msg: "The Tower: disruption. -1 HP, but clarity follows.", hp: -1 },
+                    { good: true,  msg: "The World: completion. +2 HP + dmg boost.", hp: 2, buff: true },
+                    { good: false, msg: "The Moon: illusion. Lose 1 HP in confusion.", hp: -1 },
+                ];
+                const fortune = fortunes[Math.floor(Math.random() * fortunes.length)];
+                game.player.health = Math.max(0.5, Math.min(game.player.maxHealth, game.player.health + fortune.hp));
+                if (fortune.regen) { game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 300); game.player.bloomRate = 0.01; }
+                if (fortune.buff) { game.player.lootBuff = Math.max(game.player.lootBuff || 0, 240); }
+                UI.addMessage(`Mariela's Tarot: ${fortune.msg}`, fortune.good ? 'healing' : 'death');
+                for (let i = 0; i < 20; i++) game.particles.push({
+                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.6, vy: -Math.random()*0.7,
+                    life: 1.0, color: ['#9370DB','#FFD700','#FF69B4'][i % 3], size: 2
+                });
+            } else if (resolvedEffect === 'boylan_memoir') {
+                // Jennifer Boylan's memoir: +200 XP + reveal all mural tiles
+                addXP(200);
+                if (game.muralTiles) {
+                    Object.keys(game.muralTiles).forEach(k => { if (game.seen) game.seen[k] = true; });
+                }
+                UI.addMessage("Boylan's Memoir: +200 XP. The archive illuminates — every story on every wall revealed.", 'special');
+            } else if (resolvedEffect === 'vicks_care') {
+                // Vicks Touch of Care: +2 HP + regen 200 frames
+                game.player.health = Math.min(game.player.maxHealth, game.player.health + 2);
+                game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 200);
+                game.player.bloomRate = 0.01;
+                UI.addMessage('Vicks Touch of Care: +2 HP + gentle regen. A mother's love has no gender.', 'healing');
+            } else if (resolvedEffect === 'sawant_petition') {
+                // Sawant's Petition: +20 XP + creates a safe shelter room
+                addXP(20);
+                if (game.safeShelterRooms && game.safeShelterRooms.size === 0) {
+                    const rx = Math.floor(Math.random() * 4), ry = Math.floor(Math.random() * 3);
+                    game.safeShelterRooms.add(`${rx},${ry}`);
+                }
+                UI.addMessage("Sawant's Petition: +20 XP. Legal momentum — a shelter opens somewhere in the archive.", 'special');
+            } else if (resolvedEffect === 'star_key') {
+                // STAR House Key: creates a new shelter room + defense buff
+                game.player.defenseBuff = Math.max(game.player.defenseBuff || 0, 250);
+                if (game.safeShelterRooms) {
+                    const rx = Math.floor(Math.random() * 4), ry = Math.floor(Math.random() * 3);
+                    game.safeShelterRooms.add(`${rx},${ry}`);
+                }
+                UI.addMessage('STAR House Key glows red. A shelter opens. Marsha and Sylvia built this for you.', 'special');
+                for (let i = 0; i < 20; i++) game.particles.push({
+                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.6,
+                    life: 1.0, color: i % 2 ? '#FF4500' : '#FF8C00', size: 2
+                });
             } else if (resolvedEffect === 'small_heal') {
                 game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
             } else if (resolvedEffect === 'big_heal') {
@@ -1653,6 +1806,9 @@ function draw() {
             const roomKey = `${tileRx},${tileRy}`;
             const inHearth = game.hearthRooms && game.hearthRooms.has(roomKey);
             const inShelter = game.safeShelterRooms && game.safeShelterRooms.has(roomKey);
+            const inBallroom = game.ballroomRooms && game.ballroomRooms.has(roomKey);
+            const inStarHouse = game.starHouseRooms && game.starHouseRooms.has(roomKey);
+            const inCharmSchool = game.charmSchoolRooms && game.charmSchoolRooms.has(roomKey);
 
             ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
             if (r.tile === '#') {
@@ -1660,6 +1816,9 @@ function draw() {
                 let wallGlow = r.isVisible ? 'rgba(255,113,206,0.3)' : null;
                 if (inHearth && r.isVisible) wallGlow = 'rgba(255,160,50,0.35)';
                 if (inShelter && r.isVisible) wallGlow = 'rgba(91,206,250,0.35)';
+                if (inBallroom && r.isVisible) wallGlow = 'rgba(255,215,0,0.40)';
+                if (inStarHouse && r.isVisible) wallGlow = 'rgba(220,50,50,0.35)';
+                if (inCharmSchool && r.isVisible) wallGlow = 'rgba(32,178,170,0.35)';
                 const glow = wallGlow;
                 drawTile(ctx, sx, sy, '#0a0a0a', true, glow, patterns.wall);
 
@@ -1722,6 +1881,28 @@ function draw() {
                     const shelterColor = (game.animFrame % 120 < 60) ? 'rgba(91,206,250,0.10)' : 'rgba(245,169,184,0.10)';
                     ctx.globalAlpha = 0.15;
                     ctx.fillStyle = shelterColor;
+                    ctx.fillRect(sx, sy, T, T);
+                    ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+                }
+                // Ballroom: animated gold/pink sparkle shimmer
+                if (inBallroom && r.isVisible && r.tile !== '>') {
+                    const ballColor = (game.animFrame % 60 < 20) ? 'rgba(255,215,0,0.12)' : (game.animFrame % 60 < 40) ? 'rgba(255,20,147,0.10)' : 'rgba(180,100,255,0.10)';
+                    ctx.globalAlpha = 0.18;
+                    ctx.fillStyle = ballColor;
+                    ctx.fillRect(sx, sy, T, T);
+                    ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+                }
+                // STAR House: warm red/orange activist tint
+                if (inStarHouse && r.isVisible && r.tile !== '>') {
+                    ctx.globalAlpha = 0.12;
+                    ctx.fillStyle = 'rgba(220,80,50,0.15)';
+                    ctx.fillRect(sx, sy, T, T);
+                    ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+                }
+                // Charm School: warm teal / nurturing tint
+                if (inCharmSchool && r.isVisible && r.tile !== '>') {
+                    ctx.globalAlpha = 0.12;
+                    ctx.fillStyle = 'rgba(32,178,170,0.15)';
                     ctx.fillRect(sx, sy, T, T);
                     ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
                 }
@@ -1870,7 +2051,10 @@ function draw() {
                 }
             } else if (r.type === 'npc') {
                 const bob = Math.sin(game.animFrame * 0.3) * 2;
-                if (imgReady(images.marsha)) {
+                const figKey = r.entity.figureKey;
+                const npcC = NPC_FILLER_COLORS[figKey] || NPC_FILLER_COLORS.default;
+                // Use marsha sprite only for marsha/sylvia; everyone else gets colored filler
+                if (imgReady(images.marsha) && (figKey === 'marsha' || figKey === 'sylvia')) {
                     const sw = 44, h = 56;
                     ctx.drawImage(images.marsha, drawX - sw/2, drawY - h + bob, sw, h);
                     ctx.fillStyle = '#FFD700';
@@ -1879,20 +2063,35 @@ function draw() {
                     ctx.fillText('!', drawX, drawY - h - 4 + bob);
                     ctx.textAlign = 'left';
                 } else {
-                    ctx.fillStyle = '#B967DB';
+                    // Colored filler body
+                    ctx.fillStyle = npcC.body;
                     ctx.beginPath();
                     ctx.roundRect(drawX - 8, drawY - 28 + bob, 16, 20, 4);
                     ctx.fill();
+                    // Head
                     ctx.beginPath();
                     ctx.arc(drawX, drawY - 32 + bob, 7, 0, Math.PI*2);
                     ctx.fill();
-                    ctx.fillStyle = '#FF71CE';
+                    // Hat (if defined) — brim + crown
+                    if (npcC.hat) {
+                        ctx.fillStyle = npcC.hat;
+                        ctx.fillRect(drawX - 10, drawY - 38 + bob, 20, 3);
+                        ctx.fillRect(drawX - 7, drawY - 43 + bob, 14, 6);
+                    }
+                    // Accent flowers / decorations
+                    ctx.fillStyle = npcC.accent;
                     for (let f = 0; f < 5; f++) {
                         const fa = (f / 5) * Math.PI;
                         ctx.beginPath();
-                        ctx.arc(drawX + Math.cos(fa) * 6, drawY - 38 + bob + Math.sin(fa) * -2, 2, 0, Math.PI*2);
+                        ctx.arc(drawX + Math.cos(fa) * 7, drawY - 39 + bob + Math.sin(fa) * -2, 2, 0, Math.PI*2);
                         ctx.fill();
                     }
+                    // "!" indicator above head
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = 'bold 14px VT323';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('!', drawX, drawY - (npcC.hat ? 47 : 43) + bob);
+                    ctx.textAlign = 'left';
                 }
             } else if (r.type === 'troll') {
                 const bob = Math.sin(game.animFrame * 0.4 + r.x) * 2;

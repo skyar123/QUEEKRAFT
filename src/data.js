@@ -17,7 +17,11 @@ export const ZINES = {
     'theywalk': { title: 'They Walk', content: '<h3>Nonbinary Identity</h3><p>"They/them/theirs not because I\'m confused but because I\'m clear. Walking toward the family that chooses me back."</p>' },
     'alexlearns': { title: 'Alex Learns about Gender Identity', content: '<h3>Educational Zine</h3><p>"Gender is not your body, clothes, name, or toys. Gender is YOU. Only you can know what feels right for you."</p>' },
     'euphoria': { title: 'Gender Euphoria', content: '<h3>Celebrating Trans Joy</h3><p>"Trans nonbinary/genderqueer is not a problem to be solved. It\'s a joy to be celebrated. Euphoria comes in waves."</p>' },
-    'menstruation': { title: 'Zine on Menstruation', content: '<h3>Questioning Binaries</h3><p>"Not all women menstruate, not all who menstruate are women. Periods ≠ womanhood, bleeding ≠ binary."</p>' }
+    'menstruation': { title: 'Zine on Menstruation', content: '<h3>Questioning Binaries</h3><p>"Not all women menstruate, not all who menstruate are women. Periods ≠ womanhood, bleeding ≠ binary."</p>' },
+    'ballroom_legacy': { title: 'Ballroom Legacy', content: '<h3>Children of the House</h3><p>"The Ballroom gave us what biology denied: mothers who chose us, houses that held us, stages where we were finally crowned. Chosen family is not lesser family — it is the truest kind."</p>' },
+    'star_manifesto': { title: 'STAR Manifesto', content: '<h3>Street Transvestite Action Revolutionaries</h3><p>"STAR was for the street gay people, the people who are radical, the people who wanted change. We were fighting for homeless trans youth when nobody else would. STAR House belonged to us all." — Sylvia Rivera</p>' },
+    'trans_motherhood': { title: 'Trans Mothers of the World', content: '<h3>Mother is a Verb</h3><p>"From Marsha to Mariela, Crystal to Gauri — trans mothers have raised children the world abandoned. Motherhood is not biology. It is devotion, protection, teaching a child they are loved and worthy of being here."</p>' },
+    'chosen_family_guide': { title: 'Building Your Chosen Family', content: '<h3>A Practical Guide</h3><p>"Step 1: Show up. Step 2: Show up again. Step 3: Keep showing up when things get hard. Chosen family is built in crisis and in joy, in shared meals and shared shelters. You earn it by giving it."</p>' }
 };
 
 export const HISTORICAL_FIGURES = {
@@ -341,6 +345,303 @@ export const HISTORICAL_FIGURES = {
             }
         },
         fact: "Chosen family networks of trans elders have sustained LGBTQ+ communities for generations, providing care, housing, and cultural continuity across Appalachia and beyond."
+    },
+    'crystal_labeija': {
+        name: 'Crystal LaBeija',
+        era: '1970s',
+        dialogue: {
+            greeting: {
+                text: "Honey, Crystal LaBeija. House of LaBeija — I BUILT this. Before there was a ballroom, there was me.",
+                choices: [
+                    { text: "Tell me about the House system.", next: "house" },
+                    { text: "Why did you start it?", next: "origin" }
+                ]
+            },
+            house: {
+                text: "A House is chosen family, protection, legacy. When your blood family throws you away, your House catches you. We compete, yes — but we survive together.",
+                choices: [{ text: "Your community is beautiful.", next: "farewell" }]
+            },
+            origin: {
+                text: "Because Black and Latin queens were locked out of white pageants. We needed our own stage, our own glory, our own homes. So I built one.",
+                reward: 'labeija_trophy',
+                choices: [{ text: "Your legacy lives in every House.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Walk your category, child. The floor is yours.",
+                choices: []
+            }
+        },
+        fact: "Crystal LaBeija was the founding mother of the House of LaBeija, credited with establishing New York's Ballroom scene in the early 1970s — creating a haven where BIPOC queer and trans people could compete, thrive, and form chosen families."
+    },
+    'angie_xtravaganza': {
+        name: 'Angie Xtravaganza',
+        era: 'Late 20th Century',
+        dialogue: {
+            greeting: {
+                text: "I'm Angie Xtravaganza. The House of Xtravaganza was mine to build and mine to protect. My children were everything.",
+                choices: [
+                    { text: "What was it like raising a House?", next: "house" },
+                    { text: "How did you survive the AIDS crisis?", next: "aids" }
+                ]
+            },
+            house: {
+                text: "My girls were trans women of color who had nothing. I gave them everything I had. Isn't that what mothers do?",
+                choices: [{ text: "You showed what love looks like.", next: "farewell" }]
+            },
+            aids: {
+                text: "We lost so many. Too many. I lost children. But we kept showing up — for ballrooms, for funerals, for each other. That is how you survive.",
+                reward: 'item_shield',
+                choices: [{ text: "Your House carries on.", next: "farewell" }]
+            },
+            farewell: {
+                text: "My children's names are still being called on that floor. Listen for us.",
+                choices: []
+            }
+        },
+        fact: "Angie Xtravaganza was the founding mother of the House of Xtravaganza, one of the most iconic Houses in Ballroom culture. She was featured in the documentary 'Paris Is Burning' and raised trans women of color through the AIDS crisis until her death in 1993."
+    },
+    'mama_gloria': {
+        name: 'Mama Gloria',
+        era: 'Contemporary',
+        dialogue: {
+            greeting: {
+                text: "Gloria Allen, darling — they call me Mama Gloria. I taught charm and etiquette to trans youth in Chicago for thirty years. Sit up straight.",
+                choices: [
+                    { text: "Why charm school?", next: "charm" },
+                    { text: "What did you teach them?", next: "teach" }
+                ]
+            },
+            charm: {
+                text: "Because when you carry yourself with grace, the world has a harder time denying you exist. Etiquette is armor. Presentation is power. I taught survival with a smile.",
+                choices: [{ text: "That's profound wisdom.", next: "teach" }]
+            },
+            teach: {
+                text: "How to sit, how to walk, how to look someone in the eye without flinching. How to be so undeniably yourself that hatred bounces off. Let me teach you something.",
+                effect: 'charm_lesson',
+                choices: [{ text: "I'm grateful for this lesson.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Head up. Shoulders back. You are magnificent.",
+                choices: []
+            }
+        },
+        fact: "Gloria 'Mama Gloria' Allen founded a charm school for transgender youth in Chicago in the 1960s and continued teaching for decades, offering etiquette, self-confidence, and survival skills — depicted in the award-winning play 'The Charm.'"
+    },
+    'kenya_cuevas': {
+        name: 'Kenya Cuevas',
+        era: 'Contemporary',
+        dialogue: {
+            greeting: {
+                text: "Kenya Cuevas. My best friend La Parado was murdered. So I built Casa de las Muñecas Tiresias — a home where no trans woman needs to sleep on the street.",
+                choices: [
+                    { text: "Tell me about your friend.", next: "friend" },
+                    { text: "What is the shelter like?", next: "shelter" }
+                ]
+            },
+            friend: {
+                text: "She was beautiful and fierce. They killed her for existing. I couldn't save her. But I can save others. Her death became a door I refuse to close.",
+                choices: [{ text: "Her memory lives through your work.", next: "shelter" }]
+            },
+            shelter: {
+                text: "A real home. Not a charity — a home. A trans mausoleum to honor our dead. A shelter for the living. We built it all with our own hands.",
+                reward: 'star_solidarity',
+                choices: [{ text: "You turned grief into sanctuary.", next: "farewell" }]
+            },
+            farewell: {
+                text: "No one dies alone while I'm standing.",
+                choices: []
+            }
+        },
+        fact: "Kenya Cuevas is a Mexican trans activist who founded Casa de las Muñecas Tiresias after her best friend was murdered. She built a shelter, a trans mausoleum, and organized Mexico's first trans march — turning personal grief into community care."
+    },
+    'gauri_sawant': {
+        name: 'Gauri Sawant',
+        era: 'Contemporary',
+        dialogue: {
+            greeting: {
+                text: "I am Gauri Sawant. When Gayatri's mother died, she asked me to be her mother. I said yes. That is all. That is everything.",
+                choices: [
+                    { text: "What was that moment like?", next: "moment" },
+                    { text: "How did you fight for legal rights?", next: "legal" }
+                ]
+            },
+            moment: {
+                text: "She was a child who had nothing. I was a trans woman the world said had no right to mother. And in that meeting, we gave each other exactly what we needed.",
+                choices: [{ text: "You were both each other's answer.", next: "legal" }]
+            },
+            legal: {
+                text: "India's court fought us. Society fought us. But Gayatri and I — we were stronger than their papers. Every trans person deserves the right to love and be loved as family.",
+                reward: 'ability_vision',
+                choices: [{ text: "Your love rewrote what's possible.", next: "farewell" }]
+            },
+            farewell: {
+                text: "A mother's love has no gender. Take this clarity with you.",
+                choices: []
+            }
+        },
+        fact: "Gauri Sawant is an Indian transgender activist and mother who adopted a child named Gayatri after her mother died. Her Supreme Court of India petition helped advance trans rights, and a Vicks 'Touch of Care' campaign featuring her story reached millions worldwide."
+    },
+    'mariela_munoz': {
+        name: 'Mariela Muñoz',
+        era: 'Contemporary',
+        dialogue: {
+            greeting: {
+                text: "Mariela Muñoz. Veintitrés hijos. Twenty-three children. They came to me with nothing, and I gave them everything I had.",
+                choices: [
+                    { text: "Twenty-three? How?", next: "how" },
+                    { text: "What did you give them?", next: "gave" }
+                ]
+            },
+            how: {
+                text: "One by one. A runaway. A youth thrown out. A child the system forgot. They found my door. I never turned one away. Argentina was not always kind to us, but my home was.",
+                choices: [{ text: "Your home was a revolution.", next: "gave" }]
+            },
+            gave: {
+                text: "Food. Shelter. A name for what they were, when they had no name. Love. A mother. Some of them I buried. All of them I remember.",
+                effect: 'heal_full',
+                choices: [{ text: "Thank you for your love, Mariela.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Come back whenever you need feeding. My door does not close.",
+                choices: []
+            }
+        },
+        fact: "Mariela Muñoz was an Argentine transgender woman who raised 23 children over her lifetime, most of them abandoned by their families. She was a pioneer of trans rights in Argentina and a testament to motherhood as devotion, not biology."
+    },
+    'cleopatra_kambugu': {
+        name: 'Cleopatra Kambugu',
+        era: 'Contemporary',
+        dialogue: {
+            greeting: {
+                text: "Cleopatra Kambugu. Uganda is not an easy place to be trans. But I am still here. That itself is a form of fighting.",
+                choices: [
+                    { text: "How did you survive?", next: "survive" },
+                    { text: "What are you fighting for?", next: "fight" }
+                ]
+            },
+            survive: {
+                text: "By being visible. When I could hide, I chose to be seen. Every time someone sees a trans person living openly, the world gets a little less dangerous for the next one.",
+                choices: [{ text: "Visibility is courage.", next: "fight" }]
+            },
+            fight: {
+                text: "For every trans person in Uganda who doesn't have the platform I have. For my community. For the right to exist without apology.",
+                reward: 'ability_rage',
+                choices: [{ text: "Your fight is our fight.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Courage is not the absence of fear. It's being afraid and still standing.",
+                choices: []
+            }
+        },
+        fact: "Cleopatra Kambugu is a Ugandan trans rights pioneer and the subject of the documentary 'The Pearl of Africa' (2016). She continues to advocate for LGBTQ+ rights in East Africa despite significant personal risk."
+    },
+    'wewha': {
+        name: "We'wha",
+        era: '19th Century',
+        dialogue: {
+            greeting: {
+                text: "I am We'wha, lhamana of the Zuni people. My life was lived between — in the space where categories dissolve and spirit remains.",
+                choices: [
+                    { text: "What does lhamana mean?", next: "lhamana" },
+                    { text: "What was your life like?", next: "life" }
+                ]
+            },
+            lhamana: {
+                text: "One who carries both. The Zuni did not see gender as a wall — it was a river. I crossed, recrossed, lived freely. This was not a crisis. It was a calling.",
+                choices: [{ text: "That sounds like freedom.", next: "life" }]
+            },
+            life: {
+                text: "I was a weaver, a potter, an ambassador. I met President Chester Arthur. I showed the world what we had always known: some of us carry everything, and that is sacred.",
+                reward: 'wewha_blessing',
+                choices: [{ text: "Your spirit still crosses with us.", next: "farewell" }]
+            },
+            farewell: {
+                text: "The river has always flowed here. It will flow long after them. Go where the water takes you.",
+                choices: []
+            }
+        },
+        fact: "We'wha (1849–1896) was a Zuni lhamana who combined aspects of both male and female Zuni gender roles. As a cultural ambassador, We'wha visited Washington D.C. and met President Grover Cleveland, representing the Indigenous understanding of gender's fluidity."
+    },
+    'jennifer_boylan': {
+        name: 'Jennifer Finney Boylan',
+        era: 'Contemporary',
+        dialogue: {
+            greeting: {
+                text: "Jennifer Finney Boylan. Author. Activist. Someone who told her story at a time when trans stories were almost never told — and hoped it would matter.",
+                choices: [
+                    { text: "Did it matter?", next: "matter" },
+                    { text: "What kept you going?", next: "kept" }
+                ]
+            },
+            matter: {
+                text: "Letters from people who cried reading it and felt less alone. Emails from kids who finally had words for themselves. Yes. It mattered enormously.",
+                choices: [{ text: "Stories are medicine.", next: "kept" }]
+            },
+            kept: {
+                text: "My family. Knowing that my wife still loved me. Knowing that love could survive transformation — maybe grow larger in the surviving. Take this clarity.",
+                reward: 'ability_vision',
+                choices: [{ text: "Thank you for writing us into existence.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Tell your story. Even to yourself. Especially to yourself.",
+                choices: []
+            }
+        },
+        fact: "Jennifer Finney Boylan is an American author whose 2003 memoir 'She's Not There' was the first bestselling book by a transgender American. She has served on the board of GLAAD and advocated for trans visibility for decades."
+    },
+    'mj_rodriguez': {
+        name: 'MJ Rodriguez',
+        era: 'Contemporary',
+        dialogue: {
+            greeting: {
+                text: "MJ Rodriguez. Blanca Evangelista on Pose — but more than that, I'm proof that trans women belong in every room, on every stage.",
+                choices: [
+                    { text: "What did Blanca mean to you?", next: "blanca" },
+                    { text: "What do you want people to take away?", next: "message" }
+                ]
+            },
+            blanca: {
+                text: "Blanca was a House Mother. A fighter. A woman who built family when family was denied. Playing her was playing every trans woman who mothered through the worst of times.",
+                choices: [{ text: "You made her real for so many.", next: "message" }]
+            },
+            message: {
+                text: "That we are here. That we have always been here. That trans joy is not a footnote — it is the whole story. The floor is open.",
+                reward: 'labeija_trophy',
+                choices: [{ text: "Thank you for showing us ourselves.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Keep walking, honey. The ballroom never closes.",
+                choices: []
+            }
+        },
+        fact: "MJ Rodriguez is an actress and singer who played Blanca Evangelista in the FX series 'Pose.' In 2022, she became the first transgender woman to win a Golden Globe Award for Best Actress in a Drama Series."
+    },
+    'coccinelle': {
+        name: 'Coccinelle',
+        era: 'Mid 20th Century',
+        dialogue: {
+            greeting: {
+                text: "Jacqueline Charlotte Dufresnoy — they called me Coccinelle, the ladybug. In the 1950s, I was one of the first to live openly as a trans woman in France.",
+                choices: [
+                    { text: "What was Paris like for you?", next: "paris" },
+                    { text: "How did you find yourself?", next: "self" }
+                ]
+            },
+            paris: {
+                text: "Beautiful and cruel. The Carrousel de Paris gave us a stage — for the first time, we could be ourselves for an audience that paid to see us shine. But outside those walls, it was different.",
+                choices: [{ text: "The stage was safety.", next: "self" }]
+            },
+            self: {
+                text: "I have always been myself. The world needed time to catch up. I had surgery, I married, I lived fully — in an era when most trans women had no such options. I am grateful.",
+                reward: 'item_shield',
+                choices: [{ text: "Your courage opened doors for generations.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Be magnificent, darling. It is not optional.",
+                choices: []
+            }
+        },
+        fact: "Coccinelle (1931–2006) was a French actress and cabaret performer among the first trans women in France to undergo gender-affirming surgery (1958) and live openly. She was an international celebrity in the 1950s–60s and a trailblazer for European trans visibility."
     }
 };
 
@@ -401,22 +702,22 @@ export const LOOT_TIERS = {
     },
     uncommon: {
         weight: 28, color: '#39FF14', glow: '#39FF14', scrap: 2,
-        names: ['Resistance Pin', 'Liberation Pamphlet', 'Pride Shoelace', 'Borrowed Lipstick', 'Recovered Photo', 'Homegrown Families Blessing'],
+        names: ['Resistance Pin', 'Liberation Pamphlet', 'Pride Shoelace', 'Borrowed Lipstick', 'Recovered Photo', 'Homegrown Families Blessing', 'Vicks Touch of Care', "Sawant's Petition"],
         effect: 'small_heal'   // +1 hp
     },
     rare: {
         weight: 12, color: '#01CDFE', glow: '#01CDFE', scrap: 4,
-        names: ['Solidarity Charm', 'Mutual-Aid Token', 'Marsha\'s Hairpin', 'Sylvia\'s Lighter', 'Stonewall Coin', 'Youth OUTright Badge'],
+        names: ['Solidarity Charm', 'Mutual-Aid Token', 'Marsha\'s Hairpin', 'Sylvia\'s Lighter', 'Stonewall Coin', 'Youth OUTright Badge', "Mama Gloria's Charm Book", "Mariela's Tarot Deck", "Boylan's Memoir"],
         effect: 'big_heal'     // +2 hp + +1 next hit
     },
     epic: {
         weight: 4, color: '#B967DB', glow: '#B967DB', scrap: 8,
-        names: ['Hirschfeld\'s Notes', 'Christine\'s Letter', 'Gilded Pronoun Pin', 'Eleanor\'s Diary', 'Safe Shelter Key'],
+        names: ['Hirschfeld\'s Notes', 'Christine\'s Letter', 'Gilded Pronoun Pin', 'Eleanor\'s Diary', 'Safe Shelter Key', "House Mother's Sash", "Rivera's Megaphone"],
         effect: 'rage_vial'    // +3 hp + 6s damage boost
     },
     legendary: {
         weight: 1, color: '#FFD700', glow: '#FFD700', scrap: 20,
-        names: ['Stonewall Brick', 'Compton\'s Cafeteria Sugar Shaker', 'Crown of Eleanor Rykener', 'Lili\'s Last Brushstroke', 'Hearth Stone', "Mother's Fierce Light"],
+        names: ['Stonewall Brick', 'Compton\'s Cafeteria Sugar Shaker', 'Crown of Eleanor Rykener', 'Lili\'s Last Brushstroke', 'Hearth Stone', "Mother's Fierce Light", "LaBeija's Trophy", 'The Mausoleum Flower'],
         effect: 'permanent_heart'  // permanent +1 max health (lineage)
     }
 };
@@ -428,7 +729,17 @@ export const NAMED_ITEM_EFFECTS = {
     'Youth OUTright Badge':       'youth_badge',
     'Safe Shelter Key':           'safe_key',
     'Homegrown Families Blessing':'homegrown_blessing',
-    'Archival Fragment':          'archival_fragment'
+    'Archival Fragment':          'archival_fragment',
+    "LaBeija's Trophy":           'labeija_trophy',
+    'The Mausoleum Flower':       'mausoleum_flower',
+    "House Mother's Sash":        'house_mother_sash',
+    "Rivera's Megaphone":         'riveras_megaphone',
+    "Mama Gloria's Charm Book":   'charm_book',
+    "Mariela's Tarot Deck":       'tarot_deck',
+    "Boylan's Memoir":            'boylan_memoir',
+    'Vicks Touch of Care':        'vicks_care',
+    "Sawant's Petition":          'sawant_petition',
+    'STAR House Key':             'star_key'
 };
 
 // Probability table compiled from weights, used by combat.dropLoot.
