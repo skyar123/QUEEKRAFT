@@ -394,11 +394,12 @@ export const DialogueUI = {
     start(game, npcKey) {
         this.currentGame = game;
         this.currentNPC = HISTORICAL_FIGURES[npcKey];
+        this.currentNPCKey = npcKey;
         this.currentNode = 'greeting';
-        
+
         document.getElementById('conversation-name').textContent = `${this.currentNPC.name} (${this.currentNPC.era})`;
         UI.modals.conversation.style.display = 'flex';
-        
+
         this.renderNode();
     },
 
@@ -447,6 +448,48 @@ export const DialogueUI = {
                 Audio.speak(`Search result: ${this.currentNPC.fact}`);
             };
             choicesContainer.appendChild(factBtn);
+        }
+
+        // Quest buttons — accept available quests, check progress on active ones,
+        // turn in ready ones. Only the giver/turnInWith NPC sees the button.
+        const quests = (typeof window.__questsForGiver === 'function')
+            ? window.__questsForGiver(this.currentNPCKey)
+            : [];
+        for (const q of quests) {
+            const status = q.state.status;
+            if (status === 'completed') continue;
+            const btn = document.createElement('button');
+            btn.className = 'conversation-btn';
+            if (status === 'available') {
+                btn.style.borderColor = '#39FF14';
+                btn.style.color = '#39FF14';
+                btn.innerHTML = `📋 [QUEST] ${q.title} — ${q.summary}`;
+                btn.onclick = () => {
+                    document.getElementById('conversation-text').textContent = q.acceptDialog;
+                    Audio.speak(q.acceptDialog);
+                    window.__acceptQuest && window.__acceptQuest(q.id);
+                    setTimeout(() => this.renderNode(), 50);
+                };
+            } else if (status === 'active') {
+                btn.style.borderColor = '#01CDFE';
+                btn.style.color = '#01CDFE';
+                btn.innerHTML = `📋 [IN PROGRESS] ${q.title} — ${q.state.progress}/${q.goal.target}`;
+                btn.onclick = () => {
+                    document.getElementById('conversation-text').textContent = q.pendingDialog;
+                    Audio.speak(q.pendingDialog);
+                };
+            } else if (status === 'ready') {
+                btn.style.borderColor = '#FFD700';
+                btn.style.color = '#FFD700';
+                btn.innerHTML = `✓ [TURN IN] ${q.title}`;
+                btn.onclick = () => {
+                    document.getElementById('conversation-text').textContent = q.completeDialog;
+                    Audio.speak(q.completeDialog);
+                    window.__turnInQuest && window.__turnInQuest(q.id);
+                    setTimeout(() => this.renderNode(), 50);
+                };
+            }
+            choicesContainer.appendChild(btn);
         }
     },
 

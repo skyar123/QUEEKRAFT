@@ -478,3 +478,97 @@ export function generateMap(game) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Hub town generator — a fixed-layout safe room the player walks around between
+// runs. NPCs spawn at known positions so the player can find them. Includes
+// a 'D' tile that acts as the dungeon portal (handled by main.js USE handler)
+// and an 'F' tile for the camp campfire (re-opens the legacy upgrade modal).
+//
+// The hub uses the SAME tile dictionary and renderer as the dungeon, so no
+// extra rendering pipeline is needed — it just looks like a single very wide
+// room with an open ceiling and a few platforms.
+
+const HUB_W = 40;
+const HUB_H = 12;
+
+export function generateHubMap(game) {
+    game.depth = 0;            // hub is "depth 0"
+    game.inHub = true;
+    game.map = {};
+    game.items = [];
+    game.npcs = [];
+    game.trolls = [];          // no enemies in hub
+    game.particles = [];
+    game.spriteFX = [];
+    game.crumbleState = {};
+    game.muralTiles = {};
+    game.hearthRooms = new Set();
+    game.safeShelterRooms = new Set();
+    game.ballroomRooms = new Set();
+    game.starHouseRooms = new Set();
+    game.charmSchoolRooms = new Set();
+    game.mapWidth = HUB_W;
+    game.mapHeight = HUB_H;
+    game.seen = {};
+
+    // Build the room: solid border, open interior, 2-thick floor.
+    fillRect(game.map, 0, 0, HUB_W, HUB_H, '#');
+    fillRect(game.map, 1, 1, HUB_W - 2, HUB_H - 3, '.');
+
+    // A few decorative platforms so it doesn't read as a featureless box.
+    placePlatform(game.map, 6, HUB_H - 5, 4);
+    placePlatform(game.map, 14, HUB_H - 6, 3);
+    placePlatform(game.map, 22, HUB_H - 5, 4);
+    placePlatform(game.map, 30, HUB_H - 6, 3);
+
+    const floorY = HUB_H - 3;  // standing row (top of the 2-thick floor is HUB_H-2; player stands at HUB_H-3)
+
+    // Special tiles: dungeon portal (D) on the far right; campfire (F) near spawn.
+    game.map[`${HUB_W - 3},${floorY}`] = 'D';
+    game.map[`${4},${floorY}`] = 'F';
+
+    // Mark every hub tile as already seen so the player isn't blindfolded.
+    for (let y = 0; y < HUB_H; y++) {
+        for (let x = 0; x < HUB_W; x++) {
+            game.seen[`${x},${y}`] = true;
+        }
+    }
+
+    // Spawn the player on the left side facing the campfire.
+    game.player.x = 2;
+    game.player.y = floorY;
+    game.player.vx = 0;
+    game.player.vy = 0;
+    game.player.onGround = true;
+
+    // Resident NPCs at fixed spots. Quest givers always present so the player
+    // can pick up / turn in any quest from the hub. Other named NPCs cycle in
+    // as ambient companions and rotate to keep the room interesting.
+    const residents = [
+        { figureKey: 'community_mothers',     x: 6 },
+        { figureKey: 'marsha',                x: 10 },
+        { figureKey: 'crystal_labeija',       x: 14 },
+        { figureKey: 'william_dorsey_swann',  x: 18 },
+        { figureKey: 'paris_dupree',          x: 22 },
+        { figureKey: 'dorian_corey',          x: 26 },
+        { figureKey: 'blade_journalists',     x: 30 },
+        { figureKey: 'mama_gloria',           x: 34 }
+    ];
+    for (const r of residents) {
+        if (HISTORICAL_FIGURES[r.figureKey]) {
+            game.npcs.push({ x: r.x, y: floorY, figureKey: r.figureKey, type: 'historical' });
+        }
+    }
+
+    // Light up the room as a warm "ballroom" tinted hub so it reads visually
+    // distinct from the dungeon. Reuse the ballroomRooms set the renderer
+    // already knows about — every tile rounds to room 0,0 here.
+    game.ballroomRooms.add('0,0');
+    game.ballroomRooms.add('1,0');
+    game.ballroomRooms.add('2,0');
+    game.ballroomRooms.add('3,0');
+}
+
+// Re-export so main.js can import it. Need to also import HISTORICAL_FIGURES
+// at the top of this file (already done implicitly through ZINES import).

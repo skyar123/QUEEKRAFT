@@ -465,6 +465,9 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
         game.player.kills = (game.player.kills || 0) + 1;
         if (typeof window.addXP === 'function') window.addXP(20);
         else game.player.xp = (game.player.xp || 0) + 20;
+        if (typeof window.__onEnemyKilledForQuests === 'function') {
+            window.__onEnemyKilledForQuests(enemy.enemyType);
+        }
 
         // Tiered loot drop replaces the old flat 30% scrap drop.
         if (enemy.enemyType !== 'boss') {

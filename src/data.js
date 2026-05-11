@@ -616,6 +616,91 @@ export const HISTORICAL_FIGURES = {
         },
         fact: "MJ Rodriguez is an actress and singer who played Blanca Evangelista in the FX series 'Pose.' In 2022, she became the first transgender woman to win a Golden Globe Award for Best Actress in a Drama Series."
     },
+    'william_dorsey_swann': {
+        name: 'William Dorsey Swann',
+        era: '1880s–1890s',
+        dialogue: {
+            greeting: {
+                text: "I am William Dorsey Swann. I was born enslaved. I freed myself. And then I called myself the queen of drag — the very first to use the word — in Washington City, in 1888.",
+                choices: [
+                    { text: "How did you survive the raids?", next: "raids" },
+                    { text: "Why a 'queen'?", next: "queen" }
+                ]
+            },
+            raids: {
+                text: "By holding the door. By standing in front of my children when the police came. By bailing them out. They beat us, jailed us, called us obscene. We hosted the next ball anyway. Refusal is a craft.",
+                choices: [{ text: "You held the door so the rest of us could walk through.", next: "gift" }]
+            },
+            queen: {
+                text: "Because there was no other word that fit. So I made one fit. Every queen who has ever walked a ball, every house mother who has ever caught a child — they walk a path I cleared with my own scarred feet.",
+                choices: [{ text: "Thank you for clearing it.", next: "gift" }]
+            },
+            gift: {
+                text: "Take this. The first door is the hardest. Once you've held it open, no one can ever close it all the way again.",
+                reward: 'item_brick',
+                choices: [{ text: "I'll hold the next one.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Walk like a queen. The word is yours now.",
+                choices: []
+            }
+        },
+        fact: "William Dorsey Swann (1858–1925) was a formerly enslaved Black man widely recognized as one of the first Americans to refer to himself as a 'queen' of drag. He hosted secret drag balls in Washington, D.C. through the 1880s–1890s despite frequent brutal police raids and is considered a foundational figure of organized queer resistance in the United States."
+    },
+    'dorian_corey': {
+        name: 'Dorian Corey',
+        era: 'Mid–Late 20th Century',
+        dialogue: {
+            greeting: {
+                text: "Dorian Corey. House of Corey, founded 1972. Parsons-trained. I made every gown my children walked the floor in — and I made damn sure their seams could survive a runway *and* a bus ride home.",
+                choices: [
+                    { text: "What did you teach your children?", next: "teach" },
+                    { text: "Why the focus on craft?", next: "craft" }
+                ]
+            },
+            teach: {
+                text: "Patience. A straight stitch. How to read a room before you read a sister. How to lose a category with grace and walk it again next month with twice the answer. Realness is rehearsal — survival is the recital.",
+                choices: [{ text: "That sounds like the real syllabus.", next: "craft" }]
+            },
+            craft: {
+                text: "Because if your gown falls apart on the floor, the judges remember the gown. If your gown holds, they remember *you*. I trained Angie Xtravaganza. I trained Hector. I built a lineage out of strong seams and stronger spines.",
+                reward: 'ability_vision',
+                choices: [{ text: "Thank you, Mother Corey.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Posture, child. The light is on you whether you asked for it or not.",
+                choices: []
+            }
+        },
+        fact: "Dorian Corey (1937–1993) was the founding Mother of the House of Corey (1972). A Parsons School of Design–trained seamstress, she designed her children's couture and was a celebrated mentor — most notably training Mother Angie Xtravaganza and Grandfather Hector Xtravaganza. Featured prominently in 'Paris Is Burning' (1990)."
+    },
+    'paris_dupree': {
+        name: 'Paris Dupree',
+        era: 'Late 20th Century',
+        dialogue: {
+            greeting: {
+                text: "Paris Dupree, baby. House of Dupree — first house out of Brooklyn. Folks call me a mother's-mother. Means I built mothers who built mothers. The lineage doesn't end with me; it *began* with me.",
+                choices: [
+                    { text: "You started voguing?", next: "vogue" },
+                    { text: "How did the houses spread?", next: "spread" }
+                ]
+            },
+            vogue: {
+                text: "I read a Vogue magazine and I made the poses move. Hands, hips, snap, drop. Madonna saw it. Malcolm McLaren saw it. They took it to the world without our names attached. So now you say my name. Paris. Dupree.",
+                choices: [{ text: "Paris Dupree. Said and remembered.", next: "spread" }]
+            },
+            spread: {
+                text: "I never gatekept. Ebony, Revlon, Princess, Milan — I told my children: go *make* your own house. Mother your own children. The floor gets bigger when you build more floors. That's how a movement grows.",
+                reward: 'labeija_trophy',
+                choices: [{ text: "I'll build my own floor.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Walk like the magazine is watching. Because, baby — it always is.",
+                choices: []
+            }
+        },
+        fact: "Paris Dupree founded the House of Dupree, the first ballroom house based in Brooklyn, alongside Father Burger Dupree. She is widely credited as the original innovator of voguing and is the namesake of the landmark documentary 'Paris Is Burning' (1990). She is often called a 'mother's-mother' for actively encouraging the formation of subsequent houses."
+    },
     'coccinelle': {
         name: 'Coccinelle',
         era: 'Mid 20th Century',
@@ -744,3 +829,93 @@ export const NAMED_ITEM_EFFECTS = {
 
 // Probability table compiled from weights, used by combat.dropLoot.
 export const LOOT_TIER_KEYS = Object.keys(LOOT_TIERS);
+
+// ---------------------------------------------------------------------------
+// Cozy quests. Each quest is given by an NPC ('giver'), tracked across runs
+// in game.persistent.quests, and turned in via a dialogue branch on the same
+// (or another) NPC. Progress is updated by hooks placed throughout main.js
+// and combat.js (see updateQuestProgress).
+//
+// Quest object schema:
+//   id            stable key
+//   title         shown in quest log
+//   giver         figureKey of NPC who offers it
+//   turnInWith    figureKey of NPC where you turn it in (defaults to giver)
+//   summary       1-line summary
+//   detail        longer flavor text (markdown-ish)
+//   goal          { type: 'collect_zines'|'kill_enemy'|'read_murals'|'collect_item'|'reach_depth', target: number, enemyType?, item? }
+//   reward        { scrap?, permanentHearts?, permanentDamage?, message }
+//   acceptDialog  text spoken when offered
+//   pendingDialog text spoken when checking in mid-quest
+//   completeDialog text spoken on turn-in
+//
+// State per quest in game.persistent.quests[id]:
+//   status: 'available' | 'active' | 'ready' | 'completed'
+//   progress: number
+export const QUESTS = {
+    'tea_for_the_hearth': {
+        id: 'tea_for_the_hearth',
+        title: 'Tea for the Hearth',
+        giver: 'community_mothers',
+        summary: 'Bring 2 Healing Tea to the Hearth Mothers.',
+        detail: 'The Hearth Mothers want to brew a pot for the next runaway who walks in cold. Find Healing Tea in the wasteland and bring it back.',
+        goal: { type: 'collect_item', item: 'tea', target: 2 },
+        reward: { permanentHearts: 1, message: 'The Hearth grows warmer. +1 permanent heart.' },
+        acceptDialog: "Bring me 2 Healing Tea, child. I want a pot ready for whoever walks in next.",
+        pendingDialog: "Still steeping, baby? Bring me 2 Healing Tea when you find them.",
+        completeDialog: "Bless you. Sit a moment. Then go — and carry the warmth with you."
+    },
+    'mural_witness': {
+        id: 'mural_witness',
+        title: 'The Walls Remember',
+        giver: 'blade_journalists',
+        summary: 'Read 5 murals across the wasteland.',
+        detail: 'The Blade keeps a record of every mural left on the walls. Read 5 and report back what you saw — every reading is publication.',
+        goal: { type: 'read_murals', target: 5 },
+        reward: { scrap: 12, message: 'The Blade prints your testimony. +12 scrap.' },
+        acceptDialog: "Read 5 murals. Any 5. We'll publish what you saw — the walls are the front page.",
+        pendingDialog: "How many walls so far? We need 5 testimonies before the next print run.",
+        completeDialog: "5 testimonies. Set in type tomorrow. Take this for your trouble."
+    },
+    'bigot_patrol': {
+        id: 'bigot_patrol',
+        title: "House Mother's Patrol",
+        giver: 'crystal_labeija',
+        summary: 'Defeat 5 Gentrifiers (bigots) in the wasteland.',
+        detail: 'Crystal LaBeija saw too many of her children chased out of their own neighborhoods. Clear 5 Gentrifiers from the wasteland to keep the path home open.',
+        goal: { type: 'kill_enemy', enemyType: 'bigot', target: 5 },
+        reward: { permanentDamage: 1, message: "Crystal nods. The next swing hits harder. +1 permanent damage." },
+        acceptDialog: "Take down 5 Gentrifiers, baby. Every one you stop is a sister who gets to keep her apartment.",
+        pendingDialog: "Keep walking that floor. 5 Gentrifiers — every one you stop opens a door home.",
+        completeDialog: "5 down. Read for filth, baby. Take this — your hands are stronger now."
+    },
+    'archive_keeper': {
+        id: 'archive_keeper',
+        title: 'Archive Keeper',
+        giver: 'marsha',
+        summary: 'Collect 3 zines in a single run.',
+        detail: "Marsha wants the archive to keep growing. Bring back 3 zines from a single run — survival is a publishing schedule.",
+        goal: { type: 'collect_zines_run', target: 3 },
+        reward: { scrap: 18, message: 'Marsha laughs. The archive thanks you. +18 scrap.' },
+        acceptDialog: "Honey, find me 3 zines in one trip. Don't die between zines 2 and 3 — that's just rude.",
+        pendingDialog: "Three zines, one run, baby. Try again if the wasteland ate the last batch.",
+        completeDialog: "Pay it no mind, honey. The archive grows. Take this — buy yourself something nice."
+    },
+    'first_door': {
+        id: 'first_door',
+        title: 'The First Door',
+        giver: 'william_dorsey_swann',
+        summary: 'Reach Depth 5 to honor the door Swann held open.',
+        detail: 'William Dorsey Swann held the door against police raids in the 1880s so the next century of queens could walk through. Reach Depth 5 to prove the door is still open.',
+        goal: { type: 'reach_depth', target: 5 },
+        reward: { scrap: 25, permanentHearts: 1, message: 'Swann smiles. The door opens further. +25 scrap, +1 permanent heart.' },
+        acceptDialog: "Reach Depth 5, child. The door I held — prove it's still open.",
+        pendingDialog: "Keep walking. Depth 5. The door waits.",
+        completeDialog: "You walked through. The next queen walks through because of you. Take this."
+    }
+};
+
+export const QUEST_KEYS = Object.keys(QUESTS);
+// Quest givers that should always be offered if the quest is available.
+// Used by map.js to spawn the giver in the hub town if not already present.
+export const QUEST_GIVERS = QUEST_KEYS.map(k => QUESTS[k].giver);
