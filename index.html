@@ -521,6 +521,8 @@
                 <button class="upgrade-btn" id="reset-checkpoint-btn" style="margin-top:6px;font-size:12px;padding:4px 10px;border-color:#FF0040;color:#FF0040;">Reset to Depth 1</button>
             </div>
 
+<button class="upgrade-btn" id="view-mural-btn" style="width: 100%; border-color: #01CDFE; color: #01CDFE; margin-bottom: 15px;">View The Mural</button>
+
             <div id="upgrade-options" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
                 <div class="upgrade-row">
                     <div style="flex:1;">
@@ -584,3 +586,20 @@
     <script type="module" src="/src/main.js"></script>
 </body>
 </html>
+
+<!-- Zine Ritual Overlay -->
+<div id="zine-ritual-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:4000;display:none;flex-direction:column;align-items:center;justify-content:center;opacity:0;transition:opacity 0.5s;">
+    <div id="zine-ritual-quote" style="color:#FF71CE;font-family:'VT323',monospace;font-size:32px;text-align:center;max-width:80%;text-shadow:0 0 15px #FF71CE;"></div>
+</div>
+
+<!-- Mural Screen -->
+<div id="mural-screen" class="modal">
+    <div class="heir-box" style="max-height: 80vh; overflow-y: auto;">
+        <div style="color: #01CDFE; font-size: 24px; margin-bottom: 15px; text-align: center;">THE MURAL OF SURVIVORS</div>
+        <div style="text-align: center; margin-bottom: 20px; color: #aaa;">Those who came before you. We remember their names.</div>
+        <div id="mural-list" style="display: flex; flex-direction: column; gap: 10px;">
+            <!-- Populated dynamically -->
+        </div>
+        <button class="restart-btn" id="close-mural-btn" style="margin-top: 20px;">Back to Camp</button>
+    </div>
+</div>

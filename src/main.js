@@ -696,6 +696,11 @@ function updateParticles() {
         p.life -= 0.04;
         if (p.life <= 0) game.particles.splice(i, 1);
     }
+    if (!game.groundEffects) game.groundEffects = [];
+    for (let i = game.groundEffects.length - 1; i >= 0; i--) {
+        game.groundEffects[i].life--;
+        if (game.groundEffects[i].life <= 0) game.groundEffects.splice(i, 1);
+    }
 }
 
 function startCamp() {
@@ -1136,7 +1141,16 @@ function interact() {
         return;
     }
 
+    
+    // REFUSAL MECHANIC
+    const refusalTarget = game.trolls.find(t => entityNear(t) && (t.enemyType === 'concern' || t.enemyType === 'bigot' || t.enemyType === 'gatekeeper'));
+    if (refusalTarget) {
+        UI.startRefusal(game, refusalTarget);
+        return;
+    }
+
     const npc = game.npcs.find(n => entityNear(n));
+
     if (npc) {
         if (!game.persistent.seenFigures[npc.figureKey]) {
             game.persistent.seenFigures[npc.figureKey] = true;
@@ -2023,7 +2037,13 @@ function update(dt) {
 }
 
 function draw() {
-    ctx.fillStyle = '#050505';
+    let bgColor = '#050505';
+    if (!game.inHub) {
+        if (game.depth <= 3) bgColor = '#111315'; // Harsh grays
+        else if (game.depth <= 6) bgColor = '#1a1300'; // Dark gold
+        else bgColor = '#080016'; // Deep purples
+    }
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     const px = tileX();
@@ -2699,6 +2719,40 @@ function draw() {
         }
     });
 
+    // Draw Ground Effects (Class Signatures)
+    if (game.groundEffects) {
+        for (const ge of game.groundEffects) {
+            if (ge.type === 'trans_blast') {
+                const drawX = (ge.x + game.camX / T) * T;
+                const drawY = (ge.y + game.camY / T) * T;
+                const r = (1 - (ge.life / 180)) * T * 3.5;
+                const a = ge.life / 180;
+                ctx.globalAlpha = Math.max(0, a * 0.6);
+                
+                // Trans flag colors
+                const colors = ['#5BCEFA', '#F5A9B8', '#FFFFFF', '#F5A9B8', '#5BCEFA'];
+                ctx.lineWidth = 4;
+                for (let i = 0; i < colors.length; i++) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = colors[i];
+                    ctx.arc(drawX, drawY, Math.max(1, r - i * 6), 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+            } else if (ge.type === 'gold_pulse') {
+                const drawX = (ge.x + game.camX / T) * T;
+                const drawY = (ge.y + game.camY / T) * T;
+                const r = (1 - (ge.life / 60)) * T * 4;
+                const a = ge.life / 60;
+                ctx.globalAlpha = Math.max(0, a * 0.5);
+                ctx.beginPath();
+                ctx.fillStyle = '#FFD700';
+                ctx.arc(drawX, drawY, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+    ctx.globalAlpha = 1.0;
+
     // Draw Particles
     for (const p of game.particles) {
         ctx.globalAlpha = p.life;
@@ -3288,6 +3342,8 @@ function activateClassPower() {
                 vx: (Math.random()-0.5)*1.4, vy: (Math.random()-0.5)*1.4, life: 1.0,
                 color: ['#FF71CE','#01CDFE','#FFD700','#39FF14'][i%4] });
         }
+        if (!game.groundEffects) game.groundEffects = [];
+        game.groundEffects.push({ x: p.x + PLAYER_W/2, y: p.y + PLAYER_H/2, life: 180, type: 'trans_blast' });
     } else if (cls === 'archivist') {
         p.powerType = 'slow'; p.powerActive = 240;
         UI.addMessage("TIME DILATION ⏳", "special");
@@ -3308,6 +3364,8 @@ function activateClassPower() {
         p.powerType = 'bump'; p.powerActive = 240;
         UI.addMessage("HRT BUMP — feeling powerful!", "healing");
         UI.updateStatus(game);
+        if (!game.groundEffects) game.groundEffects = [];
+        game.groundEffects.push({ x: p.x + PLAYER_W/2, y: p.y + PLAYER_H/2, life: 60, type: 'gold_pulse' });
     } else if (cls === 'aidworker') {
         p.powerType = 'aura'; p.powerActive = 480;
         UI.addMessage("SOLIDARITY AURA — community heals.", "healing");

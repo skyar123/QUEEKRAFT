@@ -66,7 +66,32 @@ export const UI = {
             coverImg.style.display = 'none';
         }
         
-        this.modals.zine.style.display = 'flex';
+        const overlay = document.getElementById('zine-ritual-overlay');
+        const quoteEl = document.getElementById('zine-ritual-quote');
+        
+        // Extract a quote from the content if possible
+        const match = zine.content.match(/<p>"(.*?)"<\/p>/) || zine.content.match(/<p>(.*?)<\/p>/);
+        const quote = match ? match[1] : "Power in our stories.";
+        
+        if (overlay && quoteEl) {
+            quoteEl.innerHTML = `"${quote}"`;
+            overlay.style.display = 'flex';
+            
+            // Trigger reflow
+            void overlay.offsetWidth;
+            
+            overlay.style.opacity = '1';
+            
+            setTimeout(() => {
+                overlay.style.opacity = '0';
+                setTimeout(() => {
+                    overlay.style.display = 'none';
+                    this.modals.zine.style.display = 'flex';
+                }, 500);
+            }, 1800);
+        } else {
+            this.modals.zine.style.display = 'flex';
+        }
     },
 
     closeZine() {
@@ -80,14 +105,77 @@ export const UI = {
         canvas.classList.add('shake');
     },
 
+    
+    startRefusal(game, enemy) {
+        document.getElementById('conversation-name').textContent = 'Refusal: ' + enemy.enemyType;
+        document.getElementById('conversation-text').textContent = 'An oppressor approaches. Refuse them on your own terms.';
+        
+        const choicesContainer = document.getElementById('conversation-choices');
+        choicesContainer.innerHTML = '';
+
+        const options = [
+            "I don't have time for this.",
+            "Your opinion is noted and immediately discarded.",
+            "Bestie... no."
+        ];
+
+        options.forEach((opt, index) => {
+            const btn = document.createElement('button');
+            btn.className = 'conversation-btn';
+            btn.textContent = opt;
+            btn.onclick = () => {
+                // Correct choice logic (let's say all of them are correct for now, or pick one)
+                // Actually, let's make them all work and give different funny reactions!
+                document.getElementById('conversation-text').textContent = "The enemy deflates. Their power over you is gone.";
+                choicesContainer.innerHTML = '';
+                
+                const closeBtn = document.createElement('button');
+                closeBtn.className = 'conversation-btn';
+                closeBtn.textContent = 'Walk away.';
+                closeBtn.onclick = () => {
+                    UI.modals.conversation.style.display = 'none';
+                    game.trolls = game.trolls.filter(t => t !== enemy);
+                    for (let i = 0; i < 20; i++) {
+                        game.particles.push({
+                            x: enemy.x + 0.5, y: enemy.y,
+                            vx: (Math.random()-0.5)*0.8, vy: -Math.random()*1.0,
+                            life: 1.0, color: '#aaa', size: 3
+                        });
+                    }
+                    UI.addMessage('You refused to engage. That takes strength.', 'special');
+                };
+                choicesContainer.appendChild(closeBtn);
+            };
+            choicesContainer.appendChild(btn);
+        });
+
+        UI.modals.conversation.style.display = 'flex';
+    },
+
     showGameOver(game, msg) {
         this.addMessage(msg, 'death');
+        
+        const DEATH_QUOTES = [
+            { quote: "We have to be visible. We should not be ashamed of who we are.", author: "Marsha P. Johnson" },
+            { quote: "I'm not missing a minute of this. It's the revolution!", author: "Sylvia Rivera" },
+            { quote: "I will not be a casualty.", author: "Miss Major" },
+            { quote: "Before they told us we were wrong, we were sacred.", author: "The Archive" },
+            { quote: "The only way to survive is by taking care of one another.", author: "Grace Lee Boggs" },
+            { quote: "You are exactly the right amount of yourself.", author: "Anonymous" }
+        ];
+        const q = DEATH_QUOTES[Math.floor(Math.random() * DEATH_QUOTES.length)];
+
         document.getElementById('death-message').innerHTML = `
-            ${msg}<br><br>
-            Zines: ${game.zines}/19<br>
-            Historical Figures: ${game.historicalFigures}/9<br>
-            Legacy Points (Treasures): ${game.treasures}<br><br>
-            The revolution does not end with you.
+            <div style="margin-bottom: 24px; font-size: 20px; font-style: italic; color: #FF71CE; text-shadow: 0 0 10px #FF71CE;">
+                "${q.quote}"<br>
+                <span style="font-size: 16px; color: #01CDFE; text-shadow: 0 0 8px #01CDFE;">— ${q.author}</span>
+            </div>
+            <div style="font-size: 14px; color: #aaa; margin-bottom: 24px;">
+                (Depth ${game.depth || 1} reached — ${game.zines} zines recovered)
+            </div>
+            <div style="font-size: 14px; color: #888;">
+                Legacy Points (Treasures): ${game.treasures}
+            </div>
         `;
         this.modals.gameOver.style.display = 'flex';
     },
@@ -395,7 +483,24 @@ export const DialogueUI = {
         this.currentGame = game;
         this.currentNPC = HISTORICAL_FIGURES[npcKey];
         this.currentNPCKey = npcKey;
-        this.currentNode = 'greeting';
+        
+        if (!game.persistent.npcEncounters) game.persistent.npcEncounters = {};
+        game.persistent.npcEncounters[npcKey] = (game.persistent.npcEncounters[npcKey] || 0) + 1;
+        const runs = game.persistent.npcEncounters[npcKey];
+        
+        if (this.currentNPC.dialogue_variants) {
+            let selectedVariant = 'greeting';
+            const keys = Object.keys(this.currentNPC.dialogue_variants).map(Number).sort((a,b) => b-a);
+            for (const k of keys) {
+                if (runs >= k) {
+                    selectedVariant = this.currentNPC.dialogue_variants[k];
+                    break;
+                }
+            }
+            this.currentNode = selectedVariant;
+        } else {
+            this.currentNode = 'greeting';
+        }
 
         document.getElementById('conversation-name').textContent = `${this.currentNPC.name} (${this.currentNPC.era})`;
         UI.modals.conversation.style.display = 'flex';
@@ -811,3 +916,46 @@ export const GeminiUI = {
 };
 
 document.getElementById('zine-close-btn').addEventListener('click', () => UI.closeZine());
+
+// Hook up mural buttons
+document.addEventListener('DOMContentLoaded', () => {
+    const muralBtn = document.getElementById('view-mural-btn');
+    const closeMuralBtn = document.getElementById('close-mural-btn');
+    const muralScreen = document.getElementById('mural-screen');
+    const campScreen = document.getElementById('camp-screen');
+
+    if (muralBtn && closeMuralBtn && muralScreen) {
+        muralBtn.onclick = () => {
+            const list = document.getElementById('mural-list');
+            list.innerHTML = '';
+            
+            // Need game object, we can pull it from window or UI.currentGame
+            const game = UI.currentGame;
+            const mural = (game && game.persistent && game.persistent.mural) ? game.persistent.mural : [];
+            
+            if (mural.length === 0) {
+                list.innerHTML = '<div style="color: #888; text-align: center;">The mural is empty. Be the first to leave a legacy.</div>';
+            } else {
+                mural.forEach(m => {
+                    const el = document.createElement('div');
+                    el.style.cssText = 'background: rgba(1, 205, 254, 0.1); border: 1px solid #01CDFE; padding: 10px; border-radius: 4px;';
+                    el.innerHTML = `
+                        <span style="color: #FF71CE; font-weight: bold; font-size: 18px;">${m.name}</span>
+                        <span style="color: #aaa; font-size: 14px;">(${m.className})</span><br>
+                        <span style="color: #39FF14; font-size: 14px;">Reached Depth ${m.depth}</span> ·
+                        <span style="color: #FFD700; font-size: 14px;">${m.zines} Zines</span>
+                    `;
+                    list.appendChild(el);
+                });
+            }
+            
+            campScreen.style.display = 'none';
+            muralScreen.style.display = 'flex';
+        };
+        
+        closeMuralBtn.onclick = () => {
+            muralScreen.style.display = 'none';
+            campScreen.style.display = 'flex';
+        };
+    }
+});

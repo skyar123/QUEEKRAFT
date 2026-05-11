@@ -59,6 +59,12 @@ export const HISTORICAL_FIGURES = {
     'marsha': { 
         name: 'Marsha P. Johnson', 
         era: 'Late 20th Century',
+        dialogue_variants: {
+            1: 'greeting',
+            3: 'greeting_run3',
+            7: 'greeting_run7',
+            10: 'greeting_run10'
+        },
         dialogue: {
             greeting: {
                 text: "Hey honey! Marsha P. Johnson—the P stands for Pay It No Mind! You look like you're carrying the weight of the world.",
@@ -84,6 +90,39 @@ export const HISTORICAL_FIGURES = {
             farewell: {
                 text: "Pay them no mind, honey! Keep fighting!",
                 choices: []
+            },
+            greeting_run3: {
+                text: "You're back! I knew you had fight in you. Your grandmother came through here once. She had your jaw.",
+                choices: [
+                    { text: "She did? What was she like?", next: "run3_desc" }
+                ]
+            },
+            run3_desc: {
+                text: "Fierce. Unstoppable. Just like you. Take this—it belonged to her generation.",
+                reward: "item_brick",
+                choices: [
+                    { text: "I'll make her proud.", next: "farewell" }
+                ]
+            },
+            greeting_run7: {
+                text: "Oh honey, you look exhausted. Come here. Even warriors need to rest. We fought so you wouldn't have to fight this hard.",
+                effect: "heal_full",
+                choices: [
+                    { text: "I'm not giving up.", next: "run7_desc" }
+                ]
+            },
+            run7_desc: {
+                text: "I know you're not. That's the beauty of it. The fire never dies, it just gets passed along.",
+                choices: [
+                    { text: "Thank you, Marsha.", next: "farewell" }
+                ]
+            },
+            greeting_run10: {
+                text: "Look at you! A true queen of the wasteland. You're not just surviving anymore, you're thriving. We are peers now, honey.",
+                reward: "item_brick",
+                choices: [
+                    { text: "I couldn't have done it without you.", next: "farewell" }
+                ]
             }
         },
         fact: "Marsha P. Johnson was a key figure in the 1969 Stonewall uprising and co-founded STAR (Street Transvestite Action Revolutionaries) to support homeless queer youth."

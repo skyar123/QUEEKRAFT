@@ -232,12 +232,13 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
     const isLauncher = dirY < 0 && type === 'quick';
     const isDiveStab = dirY > 0 && type === 'quick' && !game.player.onGround;
 
+    const QUEER_CALLOUTS = ['SLAY.', 'PERIOD.', 'MOTHER.', "THAT'S RIGHT.", 'WORK.', 'EAT.'];
     let comboLabel = '';
     if (type === 'quick') {
         damage = Math.ceil(damage * COMBO_DAMAGE_SCALE[comboStep]);
         if (comboStep === 0) comboLabel = 'Slash!';
         else if (comboStep === 1) comboLabel = 'Strike!';
-        else if (comboStep === 2) comboLabel = 'FINISHER!';
+        else if (comboStep === 2) comboLabel = QUEER_CALLOUTS[Math.floor(Math.random() * QUEER_CALLOUTS.length)];
     }
 
     // Pattern Master: 20% crit chance for double damage
@@ -265,6 +266,27 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
     enemy.vy = -kb * 0.1; // Pop up
     enemy.hitstun = Math.floor(kb * 1.5);
     enemy.onGround = false;
+
+    // Enemy Type Specific Reactions (Juice)
+    if (enemy.enemyType === 'bigot') {
+        // Flinch
+        applyStatus(enemy, 'shock', 15, 1);
+    } else if (enemy.enemyType === 'troll') {
+        // Glitch stutter
+        enemy.x += (Math.random() - 0.5) * 0.6;
+        enemy.y += (Math.random() - 0.5) * 0.6;
+        game.particles.push({ x: enemy.x, y: enemy.y, vx: 0, vy: 0, life: 0.5, color: '#39FF14', size: 4 });
+    } else if (enemy.enemyType === 'gatekeeper') {
+        // Clipboard scatters
+        for (let i = 0; i < 5; i++) {
+            game.particles.push({
+                x: enemy.x + 0.5, y: enemy.y + 0.5,
+                vx: (Math.random() - 0.5) * 0.8,
+                vy: -Math.random() * 0.8,
+                life: 0.8, color: '#FFFFFF', size: 3
+            });
+        }
+    }
 
     // Big Mood: damage swings wildly between 0.5x and 2.5x
     if (hasTrait(game.player, 'bipolar')) {
@@ -408,6 +430,9 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
     UI.addMessage(`${crit ? 'CRIT! ' : ''}${comboLabel ? comboLabel + ' ' : ''}Hit ${enemy.enemyType} for ${damage}!`, 'combat');
     UI.shakeScreen();
     Audio.playHit();
+    
+    // Global Hit Stop (2 frames on normal hits, higher on finishers)
+    if (!isFinisher) game.hitStop = Math.max(game.hitStop || 0, 3);
 
     // Combo state: every successful quick hit advances; power attacks are
     // intentional finishers and break the chain while still benefiting from
@@ -563,6 +588,16 @@ export function takeDamage(game, amount = 1) {
     if (game.player.health <= 0.001) {
         game.player.health = 0;
         game.player.alive = false;
+        
+        // Save to Mural
+        if (!game.persistent.mural) game.persistent.mural = [];
+        game.persistent.mural.push({
+            name: game.player.name || "Survivor",
+            className: game.player.classObj ? game.player.classObj.name : 'Unknown',
+            depth: game.depth || 1,
+            zines: game.zines || 0
+        });
+
         UI.showGameOver(game, "You succumbed to your wounds.");
     }
 }
