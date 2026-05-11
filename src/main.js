@@ -4,6 +4,9 @@ import { attackEnemy, takeDamage, tickStatus, tickCombo, resetCombo, applyStatus
 import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS } from './data.js';
 import { Audio } from './audio.js';
 
+// Expose UI globally so map.js village generator can show status messages.
+window.UI = UI;
+
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 
@@ -757,6 +760,13 @@ function startCamp() {
     if (aiBtn) aiBtn.onclick = () => GeminiUI.start(game);
     const topAiBtn = document.getElementById('ai-btn');
     if (topAiBtn) topAiBtn.onclick = () => GeminiUI.start(game);
+
+    // Hook up Village button
+    const villageBtn = document.getElementById('visit-village-btn');
+    if (villageBtn) villageBtn.onclick = () => {
+        UI.modals.camp.style.display = 'none';
+        enterHub();
+    };
 }
 
 async function descend() {
@@ -824,8 +834,12 @@ function enterHub() {
     game.camInitialized = false;
     lastPromptTile = null;
     UI.updateStatus(game);
-    UI.addMessage('🏠 Welcome to the Safehouse. Walk right to the portal to enter the wasteland.', 'special');
-    UI.addMessage('💬 Talk to residents (USE/F). Quest log: J. Campfire (F-tile) re-opens upgrades.', 'special');
+
+    const figuresMet = Object.keys(game.persistent.seenFigures || {}).length;
+    const zinesCollected = Object.keys(game.persistent.seenZines || {}).length;
+    UI.addMessage(`🏘️ Welcome to the Safehouse Village. ${figuresMet} figures met — explore ${figuresMet > 3 ? '6 zones' : 'the open zones'}.`, 'special');
+    UI.addMessage('💬 Talk to residents (USE/F). Quest log: J. Campfire (F-tile) re-opens upgrades. Walk right → portal to the wasteland.', 'special');
+    if (zinesCollected > 0) UI.addMessage(`📖 ${zinesCollected}/19 zines archived — the village grows with each one.`, 'special');
     gameStarted = true;
 }
 

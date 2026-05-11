@@ -480,25 +480,72 @@ export function generateMap(game) {
 }
 
 // ---------------------------------------------------------------------------
-// Hub town generator — a fixed-layout safe room the player walks around between
-// runs. NPCs spawn at known positions so the player can find them. Includes
-// a 'D' tile that acts as the dungeon portal (handled by main.js USE handler)
-// and an 'F' tile for the camp campfire (re-opens the legacy upgrade modal).
+// Safehouse Village — an optional cozy hub. NOT on the run critical path
+// anymore (camp's "Enter the Wasteland" still goes straight to the dungeon);
+// this is reached via the camp's "🏘️ Visit the Safehouse Village" button.
 //
-// The hub uses the SAME tile dictionary and renderer as the dungeon, so no
-// extra rendering pipeline is needed — it just looks like a single very wide
-// room with an open ceiling and a few platforms.
+// The village is six zones divided by interior walls with carved doorways:
+//
+//   ┌────────┬──────────┬───────────┬───────────┬──────────┬───────────┐
+//   │ HEARTH │ DRAG BAR │ BALLROOM  │  ARCHIVE  │  STAR    │  ATRIUM   │
+//   │ (warm) │  (teal)  │  (gold)   │ (blue/pk) │  (red)   │ (neutral) │
+//   └────────┴──────────┴───────────┴───────────┴──────────┴───────────┘
+//        F (campfire)                                        D (portal)
+//
+// Each zone uses an existing room-set (hearthRooms, charmSchoolRooms, etc.)
+// so the tile renderer's per-room tint already lights it correctly.
+//
+// Village GROWS with progress (the player's ask):
+//   - Core quest givers always appear so the quest loop works on first visit.
+//   - Other NPCs only show after the player has met them in the dungeon
+//     (game.persistent.seenFigures[key] === true).
+//   - Decorative props (bouquets/zines) scale with seenZines count.
+//   - Zone tints turn from dim to vivid once a zone has at least one resident.
 
-const HUB_W = 40;
-const HUB_H = 12;
+const VLG_W = 60;
+const VLG_H = 14;
+const ZONE_W = 10;    // each of the 6 zones is 10 tiles wide
+const ZONES = [
+    { id: 'hearth',   name: 'HEARTH KITCHEN', tint: 'hearth',       npcs: ['community_mothers', 'mama_gloria', 'mariela_munoz', 'gauri_sawant'] },
+    { id: 'drag',     name: 'DRAG BAR',       tint: 'charmSchool',  npcs: ['marsha', 'coccinelle', 'mj_rodriguez', 'sylvia'] },
+    { id: 'ballroom', name: 'BALLROOM STAGE', tint: 'ballroom',     npcs: ['crystal_labeija', 'paris_dupree', 'angie_xtravaganza'] },
+    { id: 'archive',  name: 'THE ARCHIVE',    tint: 'safeShelter',  npcs: ['blade_journalists', 'jennifer_boylan', 'dorian_corey', 'eleanor'] },
+    { id: 'star',     name: 'STAR HOUSE',     tint: 'starHouse',    npcs: ['kenya_cuevas', 'cleopatra_kambugu', 'allison_scott', 'peyton_oconner'] },
+    { id: 'atrium',   name: 'THE ATRIUM',     tint: null,           npcs: ['william_dorsey_swann', 'wewha', 'charley', 'dora', 'alan', 'lili', 'christine', 'lucy'] }
+];
+
+// NPCs that always appear regardless of seenFigures so the quest loop is
+// usable on first visit (each is a quest giver).
+const CORE_RESIDENTS = new Set([
+    'community_mothers',
+    'marsha',
+    'crystal_labeija',
+    'blade_journalists',
+    'william_dorsey_swann'
+]);
+
+function zoneHasAnyResident(zone, game) {
+    return zone.npcs.some(k =>
+        HISTORICAL_FIGURES[k] && (CORE_RESIDENTS.has(k) || (game.persistent.seenFigures && game.persistent.seenFigures[k]))
+    );
+}
+
+function applyZoneTint(game, tint, roomKey) {
+    if (tint === 'hearth')           game.hearthRooms.add(roomKey);
+    else if (tint === 'charmSchool') game.charmSchoolRooms.add(roomKey);
+    else if (tint === 'ballroom')    game.ballroomRooms.add(roomKey);
+    else if (tint === 'safeShelter') game.safeShelterRooms.add(roomKey);
+    else if (tint === 'starHouse')   game.starHouseRooms.add(roomKey);
+    // 'null' tint = no room set, renders as default dungeon-floor look.
+}
 
 export function generateHubMap(game) {
-    game.depth = 0;            // hub is "depth 0"
+    game.depth = 0;
     game.inHub = true;
     game.map = {};
     game.items = [];
     game.npcs = [];
-    game.trolls = [];          // no enemies in hub
+    game.trolls = [];
     game.particles = [];
     game.spriteFX = [];
     game.crumbleState = {};
@@ -508,67 +555,142 @@ export function generateHubMap(game) {
     game.ballroomRooms = new Set();
     game.starHouseRooms = new Set();
     game.charmSchoolRooms = new Set();
-    game.mapWidth = HUB_W;
-    game.mapHeight = HUB_H;
+    game.mapWidth = VLG_W;
+    game.mapHeight = VLG_H;
     game.seen = {};
 
-    // Build the room: solid border, open interior, 2-thick floor.
-    fillRect(game.map, 0, 0, HUB_W, HUB_H, '#');
-    fillRect(game.map, 1, 1, HUB_W - 2, HUB_H - 3, '.');
+    // Solid border + 2-thick floor at the bottom.
+    fillRect(game.map, 0, 0, VLG_W, VLG_H, '#');
+    fillRect(game.map, 1, 1, VLG_W - 2, VLG_H - 3, '.');
 
-    // A few decorative platforms so it doesn't read as a featureless box.
-    placePlatform(game.map, 6, HUB_H - 5, 4);
-    placePlatform(game.map, 14, HUB_H - 6, 3);
-    placePlatform(game.map, 22, HUB_H - 5, 4);
-    placePlatform(game.map, 30, HUB_H - 6, 3);
+    const floorY = VLG_H - 3;        // row the player stands on
+    const ceilingFelt = 1;            // top of open interior
 
-    const floorY = HUB_H - 3;  // standing row (top of the 2-thick floor is HUB_H-2; player stands at HUB_H-3)
+    // Carve vertical divider walls between zones; doorway = 3 tiles tall at
+    // the floor level so the player can walk between rooms without jumping.
+    for (let z = 1; z < ZONES.length; z++) {
+        const dividerX = z * ZONE_W;
+        for (let y = ceilingFelt; y < floorY - 2; y++) game.map[`${dividerX},${y}`] = '#';
+        // Doorway carve
+        game.map[`${dividerX},${floorY}`] = '.';
+        game.map[`${dividerX},${floorY - 1}`] = '.';
+        game.map[`${dividerX},${floorY - 2}`] = '.';
+    }
 
-    // Special tiles: dungeon portal (D) on the far right; campfire (F) near spawn.
-    game.map[`${HUB_W - 3},${floorY}`] = 'D';
-    game.map[`${4},${floorY}`] = 'F';
+    // Per-zone interior decoration. seenZines drives how decorated the
+    // village is — fewer zines = fewer decorative platforms / items.
+    const zinesCollected = Object.keys(game.persistent && game.persistent.seenZines || {}).length;
+    const figuresMet = Object.keys(game.persistent && game.persistent.seenFigures || {}).length;
+    const decorationDensity = Math.min(1, 0.25 + zinesCollected / 19); // 0.25..1.0
 
-    // Mark every hub tile as already seen so the player isn't blindfolded.
-    for (let y = 0; y < HUB_H; y++) {
-        for (let x = 0; x < HUB_W; x++) {
-            game.seen[`${x},${y}`] = true;
+    for (let z = 0; z < ZONES.length; z++) {
+        const zone = ZONES[z];
+        const x0 = z * ZONE_W + 1;
+        const x1 = (z + 1) * ZONE_W - 1;
+        const cx = z * ZONE_W + Math.floor(ZONE_W / 2);
+
+        // Apply zone tint by inserting into the matching room set (only when
+        // the zone has any resident — empty zones stay dim).
+        const zoneRoomKey = `${z},0`;
+        const willBeOccupied = zoneHasAnyResident(zone, game);
+        if (willBeOccupied) applyZoneTint(game, zone.tint, zoneRoomKey);
+
+        // Sign above the zone — written to muralTiles so the existing ceiling
+        // mural renderer prints it. Two tiles wide center of zone.
+        if (willBeOccupied) {
+            game.muralTiles[`${cx - 1},0`] = zone.name;
+        } else {
+            game.muralTiles[`${cx - 1},0`] = '[LOCKED]';
+        }
+
+        // Decorative platforms per zone — give each zone a recognizable silhouette.
+        if (zone.id === 'hearth') {
+            // Long counter platform like a kitchen island.
+            placePlatform(game.map, x0 + 1, floorY - 2, 5);
+            if (decorationDensity > 0.5) placePlatform(game.map, x0 + 4, floorY - 4, 2); // shelf
+        } else if (zone.id === 'drag') {
+            // Bar counter + bottle shelf.
+            placePlatform(game.map, x0 + 2, floorY - 2, 6);
+            if (decorationDensity > 0.4) placePlatform(game.map, x0 + 1, floorY - 5, 7);
+        } else if (zone.id === 'ballroom') {
+            // Raised stage center.
+            placePlatform(game.map, x0 + 2, floorY - 1, 6);
+            placePlatform(game.map, x0 + 3, floorY - 2, 4);
+            if (decorationDensity > 0.6) placePlatform(game.map, x0 + 4, floorY - 3, 2);
+        } else if (zone.id === 'archive') {
+            // Stacked bookshelves up the right wall.
+            placePlatform(game.map, x0, floorY - 5, 4);
+            placePlatform(game.map, x0 + 1, floorY - 3, 3);
+            if (decorationDensity > 0.5) placePlatform(game.map, x0 + 5, floorY - 4, 3);
+        } else if (zone.id === 'star') {
+            // Bunk-bed platforms (shelter bunks).
+            placePlatform(game.map, x0 + 1, floorY - 2, 3);
+            placePlatform(game.map, x0 + 5, floorY - 2, 3);
+            if (decorationDensity > 0.4) {
+                placePlatform(game.map, x0 + 1, floorY - 4, 3);
+                placePlatform(game.map, x0 + 5, floorY - 4, 3);
+            }
+        } else if (zone.id === 'atrium') {
+            // Wide open entrance hall with two low benches.
+            placePlatform(game.map, x0 + 1, floorY - 2, 2);
+            placePlatform(game.map, x0 + 5, floorY - 2, 2);
+        }
+
+        // Scatter "bouquet" decoration items based on zinesCollected — purely
+        // visual loot stand-ins that the player CAN pick up but mostly read as
+        // village dressing.
+        if (willBeOccupied && Math.random() < decorationDensity) {
+            const decorX = x0 + 1 + Math.floor(Math.random() * Math.max(1, (x1 - x0 - 2)));
+            game.items.push({
+                x: decorX, y: floorY,
+                type: 'treasure',
+                name: 'Bouquet (gift)',
+                decorative: true
+            });
         }
     }
 
-    // Spawn the player on the left side facing the campfire.
-    game.player.x = 2;
+    // Special tiles: 'F' campfire near spawn (left); 'D' wasteland portal
+    // at the right end of the atrium.
+    game.map[`${3},${floorY}`] = 'F';
+    game.map[`${VLG_W - 3},${floorY}`] = 'D';
+
+    // Mark the whole village as already seen so the player isn't blindfolded.
+    for (let y = 0; y < VLG_H; y++) {
+        for (let x = 0; x < VLG_W; x++) game.seen[`${x},${y}`] = true;
+    }
+
+    // Spawn the player on the left side of the Hearth Kitchen, facing the campfire.
+    game.player.x = 1.5;
     game.player.y = floorY;
     game.player.vx = 0;
     game.player.vy = 0;
     game.player.onGround = true;
 
-    // Resident NPCs at fixed spots. Quest givers always present so the player
-    // can pick up / turn in any quest from the hub. Other named NPCs cycle in
-    // as ambient companions and rotate to keep the room interesting.
-    const residents = [
-        { figureKey: 'community_mothers',     x: 6 },
-        { figureKey: 'marsha',                x: 10 },
-        { figureKey: 'crystal_labeija',       x: 14 },
-        { figureKey: 'william_dorsey_swann',  x: 18 },
-        { figureKey: 'paris_dupree',          x: 22 },
-        { figureKey: 'dorian_corey',          x: 26 },
-        { figureKey: 'blade_journalists',     x: 30 },
-        { figureKey: 'mama_gloria',           x: 34 }
-    ];
-    for (const r of residents) {
-        if (HISTORICAL_FIGURES[r.figureKey]) {
-            game.npcs.push({ x: r.x, y: floorY, figureKey: r.figureKey, type: 'historical' });
-        }
+    // Populate each zone's NPCs. CORE_RESIDENTS always appear; others only
+    // if game.persistent.seenFigures has marked them met in the dungeon.
+    for (let z = 0; z < ZONES.length; z++) {
+        const zone = ZONES[z];
+        const x0 = z * ZONE_W + 1;
+        const x1 = (z + 1) * ZONE_W - 1;
+        const eligible = zone.npcs.filter(k =>
+            HISTORICAL_FIGURES[k] && (CORE_RESIDENTS.has(k) || (game.persistent.seenFigures && game.persistent.seenFigures[k]))
+        );
+        // Spread NPCs across the zone width, leaving gaps for furniture.
+        const slots = Math.max(eligible.length, 1);
+        const step = Math.max(1, Math.floor((x1 - x0) / (slots + 1)));
+        eligible.forEach((figureKey, i) => {
+            const px = x0 + step * (i + 1);
+            game.npcs.push({ x: px, y: floorY, figureKey, type: 'historical' });
+        });
     }
 
-    // Light up the room as a warm "ballroom" tinted hub so it reads visually
-    // distinct from the dungeon. Reuse the ballroomRooms set the renderer
-    // already knows about — every tile rounds to room 0,0 here.
-    game.ballroomRooms.add('0,0');
-    game.ballroomRooms.add('1,0');
-    game.ballroomRooms.add('2,0');
-    game.ballroomRooms.add('3,0');
+    // Village status message so the player sees how much life the village has.
+    const totalFigures = Object.keys(HISTORICAL_FIGURES).length;
+    if (typeof window !== 'undefined' && window.UI && window.UI.addMessage) {
+        window.UI.addMessage(
+            `🏘️ Village: ${game.npcs.length} residents · ${figuresMet}/${totalFigures} figures met · ${zinesCollected}/19 zines archived. Walk right to return to the wasteland.`,
+            'special'
+        );
+    }
 }
-
-// Re-export so main.js can import it. Need to also import HISTORICAL_FIGURES
-// at the top of this file (already done implicitly through ZINES import).

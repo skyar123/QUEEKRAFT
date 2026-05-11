@@ -19,7 +19,8 @@ export const UI = {
         gameOver: document.getElementById('game-over-screen'),
         heirSelect: document.getElementById('heir-select-screen'),
         camp: document.getElementById('camp-screen'),
-        levelUp: document.getElementById('level-up-screen')
+        levelUp: document.getElementById('level-up-screen'),
+        mural: document.getElementById('mural-screen')
     },
     
     addMessage(text, type = 'system') {
@@ -295,6 +296,7 @@ export const UI = {
     },
 
     showCamp(gameState, onEnterDungeon, onUpgradeHealth, onUpgradeDamage, lineage, onDifficultyChange, onResetCheckpoint) {
+        this.currentGame = gameState;
         this.modals.camp.style.display = 'flex';
         if (lineage) this.renderLineage(lineage);
 
