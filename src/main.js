@@ -726,14 +726,19 @@ function processTurn() {
         if (troll.moveDelay < troll.maxMoveDelay) return;
         troll.moveDelay = 0;
 
+        // Snap enemy to its tile coords for adjacency math (their float position
+        // includes a sub-tile offset from physics landing).
+        const tx = trollTileX(troll);
+        const ty = trollTileY(troll);
+
         if (troll.enemyType === 'gatekeeper') {
             // Gatekeepers don't move but DO attack if adjacent
-            const dist = Math.abs(px - troll.x) + Math.abs(py - troll.y);
-            if (dist === 1) takeDamage(game, 2);
+            const dist = Math.abs(px - tx) + Math.abs(py - ty);
+            if (dist <= 1) takeDamage(game, 2);
             return;
         }
 
-        const dist = Math.abs(px - troll.x) + Math.abs(py - troll.y);
+        const dist = Math.abs(px - tx) + Math.abs(py - ty);
         let alertRadius = troll.alertRadius;
         if (game.player.trait && game.player.trait.id === 'clocked') alertRadius += 3;
         if (game.player.trait && game.player.trait.id === 'stealth') alertRadius = 1;
@@ -747,23 +752,25 @@ function processTurn() {
         };
 
         const stepToward = () => {
-            const tdx = px > troll.x ? 1 : px < troll.x ? -1 : 0;
-            const tdy = py > troll.y ? 1 : py < troll.y ? -1 : 0;
-            const nx1 = troll.x + tdx, ny1 = troll.y + tdy;
-            const nx2 = troll.x + tdx, ny2 = troll.y;
-            const nx3 = troll.x,       ny3 = troll.y + tdy;
-            if (isPassable(nx1, ny1) && !isProtectedRoom(nx1, ny1) && !game.trolls.find(t => t !== troll && t.x === nx1 && t.y === ny1)) {
-                troll.x += tdx; troll.y += tdy;
-            } else if (isPassable(nx2, ny2) && !isProtectedRoom(nx2, ny2) && !game.trolls.find(t => t !== troll && t.x === nx2 && t.y === ny2)) {
-                troll.x += tdx;
-            } else if (isPassable(nx3, ny3) && !isProtectedRoom(nx3, ny3) && !game.trolls.find(t => t !== troll && t.x === nx3 && t.y === ny3)) {
-                troll.y += tdy;
+            // Path on tile coordinates (enemy float positions don't index the map).
+            const tdx = px > tx ? 1 : px < tx ? -1 : 0;
+            const tdy = py > ty ? 1 : py < ty ? -1 : 0;
+            const nx1 = tx + tdx, ny1 = ty + tdy;
+            const nx2 = tx + tdx, ny2 = ty;
+            const nx3 = tx,       ny3 = ty + tdy;
+            const occupied = (cx, cy) => game.trolls.find(t => t !== troll && trollTileX(t) === cx && trollTileY(t) === cy);
+            if (isPassable(nx1, ny1) && !isProtectedRoom(nx1, ny1) && !occupied(nx1, ny1)) {
+                troll.x = nx1; troll.y = ny1;
+            } else if (isPassable(nx2, ny2) && !isProtectedRoom(nx2, ny2) && !occupied(nx2, ny2)) {
+                troll.x = nx2;
+            } else if (isPassable(nx3, ny3) && !isProtectedRoom(nx3, ny3) && !occupied(nx3, ny3)) {
+                troll.y = ny3;
             }
         };
 
         // CONCERN TROLL: drains HP when adjacent, moves slowly toward player
         if (troll.enemyType === 'concern') {
-            if (dist === 1) {
+            if (dist <= 1) {
                 takeDamage(game, 1);
                 UI.addMessage("Concern Troll whispers 'Are you SURE about this?'", 'death');
             } else if (dist <= alertRadius) {
@@ -795,12 +802,12 @@ function processTurn() {
             const contactDmg = enraged ? 3 : 2;
             const spawnChance = enraged ? 0.45 : 0.25;
             const spawnCap = enraged ? 18 : 12;
-            if (dist === 1) { takeDamage(game, contactDmg); return; }
+            if (dist <= 1) { takeDamage(game, contactDmg); return; }
             if (troll.health < troll.maxHealth / 2 && Math.random() < spawnChance && game.trolls.length < spawnCap) {
                 const tdx = (Math.random() < 0.5 ? -1 : 1);
                 const tdy = (Math.random() < 0.5 ? -1 : 1);
-                if (isPassable(troll.x + tdx, troll.y + tdy)) {
-                    game.trolls.push({ x: troll.x+tdx, y: troll.y+tdy, enemyType: 'wraith',
+                if (isPassable(tx + tdx, ty + tdy)) {
+                    game.trolls.push({ x: tx+tdx, y: ty+tdy, enemyType: 'wraith',
                         health: 1, maxHealth: 1, patrolPath: [], patrolIndex: 0, direction: 1,
                         moveDelay: 0, maxMoveDelay: 1, alertRadius: 8, chasingTurns: 0 });
                     UI.addMessage("⚡ BOSS spawned a Wraith!", "death");
@@ -814,7 +821,7 @@ function processTurn() {
 
         // WRAITH: teleports, high dodge — attack if adjacent
         if (troll.enemyType === 'wraith') {
-            if (dist === 1) { takeDamage(game, 1); return; }
+            if (dist <= 1) { takeDamage(game, 1); return; }
             if (dist <= alertRadius && Math.random() < 0.6) {
                 for (let i = 0; i < 5; i++) game.particles.push({x: troll.x, y: troll.y, vx: 0, vy: -0.4, life: 1, color: '#39FF14'});
                 stepToward();
@@ -824,14 +831,14 @@ function processTurn() {
 
         // POLICE: fast, aggressive, 2 damage
         if (troll.enemyType === 'police') {
-            if (dist === 1) { takeDamage(game, 2); return; }
+            if (dist <= 1) { takeDamage(game, 2); return; }
             if (dist <= alertRadius) stepToward();
             return;
         }
 
         // SWARM (new): tiny, fast, 1 dmg, can stack
         if (troll.enemyType === 'swarm') {
-            if (dist === 1) { takeDamage(game, 1); return; }
+            if (dist <= 1) { takeDamage(game, 1); return; }
             if (dist <= alertRadius) { stepToward(); stepToward(); }
             return;
         }
@@ -844,13 +851,13 @@ function processTurn() {
                 game.floatingText.push({ x: troll.x, y: troll.y, text: '!', life: 30, color: '#FF0000' });
                 return;
             }
-            if (dist === 1) { takeDamage(game, 1); return; }
+            if (dist <= 1) { takeDamage(game, 1); return; }
             if (dist <= alertRadius) stepToward();
             return;
         }
 
         // DEFAULT TROLL: chase forever once alerted, 1 damage on contact
-        if (dist === 1) { takeDamage(game, 1); return; }
+        if (dist <= 1) { takeDamage(game, 1); return; }
         if (dist <= alertRadius) {
             troll.chasingTurns = 99;
             stepToward();
@@ -861,15 +868,17 @@ function processTurn() {
         if (Math.random() < 0.4) {
             const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
             const [rx, ry] = dirs[Math.floor(Math.random() * dirs.length)];
-            if (isPassable(troll.x + rx, troll.y + ry) && !game.trolls.find(t => t.x === troll.x + rx && t.y === troll.y + ry)) {
-                troll.x += rx;
-                troll.y += ry;
+            const nx = tx + rx, ny = ty + ry;
+            if (isPassable(nx, ny) && !game.trolls.find(t => trollTileX(t) === nx && trollTileY(t) === ny)) {
+                troll.x = nx;
+                troll.y = ny;
             }
         }
     });
 
-    // Body-check: if any troll occupies the player's tile
-    const caught = game.trolls.find(t => t.x === px && t.y === py);
+    // Body-check: if any troll occupies the player's tile (compare on
+    // the snapped tile coords because enemy positions are floats).
+    const caught = game.trolls.find(t => trollTileX(t) === px && trollTileY(t) === py);
     if (caught) {
         let dmg = 1;
         if (caught.enemyType === 'police') dmg = 2;
@@ -891,6 +900,12 @@ function processTurn() {
 
 function tileX() { return Math.floor(game.player.x + PLAYER_W / 2); }
 function tileY() { return Math.floor(game.player.y + PLAYER_H / 2); }
+// Enemy positions drift off integer tiles after gravity/landing (see
+// moveEnemyY: e.y = floor(feet) - 0.8 - 0.0001). Snap to the tile that
+// contains the enemy's center so the turn-based AI's distance/adjacency
+// checks work the same way they do for the player.
+function trollTileX(t) { return Math.floor(t.x + 0.4); }
+function trollTileY(t) { return Math.floor(t.y + 0.4); }
 function entityNear(e) {
     return Math.abs(e.x - tileX()) <= 1 && Math.abs(e.y - tileY()) <= 1;
 }
