@@ -1,7 +1,7 @@
 import { UI, DialogueUI, GeminiUI } from './ui.js';
-import { generateMap } from './map.js';
+import { generateMap, generateHubMap } from './map.js';
 import { attackEnemy, takeDamage, tickStatus, tickCombo, resetCombo, applyStatus, isFrozen } from './combat.js';
-import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES, NAMED_ITEM_EFFECTS } from './data.js';
+import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS } from './data.js';
 import { Audio } from './audio.js';
 
 const canvas = document.getElementById('game-canvas');
@@ -29,7 +29,10 @@ const game = {
         checkpointDepth: 1,
         deepestReached: 1,
         // Has the player seen the cinematic intro? Replay button stays in camp.
-        seenIntro: false
+        seenIntro: false,
+        // Cozy quest tracker. Keyed by quest id; value: { status, progress }.
+        // status: 'available' | 'active' | 'ready' | 'completed'.
+        quests: {}
     },
     player: {
         x: 5, y: 5,
@@ -172,7 +175,143 @@ function loadGame() {
     if (typeof game.persistent.checkpointDepth !== 'number') game.persistent.checkpointDepth = 1;
     if (typeof game.persistent.deepestReached !== 'number') game.persistent.deepestReached = 1;
     if (typeof game.persistent.seenIntro !== 'boolean') game.persistent.seenIntro = false;
+    if (!game.persistent.quests || typeof game.persistent.quests !== 'object') game.persistent.quests = {};
 }
+
+// ---------------------------------------------------------------------------
+// Quest helpers. Status flow: 'available' (offered, not accepted) → 'active'
+// (player accepted, progress < target) → 'ready' (progress >= target,
+// awaiting turn-in) → 'completed' (rewarded). 'completed' quests are not
+// re-offered. 'tea_for_the_hearth' and 'archive_keeper' are repeatable.
+const REPEATABLE_QUESTS = new Set(['tea_for_the_hearth', 'archive_keeper']);
+
+function getQuestState(qid) {
+    let st = game.persistent.quests[qid];
+    if (!st) {
+        st = { status: 'available', progress: 0 };
+        game.persistent.quests[qid] = st;
+    }
+    return st;
+}
+
+function questsForGiver(figureKey) {
+    return QUEST_KEYS
+        .map(k => QUESTS[k])
+        .filter(q => q.giver === figureKey || (q.turnInWith && q.turnInWith === figureKey));
+}
+
+// Bump progress for all matching active quests. Called from combat hooks,
+// pickup hooks, and the descend handler.
+function updateQuestProgress(matcher, amount = 1) {
+    for (const qid of QUEST_KEYS) {
+        const q = QUESTS[qid];
+        const st = game.persistent.quests[qid];
+        if (!st || st.status !== 'active') continue;
+        if (!matcher(q)) continue;
+        st.progress = Math.min(q.goal.target, (st.progress || 0) + amount);
+        if (st.progress >= q.goal.target) {
+            st.status = 'ready';
+            UI.addMessage(`📋 Quest ready to turn in: ${q.title}`, 'special');
+        }
+    }
+    saveGame();
+}
+
+// Called when an enemy is killed (combat.js dispatches a window event).
+function onEnemyKilledForQuests(enemyType) {
+    updateQuestProgress(q => q.goal.type === 'kill_enemy' && q.goal.enemyType === enemyType);
+}
+window.__onEnemyKilledForQuests = onEnemyKilledForQuests;
+
+function onZineCollectedForQuests() {
+    updateQuestProgress(q => q.goal.type === 'collect_zines_run');
+}
+
+function onItemCollectedForQuests(itemKey) {
+    updateQuestProgress(q => q.goal.type === 'collect_item' && q.goal.item === itemKey);
+}
+
+function onMuralReadForQuests() {
+    updateQuestProgress(q => q.goal.type === 'read_murals');
+}
+
+function onDepthReachedForQuests(depth) {
+    for (const qid of QUEST_KEYS) {
+        const q = QUESTS[qid];
+        const st = game.persistent.quests[qid];
+        if (!st || st.status !== 'active') continue;
+        if (q.goal.type !== 'reach_depth') continue;
+        if (depth >= q.goal.target) {
+            st.progress = q.goal.target;
+            st.status = 'ready';
+            UI.addMessage(`📋 Quest ready to turn in: ${q.title}`, 'special');
+        } else {
+            st.progress = Math.max(st.progress || 0, depth);
+        }
+    }
+    saveGame();
+}
+
+// Reset per-run progress for run-scoped quests. Called when a new run starts.
+function resetRunScopedQuests() {
+    for (const qid of QUEST_KEYS) {
+        const q = QUESTS[qid];
+        const st = game.persistent.quests[qid];
+        if (!st || st.status !== 'active') continue;
+        if (q.goal.type === 'collect_zines_run') st.progress = 0;
+    }
+}
+
+function acceptQuest(qid) {
+    const st = getQuestState(qid);
+    st.status = 'active';
+    st.progress = 0;
+    UI.addMessage(`📋 Quest accepted: ${QUESTS[qid].title}`, 'special');
+    saveGame();
+}
+
+function turnInQuest(qid) {
+    const q = QUESTS[qid];
+    const st = getQuestState(qid);
+    if (st.status !== 'ready') return false;
+    const r = q.reward || {};
+    if (r.scrap) {
+        game.persistent.treasures += r.scrap;
+        if (typeof game.treasures === 'number') game.treasures += r.scrap;
+    }
+    if (r.permanentHearts) {
+        game.persistent.permanentHearts = (game.persistent.permanentHearts || 0) + r.permanentHearts;
+        if (game.player.alive) {
+            game.player.maxHealth += r.permanentHearts;
+            game.player.health = game.player.maxHealth;
+        }
+    }
+    if (r.permanentDamage) {
+        game.persistent.damageUpgrades = (game.persistent.damageUpgrades || 0) + r.permanentDamage;
+        if (game.player.alive) game.player.baseDamage += r.permanentDamage;
+    }
+    UI.addMessage(`✓ Turned in: ${q.title}. ${r.message || ''}`, 'victory');
+    if (REPEATABLE_QUESTS.has(qid)) {
+        st.status = 'available';
+        st.progress = 0;
+    } else {
+        st.status = 'completed';
+        st.progress = q.goal.target;
+    }
+    UI.updateStatus(game);
+    saveGame();
+    return true;
+}
+window.__acceptQuest = acceptQuest;
+window.__turnInQuest = turnInQuest;
+window.__questsForGiver = (figureKey) => questsForGiver(figureKey).map(q => ({
+    ...q,
+    state: game.persistent.quests[q.id] || { status: 'available', progress: 0 }
+}));
+window.__getAllQuests = () => QUEST_KEYS.map(k => ({
+    ...QUESTS[k],
+    state: game.persistent.quests[k] || { status: 'available', progress: 0 }
+}));
 loadGame();
 
 const PALETTES = [
@@ -541,7 +680,13 @@ function updateParticles() {
 function startCamp() {
     UI.showCamp(
         game,
-        () => { startDungeon(); },
+        () => {
+            // If the player opened the camp modal from inside the hub
+            // (campfire interaction), just close it — don't regenerate the
+            // hub and yank them back to the spawn tile.
+            if (game.inHub && gameStarted) return;
+            enterHub();
+        },
         () => {
             const penalty = (game.player.trait && game.player.trait.id === 'gatekept') ? 2 : 0;
             const cost = game.persistent.healthCost + penalty;
@@ -610,6 +755,7 @@ async function descend() {
     game.persistent.checkpointDepth = Math.max(game.persistent.checkpointDepth || 1, game.depth);
     game.persistent.deepestReached = Math.max(game.persistent.deepestReached || 1, game.depth);
     game.player.depthReached = game.depth;
+    onDepthReachedForQuests(game.depth);
     saveGame();
     // Reset FOV and prompt state so the new floor starts unexplored.
     game.seen = {};
@@ -625,10 +771,43 @@ async function descend() {
     setTimeout(() => overlay.remove(), 600);
 }
 
+// Enter the hub town. Called from startCamp's "Enter Wasteland" callback so
+// every run begins in the hub; the player walks to the 'D' tile to descend.
+function enterHub() {
+    const p = game.player;
+    p.alive = true;
+    // Hub gives the player full health and resets transient combat state, but
+    // does NOT touch persistent quest progress / upgrades.
+    const diff = DIFFICULTIES[game.persistent.difficulty || 'normal'] || DIFFICULTIES.normal;
+    let maxHp = 3 + game.persistent.healthUpgrades + diff.bonusHearts + (game.persistent.permanentHearts || 0);
+    if (p.traits && p.traits.some(t => t.id === 'gigantism')) maxHp += 1;
+    maxHp = Math.max(1, maxHp);
+    p.maxHealth = maxHp;
+    p.health = p.maxHealth;
+    p.baseDamage = 1 + game.persistent.damageUpgrades;
+    p.hurtCooldown = 0;
+    p.vx = 0; p.vy = 0;
+    p.dashTimer = 0; p.dashCooldown = 0;
+    p.powerCooldown = 0; p.powerActive = 0; p.powerType = null;
+    p.jumpsLeft = 1;
+    p.coyoteTimer = 0;
+    p.percent = 0; p.hitstun = 0;
+    p.damageImmune = 0;
+
+    generateHubMap(game);
+    game.camInitialized = false;
+    lastPromptTile = null;
+    UI.updateStatus(game);
+    UI.addMessage('🏠 Welcome to the Safehouse. Walk right to the portal to enter the wasteland.', 'special');
+    UI.addMessage('💬 Talk to residents (USE/F). Quest log: J. Campfire (F-tile) re-opens upgrades.', 'special');
+    gameStarted = true;
+}
+
 function startDungeon() {
     // Reset transient dungeon state but apply persistent upgrades
     const p = game.player;
     p.alive = true;
+    game.inHub = false;
     const diff = DIFFICULTIES[game.persistent.difficulty || 'normal'] || DIFFICULTIES.normal;
     let maxHp = 3 + game.persistent.healthUpgrades + diff.bonusHearts + (game.persistent.permanentHearts || 0);
     if (p.traits && p.traits.some(t => t.id === 'gigantism')) maxHp += 1;
@@ -648,6 +827,7 @@ function startDungeon() {
     p.comboCount = 0; p.comboTimer = 0; p.comboPeak = 0;
     p.lootBuff = 0;
     p.kills = 0; p.scrapEarned = 0; p.depthReached = 1;
+    resetRunScopedQuests();
     p.xp = 0; p.level = 1; p.xpToNext = 100;
     p.percent = 0; p.hitstun = 0;
     p.extraJumps = 0; p.critBonus = 0; p.hasRegen = false; p.hasSpeedPerk = false;
@@ -699,7 +879,9 @@ function isPassable(x, y) {
     const tile = game.map[`${x},${y}`];
     // For AI, FOV, attack target lookups: one-way platforms + spikes are passable
     // (enemies don't avoid spikes — they're a *player* hazard).
-    return tile === '.' || tile === '>' || tile === '=' || tile === '^' || tile === 'C';
+    // Hub-only special tiles ('D' portal, 'F' campfire) are passable too so the
+    // player can stand on them to interact.
+    return tile === '.' || tile === '>' || tile === '=' || tile === '^' || tile === 'C' || tile === 'D' || tile === 'F';
 }
 
 // Legacy turn-based movement kept as a no-op shim — platformer physics handles motion now.
@@ -726,14 +908,19 @@ function processTurn() {
         if (troll.moveDelay < troll.maxMoveDelay) return;
         troll.moveDelay = 0;
 
+        // Snap enemy to its tile coords for adjacency math (their float position
+        // includes a sub-tile offset from physics landing).
+        const tx = trollTileX(troll);
+        const ty = trollTileY(troll);
+
         if (troll.enemyType === 'gatekeeper') {
             // Gatekeepers don't move but DO attack if adjacent
-            const dist = Math.abs(px - troll.x) + Math.abs(py - troll.y);
-            if (dist === 1) takeDamage(game, 2);
+            const dist = Math.abs(px - tx) + Math.abs(py - ty);
+            if (dist <= 1) takeDamage(game, 2);
             return;
         }
 
-        const dist = Math.abs(px - troll.x) + Math.abs(py - troll.y);
+        const dist = Math.abs(px - tx) + Math.abs(py - ty);
         let alertRadius = troll.alertRadius;
         if (game.player.trait && game.player.trait.id === 'clocked') alertRadius += 3;
         if (game.player.trait && game.player.trait.id === 'stealth') alertRadius = 1;
@@ -747,23 +934,25 @@ function processTurn() {
         };
 
         const stepToward = () => {
-            const tdx = px > troll.x ? 1 : px < troll.x ? -1 : 0;
-            const tdy = py > troll.y ? 1 : py < troll.y ? -1 : 0;
-            const nx1 = troll.x + tdx, ny1 = troll.y + tdy;
-            const nx2 = troll.x + tdx, ny2 = troll.y;
-            const nx3 = troll.x,       ny3 = troll.y + tdy;
-            if (isPassable(nx1, ny1) && !isProtectedRoom(nx1, ny1) && !game.trolls.find(t => t !== troll && t.x === nx1 && t.y === ny1)) {
-                troll.x += tdx; troll.y += tdy;
-            } else if (isPassable(nx2, ny2) && !isProtectedRoom(nx2, ny2) && !game.trolls.find(t => t !== troll && t.x === nx2 && t.y === ny2)) {
-                troll.x += tdx;
-            } else if (isPassable(nx3, ny3) && !isProtectedRoom(nx3, ny3) && !game.trolls.find(t => t !== troll && t.x === nx3 && t.y === ny3)) {
-                troll.y += tdy;
+            // Path on tile coordinates (enemy float positions don't index the map).
+            const tdx = px > tx ? 1 : px < tx ? -1 : 0;
+            const tdy = py > ty ? 1 : py < ty ? -1 : 0;
+            const nx1 = tx + tdx, ny1 = ty + tdy;
+            const nx2 = tx + tdx, ny2 = ty;
+            const nx3 = tx,       ny3 = ty + tdy;
+            const occupied = (cx, cy) => game.trolls.find(t => t !== troll && trollTileX(t) === cx && trollTileY(t) === cy);
+            if (isPassable(nx1, ny1) && !isProtectedRoom(nx1, ny1) && !occupied(nx1, ny1)) {
+                troll.x = nx1; troll.y = ny1;
+            } else if (isPassable(nx2, ny2) && !isProtectedRoom(nx2, ny2) && !occupied(nx2, ny2)) {
+                troll.x = nx2;
+            } else if (isPassable(nx3, ny3) && !isProtectedRoom(nx3, ny3) && !occupied(nx3, ny3)) {
+                troll.y = ny3;
             }
         };
 
         // CONCERN TROLL: drains HP when adjacent, moves slowly toward player
         if (troll.enemyType === 'concern') {
-            if (dist === 1) {
+            if (dist <= 1) {
                 takeDamage(game, 1);
                 UI.addMessage("Concern Troll whispers 'Are you SURE about this?'", 'death');
             } else if (dist <= alertRadius) {
@@ -795,12 +984,12 @@ function processTurn() {
             const contactDmg = enraged ? 3 : 2;
             const spawnChance = enraged ? 0.45 : 0.25;
             const spawnCap = enraged ? 18 : 12;
-            if (dist === 1) { takeDamage(game, contactDmg); return; }
+            if (dist <= 1) { takeDamage(game, contactDmg); return; }
             if (troll.health < troll.maxHealth / 2 && Math.random() < spawnChance && game.trolls.length < spawnCap) {
                 const tdx = (Math.random() < 0.5 ? -1 : 1);
                 const tdy = (Math.random() < 0.5 ? -1 : 1);
-                if (isPassable(troll.x + tdx, troll.y + tdy)) {
-                    game.trolls.push({ x: troll.x+tdx, y: troll.y+tdy, enemyType: 'wraith',
+                if (isPassable(tx + tdx, ty + tdy)) {
+                    game.trolls.push({ x: tx+tdx, y: ty+tdy, enemyType: 'wraith',
                         health: 1, maxHealth: 1, patrolPath: [], patrolIndex: 0, direction: 1,
                         moveDelay: 0, maxMoveDelay: 1, alertRadius: 8, chasingTurns: 0 });
                     UI.addMessage("⚡ BOSS spawned a Wraith!", "death");
@@ -814,7 +1003,7 @@ function processTurn() {
 
         // WRAITH: teleports, high dodge — attack if adjacent
         if (troll.enemyType === 'wraith') {
-            if (dist === 1) { takeDamage(game, 1); return; }
+            if (dist <= 1) { takeDamage(game, 1); return; }
             if (dist <= alertRadius && Math.random() < 0.6) {
                 for (let i = 0; i < 5; i++) game.particles.push({x: troll.x, y: troll.y, vx: 0, vy: -0.4, life: 1, color: '#39FF14'});
                 stepToward();
@@ -824,14 +1013,14 @@ function processTurn() {
 
         // POLICE: fast, aggressive, 2 damage
         if (troll.enemyType === 'police') {
-            if (dist === 1) { takeDamage(game, 2); return; }
+            if (dist <= 1) { takeDamage(game, 2); return; }
             if (dist <= alertRadius) stepToward();
             return;
         }
 
         // SWARM (new): tiny, fast, 1 dmg, can stack
         if (troll.enemyType === 'swarm') {
-            if (dist === 1) { takeDamage(game, 1); return; }
+            if (dist <= 1) { takeDamage(game, 1); return; }
             if (dist <= alertRadius) { stepToward(); stepToward(); }
             return;
         }
@@ -844,13 +1033,13 @@ function processTurn() {
                 game.floatingText.push({ x: troll.x, y: troll.y, text: '!', life: 30, color: '#FF0000' });
                 return;
             }
-            if (dist === 1) { takeDamage(game, 1); return; }
+            if (dist <= 1) { takeDamage(game, 1); return; }
             if (dist <= alertRadius) stepToward();
             return;
         }
 
         // DEFAULT TROLL: chase forever once alerted, 1 damage on contact
-        if (dist === 1) { takeDamage(game, 1); return; }
+        if (dist <= 1) { takeDamage(game, 1); return; }
         if (dist <= alertRadius) {
             troll.chasingTurns = 99;
             stepToward();
@@ -861,15 +1050,17 @@ function processTurn() {
         if (Math.random() < 0.4) {
             const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
             const [rx, ry] = dirs[Math.floor(Math.random() * dirs.length)];
-            if (isPassable(troll.x + rx, troll.y + ry) && !game.trolls.find(t => t.x === troll.x + rx && t.y === troll.y + ry)) {
-                troll.x += rx;
-                troll.y += ry;
+            const nx = tx + rx, ny = ty + ry;
+            if (isPassable(nx, ny) && !game.trolls.find(t => trollTileX(t) === nx && trollTileY(t) === ny)) {
+                troll.x = nx;
+                troll.y = ny;
             }
         }
     });
 
-    // Body-check: if any troll occupies the player's tile
-    const caught = game.trolls.find(t => t.x === px && t.y === py);
+    // Body-check: if any troll occupies the player's tile (compare on
+    // the snapped tile coords because enemy positions are floats).
+    const caught = game.trolls.find(t => trollTileX(t) === px && trollTileY(t) === py);
     if (caught) {
         let dmg = 1;
         if (caught.enemyType === 'police') dmg = 2;
@@ -891,6 +1082,12 @@ function processTurn() {
 
 function tileX() { return Math.floor(game.player.x + PLAYER_W / 2); }
 function tileY() { return Math.floor(game.player.y + PLAYER_H / 2); }
+// Enemy positions drift off integer tiles after gravity/landing (see
+// moveEnemyY: e.y = floor(feet) - 0.8 - 0.0001). Snap to the tile that
+// contains the enemy's center so the turn-based AI's distance/adjacency
+// checks work the same way they do for the player.
+function trollTileX(t) { return Math.floor(t.x + 0.4); }
+function trollTileY(t) { return Math.floor(t.y + 0.4); }
 function entityNear(e) {
     return Math.abs(e.x - tileX()) <= 1 && Math.abs(e.y - tileY()) <= 1;
 }
@@ -902,6 +1099,19 @@ function interact() {
 
     if (game.map[`${px},${py}`] === '>') {
         descend();
+        return;
+    }
+
+    // Hub portal: leave the hub and start a fresh dungeon run.
+    if (game.inHub && game.map[`${px},${py}`] === 'D') {
+        UI.addMessage('🌀 You step through the portal into the wasteland.', 'special');
+        startDungeon();
+        return;
+    }
+    // Hub campfire: re-open the legacy upgrade modal so the player can spend
+    // scrap, change difficulty, swap palette, etc. without leaving the hub.
+    if (game.inHub && game.map[`${px},${py}`] === 'F') {
+        startCamp();
         return;
     }
 
@@ -933,6 +1143,7 @@ function interact() {
             Audio.playLoot();
             UI.showZine(item.zineKey);
             addXP(100);
+            onZineCollectedForQuests();
         } else if (item.type === 'healing') {
             const healing = HEALING_ITEMS[item.healingKey];
             let healAmount = healing.healing;
@@ -941,6 +1152,7 @@ function interact() {
             game.player.health = Math.min(game.player.maxHealth, game.player.health + healAmount);
             UI.addMessage(`Used ${item.name}. Healed ${healAmount} HP.`, "healing");
             Audio.playLoot();
+            onItemCollectedForQuests(item.healingKey);
         } else if (item.type === 'treasure') {
             game.treasures++;
             game.persistent.treasures++;
@@ -1227,6 +1439,12 @@ function checkPickups() {
     } else if (game.map[key] === '>') {
         UI.addMessage(`Stairs down. Press USE/F to descend.`);
         lastPromptTile = key;
+    } else if (game.map[key] === 'D') {
+        UI.addMessage(`Wasteland portal. Press USE/F to enter the dungeon.`);
+        lastPromptTile = key;
+    } else if (game.map[key] === 'F') {
+        UI.addMessage(`Campfire. Press USE/F to rest, upgrade, and pick a difficulty.`);
+        lastPromptTile = key;
     }
 
     // Mural reading — check adjacent ceiling tiles for mural messages
@@ -1240,6 +1458,7 @@ function checkPickups() {
                     game.player.health = Math.min(game.player.maxHealth, game.player.health + 0.5);
                     UI.updateStatus(game);
                     lastPromptTile = mk;
+                    onMuralReadForQuests();
                     // Golden sparkle on reading
                     for (let i = 0; i < 10; i++) game.particles.push({
                         x: px + dx, y: py + dy,
@@ -1989,7 +2208,46 @@ function draw() {
                     ctx.fillRect(sx, sy, T, T);
                     ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
                 }
-                if (r.tile === '>') {
+                if (r.tile === 'D') {
+                    // Hub-only: dungeon portal — purple/magenta swirling vortex.
+                    ctx.globalAlpha = 1.0;
+                    const t = game.animFrame * 0.12;
+                    ctx.fillStyle = '#FF00FF';
+                    ctx.shadowBlur = 22; ctx.shadowColor = '#FF00FF';
+                    for (let i = 0; i < 3; i++) {
+                        ctx.globalAlpha = 0.35 - i * 0.08;
+                        ctx.beginPath();
+                        ctx.arc(sx + T/2, sy + T/2, 14 - i * 4 + Math.sin(t + i) * 2, 0, Math.PI*2);
+                        ctx.fill();
+                    }
+                    ctx.globalAlpha = 1.0;
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 12px VT323';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('PORTAL', sx + T/2, sy - 2);
+                    ctx.textAlign = 'left';
+                    ctx.shadowBlur = 0;
+                } else if (r.tile === 'F') {
+                    // Hub-only: campfire — flickering orange glow + label.
+                    ctx.globalAlpha = 1.0;
+                    const flick = (game.animFrame % 8 < 4) ? '#FF8C00' : '#FFD700';
+                    ctx.fillStyle = flick;
+                    ctx.shadowBlur = 16; ctx.shadowColor = '#FF8C00';
+                    ctx.beginPath();
+                    ctx.arc(sx + T/2, sy + T/2 + 2, 9, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.shadowBlur = 6;
+                    ctx.beginPath();
+                    ctx.arc(sx + T/2, sy + T/2 + 4, 4, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = 'bold 12px VT323';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('CAMPFIRE', sx + T/2, sy - 2);
+                    ctx.textAlign = 'left';
+                } else if (r.tile === '>') {
                     ctx.globalAlpha = 1.0;
                     ctx.fillStyle = '#01CDFE';
                     // Faux-glow arc
@@ -2902,12 +3160,13 @@ function draw() {
         ctx.shadowBlur = 0;
     }
 
-    // Quest log overlay (J to toggle) — Cendric-style objective tracker.
+    // Quest log overlay (J to toggle). Top half = headline progress;
+    // bottom half = active/ready cozy quests with per-quest status.
     if (questLogVisible) {
-        const w = 320, h = 220;
+        const w = 380, h = 360;
         const x0 = canvas.width / 2 - w / 2;
         const y0 = canvas.height / 2 - h / 2;
-        ctx.fillStyle = 'rgba(5,5,12,0.92)';
+        ctx.fillStyle = 'rgba(5,5,12,0.94)';
         ctx.fillRect(x0, y0, w, h);
         ctx.strokeStyle = '#FF71CE';
         ctx.shadowColor = '#FF71CE';
@@ -2926,26 +3185,48 @@ function draw() {
         const seenF = Object.keys(game.persistent.seenFigures || {}).length;
 
         let yy = y0 + 50;
-        const line = (label, color) => { ctx.fillStyle = color; ctx.fillText(label, x0 + 16, yy); yy += 20; };
+        const line = (label, color) => { ctx.fillStyle = color; ctx.fillText(label, x0 + 16, yy); yy += 18; };
         line('▸ Recover the lost zines:', '#FFFFFF');
         const zRatio = seenZ / 19;
-        ctx.fillStyle = '#1a1a1a'; ctx.fillRect(x0 + 30, yy - 12, 240, 8);
-        ctx.fillStyle = '#FF71CE'; ctx.fillRect(x0 + 30, yy - 12, 240 * zRatio, 8);
-        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenZ} / 19`, x0 + 280, yy - 4);
-        yy += 12;
+        ctx.fillStyle = '#1a1a1a'; ctx.fillRect(x0 + 30, yy - 10, 280, 8);
+        ctx.fillStyle = '#FF71CE'; ctx.fillRect(x0 + 30, yy - 10, 280 * zRatio, 8);
+        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenZ} / 19`, x0 + 320, yy - 2);
+        yy += 14;
 
         ctx.font = '14px VT323';
         line('▸ Meet the historical figures:', '#FFFFFF');
         const fRatio = seenF / 9;
-        ctx.fillStyle = '#1a1a1a'; ctx.fillRect(x0 + 30, yy - 12, 240, 8);
-        ctx.fillStyle = '#01CDFE'; ctx.fillRect(x0 + 30, yy - 12, 240 * fRatio, 8);
-        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenF} / 9`, x0 + 280, yy - 4);
-        yy += 16;
+        ctx.fillStyle = '#1a1a1a'; ctx.fillRect(x0 + 30, yy - 10, 280, 8);
+        ctx.fillStyle = '#01CDFE'; ctx.fillRect(x0 + 30, yy - 10, 280 * fRatio, 8);
+        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenF} / 9`, x0 + 320, yy - 2);
+        yy += 14;
 
         ctx.font = '14px VT323';
-        line(`▸ Current depth: ${game.depth}  ·  Max reached: ${game.player.depthReached || game.depth}`, '#FFD700');
+        line(`▸ Depth ${game.depth} · Deepest ${game.persistent.deepestReached || game.depth}`, '#FFD700');
         line(`▸ Scrap banked: ${game.persistent.treasures}`, '#39FF14');
-        line(`▸ Lineage size: ${lineage.length}`, '#B967DB');
+
+        // Cozy quests list
+        yy += 8;
+        ctx.fillStyle = '#FF71CE'; ctx.font = 'bold 14px VT323';
+        ctx.fillText('— COZY QUESTS —', x0 + 16, yy); yy += 18;
+        ctx.font = '13px VT323';
+        const allQuests = (typeof window.__getAllQuests === 'function') ? window.__getAllQuests() : [];
+        if (allQuests.length === 0) {
+            ctx.fillStyle = '#888'; ctx.fillText('Talk to NPCs to discover quests.', x0 + 16, yy); yy += 16;
+        }
+        for (const q of allQuests) {
+            const s = q.state.status;
+            if (s === 'completed') continue;
+            let prefix = '○', col = '#888';
+            if (s === 'active') { prefix = '◐'; col = '#01CDFE'; }
+            else if (s === 'ready') { prefix = '✓'; col = '#FFD700'; }
+            ctx.fillStyle = col;
+            const progressStr = (s === 'active' || s === 'ready') ? ` (${q.state.progress}/${q.goal.target})` : '';
+            ctx.fillText(`${prefix} ${q.title}${progressStr}`, x0 + 16, yy); yy += 14;
+            ctx.fillStyle = '#aaa'; ctx.font = '11px VT323';
+            ctx.fillText(`   ${q.summary}`, x0 + 16, yy); yy += 14;
+            ctx.font = '13px VT323';
+        }
 
         ctx.fillStyle = '#888';
         ctx.font = '12px VT323';
@@ -3383,6 +3664,8 @@ function setupControls() {
         const px = Math.floor(game.player.x + PLAYER_W / 2);
         const pyMid = Math.floor(game.player.y + PLAYER_H - 0.1);
         if (game.map[`${px},${pyMid}`] === '>') { descend(); return; }
+        if (game.inHub && game.map[`${px},${pyMid}`] === 'D') { startDungeon(); return; }
+        if (game.inHub && game.map[`${px},${pyMid}`] === 'F') { startCamp(); return; }
         interact();
     });
 
