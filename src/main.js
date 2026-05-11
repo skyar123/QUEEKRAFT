@@ -377,8 +377,6 @@ function generateHeirs() {
 // === Asset manifest ===
 // Drop a file at the listed path and it picks up automatically.
 const ASSET_PATHS = {
-    tex_floor: '/images/tex_floor.png',
-    tex_wall:  '/images/tex_wall.png',
     player:    '/images/spr_player.png',
     enemy:     '/images/spr_enemy.png',
     boss:      '/images/spr_dark_beast.png',
@@ -409,7 +407,20 @@ const ASSET_PATHS = {
     loot_forage_basket:      '/images/spr_forage_basket.png',
     loot_gravl_heart:        '/images/spr_gravl_heart.png',
     loot_spray_can:          '/images/spr_spray_can.png',
-    loot_tattoo_gun:         '/images/spr_tattoo_gun.png'
+    loot_tattoo_gun:         '/images/spr_tattoo_gun.png',
+
+    tile_floor: '/images/tile_floor.png',
+    tile_wall: '/images/tile_wall.png',
+    tile_platform: '/images/tile_platform.png',
+    tile_dirt: '/images/tile_dirt.png',
+    tile_grass: '/images/tile_grass.png',
+    tile_ice: '/images/tile_ice.png',
+    tile_trampoline: '/images/tile_trampoline.png',
+    tile_spikes: '/images/tile_spikes.png',
+    tile_water: '/images/tile_water.png',
+    tile_acid: '/images/tile_acid.png',
+    tile_neon_border: '/images/tile_neon_border.png',
+    tile_background: '/images/tile_background.png'
 };
 
 // Enemy type → sprite key. Renderer falls back to generic `enemy` art
@@ -510,8 +521,18 @@ function initGame() {
         game.player.className = CLASSES[0].name;
     }
 
-    if (imgReady(images.tex_floor)) patterns.floor = ctx.createPattern(images.tex_floor, 'repeat');
-    if (imgReady(images.tex_wall)) patterns.wall = ctx.createPattern(images.tex_wall, 'repeat');
+    if (imgReady(images.tile_floor)) patterns.floor = ctx.createPattern(images.tile_floor, 'repeat');
+    if (imgReady(images.tile_wall)) patterns.wall = ctx.createPattern(images.tile_wall, 'repeat');
+    if (imgReady(images.tile_platform)) patterns.platform = ctx.createPattern(images.tile_platform, 'repeat');
+    if (imgReady(images.tile_dirt)) patterns.dirt = ctx.createPattern(images.tile_dirt, 'repeat');
+    if (imgReady(images.tile_grass)) patterns.grass = ctx.createPattern(images.tile_grass, 'repeat');
+    if (imgReady(images.tile_ice)) patterns.ice = ctx.createPattern(images.tile_ice, 'repeat');
+    if (imgReady(images.tile_trampoline)) patterns.trampoline = ctx.createPattern(images.tile_trampoline, 'repeat');
+    if (imgReady(images.tile_spikes)) patterns.spikes = ctx.createPattern(images.tile_spikes, 'repeat');
+    if (imgReady(images.tile_water)) patterns.water = ctx.createPattern(images.tile_water, 'repeat');
+    if (imgReady(images.tile_acid)) patterns.acid = ctx.createPattern(images.tile_acid, 'repeat');
+    if (imgReady(images.tile_neon_border)) patterns.neon_border = ctx.createPattern(images.tile_neon_border, 'repeat');
+    if (imgReady(images.tile_background)) patterns.background = ctx.createPattern(images.tile_background, 'repeat');
 
     // First-time players see the cinematic intro before the camp screen.
     if (!game.persistent.seenIntro) {
@@ -2138,35 +2159,16 @@ function draw() {
                     ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
                 }
             } else if (r.tile === '~') {
-                // Ice — pale blue floor tile with a glossy highlight.
-                drawTile(ctx, sx, sy, '#1a3a4a', true, r.isVisible ? 'rgba(91,206,250,0.45)' : null, null);
-                if (r.isVisible) {
-                    ctx.globalAlpha = 0.55;
-                    ctx.fillStyle = '#5BCEFA';
-                    ctx.fillRect(sx + 1, sy + 1, T - 2, 6);
-                    ctx.globalAlpha = 0.85;
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.fillRect(sx + 4, sy + 2, T - 14, 2);
-                }
+                drawTile(ctx, sx, sy, '#1a3a4a', true, r.isVisible ? 'rgba(91,206,250,0.45)' : null, r.isVisible ? patterns.ice : null);
             } else if (r.tile === 'T') {
-                // Trampoline — pink/yellow pad with a glowing top stripe.
-                drawTile(ctx, sx, sy, '#1a0a14', true, null, null);
-                if (r.isVisible) {
-                    ctx.globalAlpha = 1.0;
-                    ctx.fillStyle = '#FF71CE';
-                    ctx.fillRect(sx + 2, sy + 4, T - 4, T - 12);
-                    ctx.fillStyle = '#FFD700';
-                    ctx.fillRect(sx + 2, sy + 4, T - 4, 3);
-                    // Springs
-                    ctx.strokeStyle = '#FFD700';
-                    ctx.lineWidth = 1;
-                    for (let s = 0; s < 3; s++) {
-                        ctx.beginPath();
-                        ctx.moveTo(sx + 6 + s * 8, sy + T - 8);
-                        ctx.lineTo(sx + 6 + s * 8, sy + T - 2);
-                        ctx.stroke();
-                    }
-                }
+                drawTile(ctx, sx, sy, '#1a0a14', true, null, r.isVisible ? patterns.trampoline : null);
+            } else if (r.tile === '^') {
+                drawTile(ctx, sx, sy, '#1a0a14', false, null, r.isVisible ? patterns.spikes : null);
+            } else if (r.tile === '=') {
+                drawTile(ctx, sx, sy, '#1a0a14', false, null, r.isVisible ? patterns.platform : null);
+            } else if (r.tile === 'C') {
+                const broke = game.crumbleState && game.crumbleState[`${r.x},${r.y}`] && game.crumbleState[`${r.x},${r.y}`].broken;
+                if (!broke) drawTile(ctx, sx, sy, '#1a0a14', false, null, r.isVisible ? patterns.dirt : null);
             } else {
                 const floorColor = r.isVisible ? '#0a0a0a' : '#030303';
                 let floorGlow = r.isVisible ? 'rgba(1,205,254,0.3)' : null;

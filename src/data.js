@@ -1,27 +1,27 @@
 export const ZINES = {
-    'tucking': { title: 'Safe Tucking Guide', image: '/images/items/zine_tucking.png', content: '<h3>Safe Tucking</h3><p>Medical tape only, never duct tape! Take breaks every 8 hours. Your safety comes first.</p>' },
-    'binding': { title: 'Chest Binding Safety', content: '<h3>Binding Safety</h3><p>Use proper binders, never ace bandages. Listen to your body. Take breaks.</p>' },
-    'hrt': { title: 'HRT Guide', content: '<h3>Hormone Therapy</h3><p>Work with qualified doctors. Informed consent clinics are available. You deserve care.</p>' },
-    'legal': { title: 'Legal Rights', content: '<h3>Know Your Rights</h3><p>Title VII protects employment. Laws vary by location. Knowledge is power.</p>' },
-    'consent': { title: 'Consent Guide', content: '<h3>Consent & Communication</h3><p>Freely given, informed, enthusiastic, ongoing, specific. Always.</p>' },
-    'pronouns': { title: 'Pronoun Guide', content: '<h3>Using Pronouns</h3><p>Ask when appropriate, practice consistently, correct mistakes quickly.</p>' },
-    'gendertrash': { title: 'gendertrash from hell', content: '<h3>Transsexual Resistance</h3><p>"We are not your gender positive genetics, we are your worst nightmare. We are the ones who refuse to disappear quietly."</p>' },
-    'faith': { title: 'Faith / Fe', content: '<h3>La fuerza de las transiciones</h3><p>Queer love transcends languages, borders, bodies. Fe: believing in tomorrow when today feels impossible.</p>' },
-    'landscape': { title: 'First Landscape', content: '<h3>Tentative Maps</h3><p>"My gender is unmappable. Liminal territories require different instruments: intuition, patience, willingness to get lost."</p>' },
-    'godwithin': { title: 'The God Within', content: '<h3>Black Queerness Across Diaspora</h3><p>"Before they told us we were wrong, we were sacred. Pre-colonial truth: gender was a river, not a wall."</p>' },
-    'drrad': { title: 'Dr. RAD\'s Queer Health Show', content: '<h3>DIY Health for Queers</h3><p>"Your body parts don\'t match their medical forms. Good health means being seen as you are, not who they think you should be."</p>' },
-    'insurrection': { title: 'Toward the Queerest Insurrection', content: '<h3>Against Assimilation</h3><p>"Marriage won\'t save us. Only insurrection. Only the complete dismantling of everything that makes them comfortable."</p>' },
-    'genderreal': { title: 'is gender real?', content: '<h3>Philosophical Questions</h3><p>"What do you mean by real? What do you mean by gender? Gender is a construct and so are you. The sound of freedom."</p>' },
-    'gaylordphoenix': { title: 'Gaylord Phoenix', content: '<h3>Queer Mystical Adventure</h3><p>"The gaylord phoenix willing to sacrifice anything for love, for self-knowledge, for the violent beautiful truth of becoming."</p>' },
-    'affirmations': { title: 'Authentic Affirmations pt. 3', content: '<h3>Still Here, Still Queer</h3><p>"You are not too much or not enough. You are exactly the right amount of yourself. Your existence is resistance."</p>' },
-    'theywalk': { title: 'They Walk', content: '<h3>Nonbinary Identity</h3><p>"They/them/theirs not because I\'m confused but because I\'m clear. Walking toward the family that chooses me back."</p>' },
-    'alexlearns': { title: 'Alex Learns about Gender Identity', content: '<h3>Educational Zine</h3><p>"Gender is not your body, clothes, name, or toys. Gender is YOU. Only you can know what feels right for you."</p>' },
-    'euphoria': { title: 'Gender Euphoria', content: '<h3>Celebrating Trans Joy</h3><p>"Trans nonbinary/genderqueer is not a problem to be solved. It\'s a joy to be celebrated. Euphoria comes in waves."</p>' },
-    'menstruation': { title: 'Zine on Menstruation', content: '<h3>Questioning Binaries</h3><p>"Not all women menstruate, not all who menstruate are women. Periods ≠ womanhood, bleeding ≠ binary."</p>' },
-    'ballroom_legacy': { title: 'Ballroom Legacy', content: '<h3>Children of the House</h3><p>"The Ballroom gave us what biology denied: mothers who chose us, houses that held us, stages where we were finally crowned. Chosen family is not lesser family — it is the truest kind."</p>' },
-    'star_manifesto': { title: 'STAR Manifesto', content: '<h3>Street Transvestite Action Revolutionaries</h3><p>"STAR was for the street gay people, the people who are radical, the people who wanted change. We were fighting for homeless trans youth when nobody else would. STAR House belonged to us all." — Sylvia Rivera</p>' },
-    'trans_motherhood': { title: 'Trans Mothers of the World', content: '<h3>Mother is a Verb</h3><p>"From Marsha to Mariela, Crystal to Gauri — trans mothers have raised children the world abandoned. Motherhood is not biology. It is devotion, protection, teaching a child they are loved and worthy of being here."</p>' },
-    'chosen_family_guide': { title: 'Building Your Chosen Family', content: '<h3>A Practical Guide</h3><p>"Step 1: Show up. Step 2: Show up again. Step 3: Keep showing up when things get hard. Chosen family is built in crisis and in joy, in shared meals and shared shelters. You earn it by giving it."</p>' }
+    'tucking': { title: 'Safe Tucking Guide', image: '/images/zine_diy.png', content: '<h3>Safe Tucking</h3><p>Medical tape only, never duct tape! Take breaks every 8 hours. Your safety comes first.</p>' },
+    'binding': { title: 'Chest Binding Safety', image: '/images/zine_punk.png', content: '<h3>Binding Safety</h3><p>Use proper binders, never ace bandages. Listen to your body. Take breaks.</p>' },
+    'hrt': { title: 'HRT Guide', image: '/images/zine_herbal.png', content: '<h3>Hormone Therapy</h3><p>Work with qualified doctors. Informed consent clinics are available. You deserve care.</p>' },
+    'legal': { title: 'Legal Rights', image: '/images/zine_abolition.png', content: '<h3>Know Your Rights</h3><p>Title VII protects employment. Laws vary by location. Knowledge is power.</p>' },
+    'consent': { title: 'Consent Guide', image: '/images/zine_mutual_aid.png', content: '<h3>Consent & Communication</h3><p>Freely given, informed, enthusiastic, ongoing, specific. Always.</p>' },
+    'pronouns': { title: 'Pronoun Guide', image: '/images/zine_queer.png', content: '<h3>Using Pronouns</h3><p>Ask when appropriate, practice consistently, correct mistakes quickly.</p>' },
+    'gendertrash': { title: 'gendertrash from hell', image: '/images/zine_punk.png', content: '<h3>Transsexual Resistance</h3><p>"We are not your gender positive genetics, we are your worst nightmare. We are the ones who refuse to disappear quietly."</p>' },
+    'faith': { title: 'Faith / Fe', image: '/images/zine_witch.png', content: '<h3>La fuerza de las transiciones</h3><p>Queer love transcends languages, borders, bodies. Fe: believing in tomorrow when today feels impossible.</p>' },
+    'landscape': { title: 'First Landscape', image: '/images/zine_appalachia.png', content: '<h3>Tentative Maps</h3><p>"My gender is unmappable. Liminal territories require different instruments: intuition, patience, willingness to get lost."</p>' },
+    'godwithin': { title: 'The God Within', image: '/images/zine_history.png', content: '<h3>Black Queerness Across Diaspora</h3><p>"Before they told us we were wrong, we were sacred. Pre-colonial truth: gender was a river, not a wall."</p>' },
+    'drrad': { title: 'Dr. RAD\'s Queer Health Show', image: '/images/zine_herbal.png', content: '<h3>DIY Health for Queers</h3><p>"Your body parts don\'t match their medical forms. Good health means being seen as you are, not who they think you should be."</p>' },
+    'insurrection': { title: 'Toward the Queerest Insurrection', image: '/images/zine_anarchist.png', content: '<h3>Against Assimilation</h3><p>"Marriage won\'t save us. Only insurrection. Only the complete dismantling of everything that makes them comfortable."</p>' },
+    'genderreal': { title: 'is gender real?', image: '/images/zine_art.png', content: '<h3>Philosophical Questions</h3><p>"What do you mean by real? What do you mean by gender? Gender is a construct and so are you. The sound of freedom."</p>' },
+    'gaylordphoenix': { title: 'Gaylord Phoenix', image: '/images/zine_art.png', content: '<h3>Queer Mystical Adventure</h3><p>"The gaylord phoenix willing to sacrifice anything for love, for self-knowledge, for the violent beautiful truth of becoming."</p>' },
+    'affirmations': { title: 'Authentic Affirmations pt. 3', image: '/images/zine_poetry.png', content: '<h3>Still Here, Still Queer</h3><p>"You are not too much or not enough. You are exactly the right amount of yourself. Your existence is resistance."</p>' },
+    'theywalk': { title: 'They Walk', image: '/images/zine_poetry.png', content: '<h3>Nonbinary Identity</h3><p>"They/them/theirs not because I\'m confused but because I\'m clear. Walking toward the family that chooses me back."</p>' },
+    'alexlearns': { title: 'Alex Learns about Gender Identity', image: '/images/zine_history.png', content: '<h3>Educational Zine</h3><p>"Gender is not your body, clothes, name, or toys. Gender is YOU. Only you can know what feels right for you."</p>' },
+    'euphoria': { title: 'Gender Euphoria', image: '/images/zine_music.png', content: '<h3>Celebrating Trans Joy</h3><p>"Trans nonbinary/genderqueer is not a problem to be solved. It\'s a joy to be celebrated. Euphoria comes in waves."</p>' },
+    'menstruation': { title: 'Zine on Menstruation', image: '/images/zine_witch.png', content: '<h3>Questioning Binaries</h3><p>"Not all women menstruate, not all who menstruate are women. Periods ≠ womanhood, bleeding ≠ binary."</p>' },
+    'ballroom_legacy': { title: 'Ballroom Legacy', image: '/images/zine_history.png', content: '<h3>Children of the House</h3><p>"The Ballroom gave us what biology denied: mothers who chose us, houses that held us, stages where we were finally crowned. Chosen family is not lesser family — it is the truest kind."</p>' },
+    'star_manifesto': { title: 'STAR Manifesto', image: '/images/zine_anarchist.png', content: '<h3>Street Transvestite Action Revolutionaries</h3><p>"STAR was for the street gay people, the people who are radical, the people who wanted change. We were fighting for homeless trans youth when nobody else would. STAR House belonged to us all." — Sylvia Rivera</p>' },
+    'trans_motherhood': { title: 'Trans Mothers of the World', image: '/images/zine_queer.png', content: '<h3>Mother is a Verb</h3><p>"From Marsha to Mariela, Crystal to Gauri — trans mothers have raised children the world abandoned. Motherhood is not biology. It is devotion, protection, teaching a child they are loved and worthy of being here."</p>' },
+    'chosen_family_guide': { title: 'Building Your Chosen Family', image: '/images/zine_mutual_aid.png', content: '<h3>A Practical Guide</h3><p>"Step 1: Show up. Step 2: Show up again. Step 3: Keep showing up when things get hard. Chosen family is built in crisis and in joy, in shared meals and shared shelters. You earn it by giving it."</p>' }
 };
 
 export const HISTORICAL_FIGURES = {
@@ -731,20 +731,20 @@ export const HISTORICAL_FIGURES = {
 };
 
 export const TREASURES = {
-    'flag': { name: 'Pride Flag', desc: 'A beautiful rainbow flag!', image: '/images/items/flag.png' },
-    'nametag': { name: 'Name Tag', desc: 'Your real name in bold letters.', image: '/images/items/nametag.png' },
-    'letter': { name: 'Support Letter', desc: 'Love from chosen family.', image: '/images/items/letter.png' },
-    'meds': { name: 'HRT Meds', desc: 'Steps toward authenticity.', image: '/images/items/meds.png' },
-    'pin': { name: 'Trans Pin', desc: 'Small but powerful symbol.', image: '/images/items/pin.png' },
-    'photo': { name: 'Family Photo', desc: 'Your chosen family at Pride.', image: '/images/items/photo.png' },
-    'mirror': { name: 'Affirming Mirror', desc: 'Shows your true self.', image: '/images/items/mirror.png' },
-    'notes': { name: 'Therapy Notes', desc: 'Wisdom for the journey.', image: '/images/items/notes.png' }
+    'flag': { name: 'Pride Flag', desc: 'A beautiful rainbow flag!', image: '/images/item_pride_flag.png' },
+    'nametag': { name: 'Name Tag', desc: 'Your real name in bold letters.', image: '/images/item_kindred.png' },
+    'letter': { name: 'Support Letter', desc: 'Love from chosen family.', image: '/images/item_outright.png' },
+    'meds': { name: 'HRT Meds', desc: 'Steps toward authenticity.', image: '/images/item_trans_charm.png' },
+    'pin': { name: 'Trans Pin', desc: 'Small but powerful symbol.', image: '/images/item_resistance_pin.png' },
+    'photo': { name: 'Family Photo', desc: 'Your chosen family at Pride.', image: '/images/item_stonewall.png' },
+    'mirror': { name: 'Affirming Mirror', desc: 'Shows your true self.', image: '/images/item_civic_shield.png' },
+    'notes': { name: 'Therapy Notes', desc: 'Wisdom for the journey.', image: '/images/item_archive.png' }
 };
 
 export const HEALING_ITEMS = {
-    'tea': { name: 'Healing Tea', desc: 'Chamomile and lavender restore you.', healing: 1, image: '/images/items/tea.png' },
-    'book': { name: 'Book of Affirmations', desc: 'Self-love heals wounds.', healing: 2, image: '/images/items/book.png' },
-    'crystal': { name: 'Healing Crystal', desc: 'Amethyst radiates healing energy.', healing: 3, image: '/images/items/crystal.png' }
+    'tea': { name: 'Healing Tea', desc: 'Chamomile and lavender restore you.', healing: 1, image: '/images/item_tea.png' },
+    'book': { name: 'Book of Affirmations', desc: 'Self-love heals wounds.', healing: 2, image: '/images/item_book.png' },
+    'crystal': { name: 'Healing Crystal', desc: 'Amethyst radiates healing energy.', healing: 3, image: '/images/item_crystal.png' }
 };
 
 export const GEMINI_GUIDE = {
