@@ -380,26 +380,51 @@ function generateHeirs() {
 // === Asset manifest ===
 // Drop a file at the listed path and it picks up automatically.
 const ASSET_PATHS = {
-    player:    '/images/spr_player.png',
-    enemy:     '/images/spr_enemy.png',
-    boss:      '/images/spr_dark_beast.png',
-    chest:     '/images/spr_chest.png',
-    chest_open:'/images/spr_chest_open.png',
-    marsha:    '/images/spr_marsha.png',
-    zine:      '/images/spr_zine.png',
-
-    // Per-figure NPC overrides (renderer falls back to procedural filler)
+    // ── Player ──────────────────────────────────────────────────────────
+    player:             '/images/spr_player.png',
+    player_blue:        '/images/spr_player_blue.png',
+    player_pink:        '/images/spr_player_pink.png',
+    player_rainbow:     '/images/spr_player_rainbow.png',
+    // ── Core sprites ────────────────────────────────────────────────────
+    chest:              '/images/spr_chest.png',
+    chest_open:         '/images/spr_chest_open.png',
+    zine:               '/images/spr_zine.png',
+    boss:               '/images/spr_boss.png',
+    // ── NPC figure sprites ──────────────────────────────────────────────
     npc_community_mothers: '/images/spr_community_mothers.png',
-
-    // Enemy variants — keyed by ENEMY_SPRITES below
-    enemy_dark_beast:      '/images/spr_dark_beast.png',
-    enemy_ghost:           '/images/spr_ghost_enemy.png',
-    enemy_bureaucracy:     '/images/spr_bureaucracy_enemy.png',
+    npc_marsha:         '/images/spr_marsha.png',
+    npc_sylvia:         '/images/spr_sylvia.png',
+    npc_eleanor:        '/images/spr_eleanor.png',
+    npc_charley:        '/images/spr_charley.png',
+    npc_dora:           '/images/spr_dora.png',
+    npc_hart:           '/images/spr_hart.png',
+    npc_lili:           '/images/spr_lili.png',
+    npc_lucy:           '/images/spr_lucy.png',
+    npc_christine:      '/images/spr_christine.png',
+    npc_holly:          '/images/spr_holly.png',
+    npc_zeke:           '/images/spr_zeke.png',
+    npc_divine:         '/images/spr_divine.png',
+    npc_peyton:         '/images/spr_peyton.png',
+    npc_allison:        '/images/spr_allison.png',
+    // ── Enemy sprites ───────────────────────────────────────────────────
+    enemy:              '/images/spr_enemy.png',
+    enemy_wraith:       '/images/spr_wraith.png',
+    enemy_gatekeeper:   '/images/spr_gatekeeper.png',
+    enemy_concern:      '/images/spr_concern_troll.png',
+    enemy_police:       '/images/spr_police.png',
+    enemy_bigot:        '/images/spr_bigot.png',
+    enemy_swarm:        '/images/spr_swarm.png',
+    enemy_boss:         '/images/spr_boss.png',
+    enemy_cop_bot:      '/images/spr_cop_bot.png',
+    enemy_noise:        '/images/spr_noise_ordinance.png',
+    enemy_preacher:     '/images/spr_preacher.png',
+    enemy_dark_beast:   '/images/spr_dark_beast.png',
+    enemy_ghost:        '/images/spr_ghost_enemy.png',
+    enemy_bureaucracy:  '/images/spr_bureaucracy_enemy.png',
     enemy_corporate_drone: '/images/spr_corporate_drone.png',
-    enemy_gentrifier:      '/images/spr_gentrifier.png',
-    enemy_hb2_enforcer:    '/images/spr_hb2_enforcer.png',
-
-    // Themed loot art — referenced via NAMED_LOOT_SPRITES below
+    enemy_gentrifier:   '/images/spr_gentrifier.png',
+    enemy_hb2_enforcer: '/images/spr_hb2_enforcer.png',
+    // ── Themed loot art ─────────────────────────────────────────────────
     loot_crown:              '/images/spr_crown.png',
     loot_pride_medallion:    '/images/spr_pride_medallion.png',
     loot_bouquet:            '/images/spr_bouquet.png',
@@ -411,66 +436,137 @@ const ASSET_PATHS = {
     loot_gravl_heart:        '/images/spr_gravl_heart.png',
     loot_spray_can:          '/images/spr_spray_can.png',
     loot_tattoo_gun:         '/images/spr_tattoo_gun.png',
-
-    tile_floor: '/images/tile_floor.png',
-    tile_wall: '/images/tile_wall.png',
-    tile_platform: '/images/tile_platform.png',
-    tile_dirt: '/images/tile_dirt.png',
-    tile_grass: '/images/tile_grass.png',
-    tile_ice: '/images/tile_ice.png',
-    tile_trampoline: '/images/tile_trampoline.png',
-    tile_spikes: '/images/tile_spikes.png',
-    tile_water: '/images/tile_water.png',
-    tile_acid: '/images/tile_acid.png',
+    // ── Generated item art ──────────────────────────────────────────────
+    item_archive:        '/images/item_archive.png',
+    item_bloom:          '/images/item_bloom.png',
+    item_bodhi:          '/images/item_bodhi.png',
+    item_book:           '/images/item_book.png',
+    item_civic_shield:   '/images/item_civic_shield.png',
+    item_crystal:        '/images/item_crystal.png',
+    item_electric_dirt:  '/images/item_electric_dirt.png',
+    item_fierce_light:   '/images/item_fierce_light.png',
+    item_firestorm:      '/images/item_firestorm.png',
+    item_hearth:         '/images/item_hearth.png',
+    item_homegrown:      '/images/item_homegrown.png',
+    item_kindred:        '/images/item_kindred.png',
+    item_outright:       '/images/item_outright.png',
+    item_phoenix:        '/images/item_phoenix.png',
+    item_pick:           '/images/item_pick.png',
+    item_pride_flag:     '/images/item_pride_flag.png',
+    item_resistance_pin: '/images/item_resistance_pin.png',
+    item_shelter_key:    '/images/item_shelter_key.png',
+    item_stonewall:      '/images/item_stonewall.png',
+    item_sweet_tea:      '/images/item_sweet_tea.png',
+    item_tea:            '/images/item_tea.png',
+    item_trans_charm:    '/images/item_trans_charm.png',
+    // ── Tile textures ───────────────────────────────────────────────────
+    tile_floor:       '/images/tile_floor.png',
+    tile_wall:        '/images/tile_wall.png',
+    tile_platform:    '/images/tile_platform.png',
+    tile_dirt:        '/images/tile_dirt.png',
+    tile_grass:       '/images/tile_grass.png',
+    tile_ice:         '/images/tile_ice.png',
+    tile_trampoline:  '/images/tile_trampoline.png',
+    tile_spikes:      '/images/tile_spikes.png',
+    tile_water:       '/images/tile_water.png',
+    tile_acid:        '/images/tile_acid.png',
     tile_neon_border: '/images/tile_neon_border.png',
-    tile_background: '/images/tile_background.png'
+    tile_background:  '/images/tile_background.png',
+    // ── Zine covers ─────────────────────────────────────────────────────
+    zine_abolition:   '/images/zine_abolition.png',
+    zine_anarchist:   '/images/zine_anarchist.png',
+    zine_appalachia:  '/images/zine_appalachia.png',
+    zine_art:         '/images/zine_art.png',
+    zine_diy:         '/images/zine_diy.png',
+    zine_herbal:      '/images/zine_herbal.png',
+    zine_history:     '/images/zine_history.png',
+    zine_music:       '/images/zine_music.png',
+    zine_mutual_aid:  '/images/zine_mutual_aid.png',
+    zine_poetry:      '/images/zine_poetry.png',
+    zine_punk:        '/images/zine_punk.png',
+    zine_queer:       '/images/zine_queer.png',
+    zine_witch:       '/images/zine_witch.png'
 };
 
-// Enemy type → sprite key. Renderer falls back to generic `enemy` art
-// when an enemyType isn't listed (swarm stays procedural; boss uses `boss`).
+// Enemy type → sprite key. Uses dedicated sprites first.
 const ENEMY_SPRITES = {
     troll:      'enemy_dark_beast',
-    wraith:     'enemy_ghost',
-    gatekeeper: 'enemy_bureaucracy',
-    concern:    'enemy_corporate_drone',
-    bigot:      'enemy_gentrifier',
-    police:     'enemy_hb2_enforcer'
+    wraith:     'enemy_wraith',
+    gatekeeper: 'enemy_gatekeeper',
+    concern:    'enemy_concern',
+    police:     'enemy_police',
+    bigot:      'enemy_bigot',
+    swarm:      'enemy_swarm',
+    cop_bot:    'enemy_cop_bot',
+    noise:      'enemy_noise',
+    preacher:   'enemy_preacher'
 };
 
-// Named-loot → sprite key. Renderer looks up loot.name here so themed
-// legendary/epic drops get unique art instead of the generic gem.
+// NPC figure key → sprite key. Renderer falls back to colored filler
+// when a figure's sprite isn't loaded.
+const NPC_SPRITES = {
+    'community_mothers':     'npc_community_mothers',
+    'marsha':                'npc_marsha',
+    'sylvia':                'npc_sylvia',
+    'eleanor':               'npc_eleanor',
+    'charley':               'npc_charley',
+    'dora':                  'npc_dora',
+    'alan':                  'npc_hart',
+    'lili':                  'npc_lili',
+    'lucy':                  'npc_lucy',
+    'christine':             'npc_christine',
+    'holly':                 'npc_holly',
+    'william_dorsey_swann':  'npc_zeke',
+    'divine':                'npc_divine',
+    'peyton_oconner':        'npc_peyton',
+    'allison_scott':         'npc_allison',
+    'mama_gloria':           'npc_holly',
+    'blade_journalists':     'npc_divine',
+    'crystal_labeija':       'npc_divine',
+    'paris_dupree':          'npc_zeke',
+    'dorian_corey':          'npc_holly',
+    'kenya_cuevas':          'npc_allison',
+    'cleopatra_kambugu':     'npc_dora',
+    'mariela_munoz':         'npc_lucy'
+};
+// Named-loot → sprite key. Uses the new item_ art where available.
 const NAMED_LOOT_SPRITES = {
     'Crown of Eleanor Rykener':         'loot_crown',
     "LaBeija's Trophy":                 'loot_pride_medallion',
     'The Mausoleum Flower':             'loot_bouquet',
-    'Hearth Stone':                     'loot_gravl_heart',
-    "Mother's Fierce Light":            'loot_pride_medallion',
+    'Hearth Stone':                     'item_hearth',
+    "Mother's Fierce Light":            'item_fierce_light',
     "House Mother's Sash":              'loot_pride_medallion',
-    'Stonewall Brick':                  'loot_bike_lock_grounded',
-    "Compton's Cafeteria Sugar Shaker": 'loot_chalk_bag',
+    'Stonewall Brick':                  'item_stonewall',
+    "Compton's Cafeteria Sugar Shaker": 'item_sweet_tea',
     "Lili's Last Brushstroke":          'loot_spray_can',
-    'Safe Shelter Key':                 'loot_bike_lock',
-    'STAR House Key':                   'loot_bike_lock',
+    'Safe Shelter Key':                 'item_shelter_key',
+    'STAR House Key':                   'item_shelter_key',
     "Rivera's Megaphone":               'loot_spray_can',
-    "Mama Gloria's Charm Book":         'loot_forage_basket',
-    "Mariela's Tarot Deck":             'loot_forage_basket',
-    "Boylan's Memoir":                  'loot_forage_basket',
-    'Vicks Touch of Care':              'loot_chalk_bag',
-    "Sawant's Petition":                'loot_banjo',
-    'Homegrown Families Blessing':      'loot_bouquet',
+    "Mama Gloria's Charm Book":         'item_book',
+    "Mariela's Tarot Deck":             'item_bodhi',
+    "Boylan's Memoir":                  'item_book',
+    'Vicks Touch of Care':              'item_kindred',
+    "Sawant's Petition":                'item_civic_shield',
+    'Homegrown Families Blessing':      'item_homegrown',
     "Marsha's Hairpin":                 'loot_pride_medallion',
-    "Sylvia's Lighter":                 'loot_spray_can',
-    'Stonewall Coin':                   'loot_pride_medallion',
-    "Hirschfeld's Notes":               'loot_forage_basket',
-    "Christine's Letter":               'loot_forage_basket',
-    'Gilded Pronoun Pin':               'loot_pride_medallion',
-    "Eleanor's Diary":                  'loot_forage_basket',
-    'Resistance Pin':                   'loot_pride_medallion',
-    'Pride Shoelace':                   'loot_pride_medallion',
-    'Youth OUTright Badge':             'loot_pride_medallion',
-    "Mutual-Aid Token":                 'loot_chalk_bag',
-    'Solidarity Charm':                 'loot_pride_medallion',
-    'Liberation Pamphlet':              'loot_forage_basket'
+    "Sylvia's Lighter":                 'item_firestorm',
+    'Stonewall Coin':                   'item_stonewall',
+    "Hirschfeld's Notes":               'item_archive',
+    "Christine's Letter":               'item_book',
+    'Gilded Pronoun Pin':               'item_resistance_pin',
+    "Eleanor's Diary":                  'item_book',
+    'Resistance Pin':                   'item_resistance_pin',
+    'Pride Shoelace':                   'item_pride_flag',
+    'Youth OUTright Badge':             'item_outright',
+    "Mutual-Aid Token":                 'item_kindred',
+    'Solidarity Charm':                 'item_trans_charm',
+    'Liberation Pamphlet':              'item_archive',
+    'Archival Fragment':                'item_archive',
+    'Phoenix Flame':                    'item_phoenix',
+    'Bloom of Resistance':              'item_bloom',
+    'Electric Dirt':                    'item_electric_dirt',
+    'Bodhi Seed':                       'item_bodhi'
 };
 
 const images = {};
@@ -2351,7 +2447,7 @@ function draw() {
                     const pulse = Math.sin(game.animFrame * 0.18) * 3;
                     const flick = (game.animFrame % 8 < 4) ? '#FF71CE' : '#5BCEFA';
                     if (imgReady(images.chest)) {
-                        ctx.drawImage(images.chest, drawX - 18, drawY - 28 + pulse, 36, 28);
+                        ctx.drawImage(images.chest, drawX - 24, drawY - 36 + pulse, 48, 36);
                     } else {
                         ctx.fillStyle = flick;
                         ctx.beginPath(); ctx.arc(drawX, drawY - 8 + pulse, 8, 0, Math.PI*2); ctx.fill();
@@ -2359,7 +2455,7 @@ function draw() {
                 } else if (r.entity.type === 'zine') {
                     const bob = Math.sin(game.animFrame * 0.3) * 2;
                     if (imgReady(images.zine)) {
-                        ctx.drawImage(images.zine, drawX - 16, drawY - 24 + bob, 32, 24);
+                        ctx.drawImage(images.zine, drawX - 22, drawY - 36 + bob, 44, 36);
                     } else {
                         // Fallback zine
                         ctx.fillStyle = '#FFFFFF';
@@ -2371,9 +2467,9 @@ function draw() {
                 } else if (r.entity.type === 'healing') {
                     const bob = Math.sin(game.animFrame * 0.4) * 2;
                     ctx.fillStyle = '#39FF14';
-                    // Draw a cross/plus
-                    ctx.fillRect(drawX - 2, drawY - 12 + bob, 4, 10);
-                    ctx.fillRect(drawX - 5, drawY - 8 + bob, 10, 4);
+                    // Draw a cross/plus — scaled up for visibility
+                    ctx.fillRect(drawX - 4, drawY - 20 + bob, 8, 18);
+                    ctx.fillRect(drawX - 10, drawY - 14 + bob, 20, 8);
                 } else if (r.entity.type === 'loot') {
                     // Tier-glowing pickup. Higher tiers pulse harder + emit upward sparkles.
                     const tier = r.entity.tier || 'common';
@@ -2397,7 +2493,7 @@ function draw() {
                     const lootSpriteKey = NAMED_LOOT_SPRITES[r.entity.name];
                     const lootImg = lootSpriteKey && images[lootSpriteKey];
                     if (lootImg && imgReady(lootImg)) {
-                        const sw = tier === 'legendary' ? 32 : tier === 'epic' ? 26 : 22;
+                        const sw = tier === 'legendary' ? 48 : tier === 'epic' ? 40 : 36;
                         const sh = sw;
                         ctx.shadowBlur = 0;
                         ctx.drawImage(lootImg, drawX - sw / 2, drawY - sh - 2 + bob, sw, sh);
@@ -2430,7 +2526,7 @@ function draw() {
                 } else {
                     const bob = Math.sin(game.animFrame * 0.3) * 1;
                     if (imgReady(images.chest)) {
-                        ctx.drawImage(images.chest, drawX - 12, drawY - 20 + bob, 24, 20);
+                        ctx.drawImage(images.chest, drawX - 18, drawY - 28 + bob, 36, 28);
                     } else {
                         ctx.fillStyle = '#FFD700';
                         ctx.fillRect(drawX - 8, drawY - 10 + bob, 16, 10);
@@ -2443,11 +2539,10 @@ function draw() {
                 const figKey = r.entity.figureKey;
                 const npcC = NPC_FILLER_COLORS[figKey] || NPC_FILLER_COLORS.default;
                 // Per-figure sprite override; everyone else falls back to colored filler.
-                const npcSprite =
-                    (figKey === 'community_mothers' && imgReady(images.npc_community_mothers)) ? images.npc_community_mothers :
-                    ((figKey === 'marsha' || figKey === 'sylvia') && imgReady(images.marsha)) ? images.marsha : null;
+                const npcSprKey = NPC_SPRITES[figKey];
+                const npcSprite = npcSprKey && images[npcSprKey] && imgReady(images[npcSprKey]) ? images[npcSprKey] : null;
                 if (npcSprite) {
-                    const sw = 44, h = 56;
+                    const sw = 56, h = 64;
                     ctx.drawImage(npcSprite, drawX - sw/2, drawY - h + bob, sw, h);
                     ctx.fillStyle = '#FFD700';
                     ctx.font = 'bold 14px VT323';
@@ -2501,9 +2596,9 @@ function draw() {
                 } else if (typedImg && imgReady(typedImg)) {
                     // Wraith / ghost flicker keeps the spectral feel even with sprite
                     if (et === 'wraith') ctx.globalAlpha = 0.7 + Math.sin(game.animFrame * 0.6) * 0.25;
-                    // Slightly wider footprint for big bruisers
-                    const sw = (et === 'gatekeeper' || et === 'police') ? 30 : (et === 'bigot' ? 28 : 24);
-                    const sh = (et === 'gatekeeper' || et === 'police') ? 36 : (et === 'bigot' ? 32 : 30);
+                    // Scale sprites to be clearly visible — 1.5-2 tiles tall
+                    const sw = (et === 'gatekeeper' || et === 'police') ? 52 : (et === 'bigot' ? 48 : 44);
+                    const sh = (et === 'gatekeeper' || et === 'police') ? 58 : (et === 'bigot' ? 54 : 50);
                     ctx.drawImage(typedImg, drawX - sw / 2, drawY - sh + bob, sw, sh);
                     if (et === 'wraith') ctx.globalAlpha = 1.0;
                     size = sw / 2; h = sh;
@@ -2511,7 +2606,7 @@ function draw() {
                 }
 
                 if (!drewSprite && imgReady(images.enemy) && et !== 'boss' && et !== 'swarm') {
-                    ctx.drawImage(images.enemy, drawX - size, drawY - h + bob, size * 2, h);
+                    ctx.drawImage(images.enemy, drawX - 22, drawY - 48 + bob, 44, 48);
                 } else if (!drewSprite) {
                     if (et === 'troll') {
                         ctx.fillStyle = '#FF0000';
@@ -2586,10 +2681,11 @@ function draw() {
                         ctx.fillRect(drawX - 6, drawY - 24 + bob, 4, 3);
                         ctx.fillRect(drawX + 2, drawY - 24 + bob, 4, 3);
                     } else if (et === 'boss') {
-                        size = 64; h = 72;
+                        size = 80; h = 96;
                         const enraged = r.entity.bossPhase === 2;
-                        if (imgReady(images.boss)) {
-                            ctx.drawImage(images.boss, drawX - size/2, drawY - h + bob, size, h);
+                        const bossImg = imgReady(images.enemy_boss) ? images.enemy_boss : images.boss;
+                        if (imgReady(bossImg)) {
+                            ctx.drawImage(bossImg, drawX - size/2, drawY - h + bob, size, h);
                             if (enraged) {
                                 ctx.save();
                                 ctx.globalCompositeOperation = 'multiply';
@@ -2641,6 +2737,24 @@ function draw() {
                 }
             } else if (r.type === 'player') {
                 if (r.entity.hurtCooldown % 2 === 0) {
+                    // Try to use generated player sprite based on palette
+                    const paletteId = r.entity.colorPalette || 0;
+                    const palSpriteKeys = ['player', 'player_blue', 'player_pink', 'player_rainbow'];
+                    const palSprKey = palSpriteKeys[paletteId] || 'player';
+                    const playerImg = images[palSprKey];
+                    if (playerImg && imgReady(playerImg)) {
+                        const pw = 52, ph = 60;
+                        const bob = Math.sin(game.animFrame * 0.4) * 2;
+                        // Flip sprite when facing left
+                        ctx.save();
+                        if (r.entity.facingX < 0) {
+                            ctx.translate(drawX, 0);
+                            ctx.scale(-1, 1);
+                            ctx.translate(-drawX, 0);
+                        }
+                        ctx.drawImage(playerImg, drawX - pw/2, drawY - ph + bob, pw, ph);
+                        ctx.restore();
+                    } else {
                     // DRAW PROCEDURAL PUNK PLAYER
                     const bob = Math.sin(game.animFrame * 0.4) * 2;
                     const pal = PALETTES[r.entity.colorPalette || 0];
@@ -2704,6 +2818,7 @@ function draw() {
                         const legSpread = Math.sin(game.animFrame * 0.6) * 3;
                         ctx.fillRect(drawX - 6 - legSpread, drawY - 8 + bob, 5, 10);
                         ctx.fillRect(drawX + 1 + legSpread, drawY - 8 + bob, 5, 10);
+                    } // end procedural else
                 }
             }
             
