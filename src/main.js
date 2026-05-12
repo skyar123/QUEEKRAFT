@@ -378,26 +378,197 @@ function generateHeirs() {
 }
 
 // === Asset manifest ===
-// Drop a file at the listed path and it picks up automatically.
-// NOTE: the batch of AI-generated character / enemy / NPC / loot / item
-// sprites had un-keyed green backgrounds and rendered as "walking squares".
-// They are intentionally NOT loaded — the procedural hand-drawn rendering
-// (punk protagonist with the pink/blue Ray-Ban visor, shaped enemies, etc.)
-// looks better and animates. Only world-floor/wall textures and the clean
-// zine pickup icon are loaded; everything that walks draws procedurally.
+// Mix of high-quality hand-processed pixel sprites (clean alpha) and some
+// bulk-generated images that shipped with opaque/black backgrounds. We load
+// everything, then auto-reject any image whose four corners are fully opaque
+// (the tell-tale sign of an un-keyed background) so it falls back to the
+// procedural hand-drawn rendering instead of showing as a "walking square".
 const ASSET_PATHS = {
-    tile_floor: '/images/tex_floor.png',   // clean pre-AI floor texture
-    tile_wall:  '/images/tex_wall.png',    // clean pre-AI wall texture
-    zine:       '/images/zine.png'         // clean scroll icon for zine pickups
+    // ── Player (palette variants — clean pixel sprites) ─────────────────
+    player_blue:        '/images/spr_player_blue.png',
+    player_pink:        '/images/spr_player_pink.png',
+    player_rainbow:     '/images/spr_player_rainbow.png',
+    // ── Core sprites ────────────────────────────────────────────────────
+    chest:              '/images/spr_chest.png',
+    chest_open:         '/images/spr_chest_open.png',
+    zine:               '/images/spr_zine.png',
+    boss:               '/images/spr_boss.png',
+    // ── NPC figure sprites ──────────────────────────────────────────────
+    npc_community_mothers: '/images/spr_community_mothers.png',
+    npc_marsha:         '/images/spr_marsha.png',
+    npc_sylvia:         '/images/spr_sylvia.png',
+    npc_eleanor:        '/images/spr_eleanor.png',
+    npc_charley:        '/images/spr_charley.png',
+    npc_dora:           '/images/spr_dora.png',
+    npc_hart:           '/images/spr_hart.png',
+    npc_lili:           '/images/spr_lili.png',
+    npc_lucy:           '/images/spr_lucy.png',
+    npc_christine:      '/images/spr_christine.png',
+    npc_holly:          '/images/spr_holly.png',
+    npc_zeke:           '/images/spr_zeke.png',
+    npc_divine:         '/images/spr_divine.png',
+    npc_peyton:         '/images/spr_peyton.png',
+    npc_allison:        '/images/spr_allison.png',
+    // ── Enemy sprites ───────────────────────────────────────────────────
+    enemy:              '/images/spr_enemy.png',
+    enemy_wraith:       '/images/spr_wraith.png',
+    enemy_gatekeeper:   '/images/spr_gatekeeper.png',
+    enemy_concern:      '/images/spr_concern_troll.png',
+    enemy_police:       '/images/spr_police.png',
+    enemy_bigot:        '/images/spr_bigot.png',
+    enemy_swarm:        '/images/spr_swarm.png',
+    enemy_boss:         '/images/spr_boss.png',
+    enemy_dark_beast:   '/images/spr_dark_beast.png',
+    enemy_ghost:        '/images/spr_ghost_enemy.png',
+    enemy_bureaucracy:  '/images/spr_bureaucracy_enemy.png',
+    enemy_corporate_drone: '/images/spr_corporate_drone.png',
+    enemy_gentrifier:   '/images/spr_gentrifier.png',
+    enemy_hb2_enforcer: '/images/spr_hb2_enforcer.png',
+    // ── Themed loot art ─────────────────────────────────────────────────
+    loot_crown:              '/images/spr_crown.png',
+    loot_pride_medallion:    '/images/spr_pride_medallion.png',
+    loot_bouquet:            '/images/spr_bouquet.png',
+    loot_banjo:              '/images/spr_banjo.png',
+    loot_chalk_bag:          '/images/spr_chalk_bag.png',
+    loot_bike_lock:          '/images/spr_bike_lock.png',
+    loot_forage_basket:      '/images/spr_forage_basket.png',
+    loot_spray_can:          '/images/spr_spray_can.png',
+    loot_tattoo_gun:         '/images/spr_tattoo_gun.png',
+    // ── Generated item art ──────────────────────────────────────────────
+    item_archive:        '/images/item_archive.png',
+    item_bloom:          '/images/item_bloom.png',
+    item_bodhi:          '/images/item_bodhi.png',
+    item_book:           '/images/item_book.png',
+    item_civic_shield:   '/images/item_civic_shield.png',
+    item_crystal:        '/images/item_crystal.png',
+    item_fierce_light:   '/images/item_fierce_light.png',
+    item_firestorm:      '/images/item_firestorm.png',
+    item_hearth:         '/images/item_hearth.png',
+    item_homegrown:      '/images/item_homegrown.png',
+    item_kindred:        '/images/item_kindred.png',
+    item_outright:       '/images/item_outright.png',
+    item_phoenix:        '/images/item_phoenix.png',
+    item_pride_flag:     '/images/item_pride_flag.png',
+    item_resistance_pin: '/images/item_resistance_pin.png',
+    item_shelter_key:    '/images/item_shelter_key.png',
+    item_stonewall:      '/images/item_stonewall.png',
+    item_sweet_tea:      '/images/item_sweet_tea.png',
+    item_tea:            '/images/item_tea.png',
+    item_trans_charm:    '/images/item_trans_charm.png',
+    // ── Tile textures (clean pre-AI floor/wall) ─────────────────────────
+    tile_floor: '/images/tex_floor.png',
+    tile_wall:  '/images/tex_wall.png'
 };
 
-// Entity sprites disabled — everything draws procedurally.
-const ENEMY_SPRITES = {};
-const NPC_SPRITES = {};
-const NAMED_LOOT_SPRITES = {};
+// Enemy type → sprite key. Auto-reject filters out any that load with an
+// opaque background; those fall back to the procedural shapes.
+const ENEMY_SPRITES = {
+    troll:      'enemy_dark_beast',
+    wraith:     'enemy_wraith',
+    gatekeeper: 'enemy_gatekeeper',
+    concern:    'enemy_concern',
+    police:     'enemy_police',
+    bigot:      'enemy_bigot',
+    swarm:      'enemy_swarm'
+};
+
+// NPC figure key → sprite key. Falls back to colored filler when the
+// sprite is missing or rejected.
+const NPC_SPRITES = {
+    'community_mothers':     'npc_community_mothers',
+    'marsha':                'npc_marsha',
+    'sylvia':                'npc_sylvia',
+    'eleanor':               'npc_eleanor',
+    'charley':               'npc_charley',
+    'dora':                  'npc_dora',
+    'alan':                  'npc_hart',
+    'lili':                  'npc_lili',
+    'lucy':                  'npc_lucy',
+    'christine':             'npc_christine',
+    'william_dorsey_swann':  'npc_zeke',
+    'peyton_oconner':        'npc_peyton',
+    'allison_scott':         'npc_allison',
+    'mama_gloria':           'npc_holly',
+    'blade_journalists':     'npc_divine',
+    'crystal_labeija':       'npc_divine',
+    'paris_dupree':          'npc_zeke',
+    'dorian_corey':          'npc_holly',
+    'kenya_cuevas':          'npc_allison',
+    'cleopatra_kambugu':     'npc_dora',
+    'mariela_munoz':         'npc_lucy'
+};
+
+// Named-loot → sprite key.
+const NAMED_LOOT_SPRITES = {
+    'Crown of Eleanor Rykener':         'loot_crown',
+    "LaBeija's Trophy":                 'loot_pride_medallion',
+    'The Mausoleum Flower':             'loot_bouquet',
+    'Hearth Stone':                     'item_hearth',
+    "Mother's Fierce Light":            'item_fierce_light',
+    "House Mother's Sash":              'loot_pride_medallion',
+    'Stonewall Brick':                  'item_stonewall',
+    "Compton's Cafeteria Sugar Shaker": 'item_sweet_tea',
+    "Lili's Last Brushstroke":          'loot_spray_can',
+    'Safe Shelter Key':                 'item_shelter_key',
+    'STAR House Key':                   'item_shelter_key',
+    "Rivera's Megaphone":               'loot_spray_can',
+    "Mama Gloria's Charm Book":         'item_book',
+    "Mariela's Tarot Deck":             'item_bodhi',
+    "Boylan's Memoir":                  'item_book',
+    'Vicks Touch of Care':              'item_kindred',
+    "Sawant's Petition":                'item_civic_shield',
+    'Homegrown Families Blessing':      'item_homegrown',
+    "Marsha's Hairpin":                 'loot_pride_medallion',
+    "Sylvia's Lighter":                 'item_firestorm',
+    'Stonewall Coin':                   'item_stonewall',
+    "Hirschfeld's Notes":               'item_archive',
+    "Christine's Letter":               'item_book',
+    'Gilded Pronoun Pin':               'item_resistance_pin',
+    "Eleanor's Diary":                  'item_book',
+    'Resistance Pin':                   'item_resistance_pin',
+    'Pride Shoelace':                   'item_pride_flag',
+    'Youth OUTright Badge':             'item_outright',
+    "Mutual-Aid Token":                 'item_kindred',
+    'Solidarity Charm':                 'item_trans_charm',
+    'Liberation Pamphlet':              'item_archive',
+    'Archival Fragment':                'item_archive',
+    'Phoenix Flame':                    'item_phoenix',
+    'Bloom of Resistance':              'item_bloom',
+    'Electric Dirt':                    'item_crystal',
+    'Bodhi Seed':                       'item_bodhi'
+};
 
 const images = {};
 for (const k of Object.keys(ASSET_PATHS)) images[k] = new Image();
+
+// Detect un-keyed backgrounds: if all four corners of the loaded image are
+// (nearly) fully opaque, it's a flat-background render, not a sprite cut-out
+// — flag it so imgReady() rejects it and the procedural art is used instead.
+// Tile textures are exempt (they're meant to tile edge-to-edge).
+const TEXTURE_KEYS = new Set(['tile_floor', 'tile_wall']);
+function markIfOpaqueBackground(key, img) {
+    if (TEXTURE_KEYS.has(key)) return;
+    try {
+        const c = document.createElement('canvas');
+        const S = 24;
+        c.width = S; c.height = S;
+        const cx = c.getContext('2d', { willReadFrequently: true });
+        cx.drawImage(img, 0, 0, S, S);
+        const corners = [
+            cx.getImageData(0, 0, 1, 1).data[3],
+            cx.getImageData(S - 1, 0, 1, 1).data[3],
+            cx.getImageData(0, S - 1, 1, 1).data[3],
+            cx.getImageData(S - 1, S - 1, 1, 1).data[3]
+        ];
+        const opaqueCorners = corners.filter(a => a > 240).length;
+        if (opaqueCorners >= 3) {
+            img.__opaqueBg = true;
+            console.warn(`Sprite "${key}" has an opaque background — using procedural fallback.`);
+        }
+    } catch (e) {
+        // Canvas tainted or failed — leave the sprite enabled.
+    }
+}
 
 let pendingImages = Object.keys(ASSET_PATHS).length;
 let initStarted = false;
@@ -409,15 +580,16 @@ function tickLoaded() {
     }
 }
 for (const [k, path] of Object.entries(ASSET_PATHS)) {
-    images[k].onload  = tickLoaded;
+    images[k].onload  = () => { markIfOpaqueBackground(k, images[k]); tickLoaded(); };
     images[k].onerror = () => { console.warn(`Asset failed: ${path}`); tickLoaded(); };
     images[k].src = path;
 }
 // Failsafe — if asset loading hangs, start without textures after 5s.
 setTimeout(() => { if (!initStarted) { initStarted = true; initGame(); } }, 5000);
 
-// True when an image finished loading and is safe to drawImage().
-function imgReady(img) { return img && img.complete && img.naturalWidth > 0; }
+// True when an image finished loading, is safe to drawImage(), and isn't a
+// flat-background render we've flagged for procedural fallback.
+function imgReady(img) { return img && img.complete && img.naturalWidth > 0 && !img.__opaqueBg; }
 
 function updateResolution() {
     const isPortrait = window.innerHeight > window.innerWidth;
@@ -2571,8 +2743,8 @@ function draw() {
                 if (r.entity.hurtCooldown % 2 === 0) {
                     // Try to use generated player sprite based on palette
                     const paletteId = r.entity.colorPalette || 0;
-                    const palSpriteKeys = ['player', 'player_blue', 'player_pink', 'player_rainbow'];
-                    const palSprKey = palSpriteKeys[paletteId] || 'player';
+                    const palSpriteKeys = ['player_blue', 'player_blue', 'player_pink', 'player_rainbow'];
+                    const palSprKey = palSpriteKeys[paletteId] || 'player_blue';
                     const playerImg = images[palSprKey];
                     if (playerImg && imgReady(playerImg)) {
                         const pw = 52, ph = 60;
