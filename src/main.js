@@ -179,6 +179,8 @@ function loadGame() {
     if (typeof game.persistent.deepestReached !== 'number') game.persistent.deepestReached = 1;
     if (typeof game.persistent.seenIntro !== 'boolean') game.persistent.seenIntro = false;
     if (!game.persistent.quests || typeof game.persistent.quests !== 'object') game.persistent.quests = {};
+    if (!game.persistent.npcEncounters || typeof game.persistent.npcEncounters !== 'object') game.persistent.npcEncounters = {};
+    if (!Array.isArray(game.persistent.mural)) game.persistent.mural = [];
 }
 
 // ---------------------------------------------------------------------------
@@ -1265,7 +1267,12 @@ function interact() {
             game.historicalFigures++;
         }
         DialogueUI.start(game, npc.figureKey);
-        game.npcs = game.npcs.filter(n => n !== npc);
+        // In dungeon: NPC disappears after conversation (they move on).
+        // In hub village: NPCs persist so you can talk to them again.
+        if (!game.inHub) {
+            game.npcs = game.npcs.filter(n => n !== npc);
+        }
+        saveGame();
         UI.updateStatus(game);
         addXP(150);
         draw();
@@ -2708,13 +2715,13 @@ function draw() {
                     }
                 }
                 
-                // Health Bar for all enemies
-                const barW = Math.max(size, 20);
+                // Health Bar for all enemies — scaled to match new sprite widths
+                const barW = Math.max(size * 2, 40);
                 ctx.shadowBlur = 0;
                 ctx.fillStyle = '#333';
-                ctx.fillRect(drawX - barW/2, drawY - h - 10 + bob, barW, 4);
+                ctx.fillRect(drawX - barW/2, drawY - h - 12 + bob, barW, 5);
                 ctx.fillStyle = '#FF71CE';
-                ctx.fillRect(drawX - barW/2, drawY - h - 10 + bob, barW * (r.entity.health / r.entity.maxHealth), 4);
+                ctx.fillRect(drawX - barW/2, drawY - h - 12 + bob, barW * (r.entity.health / r.entity.maxHealth), 5);
 
                 // Status effect glyphs floating above the health bar.
                 if (r.entity.status) {
