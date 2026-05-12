@@ -376,88 +376,21 @@ function generateHeirs() {
 
 // === Asset manifest ===
 // Drop a file at the listed path and it picks up automatically.
+//
+// NOTE: the AI-generated character/enemy/loot sprites ("walking squares" with
+// un-keyed green backgrounds) are intentionally NOT wired up — the procedural
+// hand-drawn rendering looks better and animates. Only world textures and a
+// couple of clean processed sprites are loaded; everything that walks (player,
+// enemies, NPCs) and all loot draw procedurally.
 const ASSET_PATHS = {
     tex_floor: '/images/tex_floor.png',
     tex_wall:  '/images/tex_wall.png',
-    player:    '/images/spr_player.png',
-    enemy:     '/images/spr_enemy.png',
-    boss:      '/images/spr_dark_beast.png',
-    chest:     '/images/spr_chest.png',
-    chest_open:'/images/spr_chest_open.png',
-    marsha:    '/images/spr_marsha.png',
-    zine:      '/images/spr_zine.png',
-
-    // Per-figure NPC overrides (renderer falls back to procedural filler)
-    npc_community_mothers: '/images/spr_community_mothers.png',
-
-    // Enemy variants — keyed by ENEMY_SPRITES below
-    enemy_dark_beast:      '/images/spr_dark_beast.png',
-    enemy_ghost:           '/images/spr_ghost_enemy.png',
-    enemy_bureaucracy:     '/images/spr_bureaucracy_enemy.png',
-    enemy_corporate_drone: '/images/spr_corporate_drone.png',
-    enemy_gentrifier:      '/images/spr_gentrifier.png',
-    enemy_hb2_enforcer:    '/images/spr_hb2_enforcer.png',
-
-    // Themed loot art — referenced via NAMED_LOOT_SPRITES below
-    loot_crown:              '/images/spr_crown.png',
-    loot_pride_medallion:    '/images/spr_pride_medallion.png',
-    loot_bouquet:            '/images/spr_bouquet.png',
-    loot_banjo:              '/images/spr_banjo.png',
-    loot_chalk_bag:          '/images/spr_chalk_bag.png',
-    loot_bike_lock:          '/images/spr_bike_lock.png',
-    loot_bike_lock_grounded: '/images/spr_bike_lock_grounded.png',
-    loot_forage_basket:      '/images/spr_forage_basket.png',
-    loot_gravl_heart:        '/images/spr_gravl_heart.png',
-    loot_spray_can:          '/images/spr_spray_can.png',
-    loot_tattoo_gun:         '/images/spr_tattoo_gun.png'
+    zine:      '/images/zine.png'        // clean scroll icon for zine pickups
 };
 
-// Enemy type → sprite key. Renderer falls back to generic `enemy` art
-// when an enemyType isn't listed (swarm stays procedural; boss uses `boss`).
-const ENEMY_SPRITES = {
-    troll:      'enemy_dark_beast',
-    wraith:     'enemy_ghost',
-    gatekeeper: 'enemy_bureaucracy',
-    concern:    'enemy_corporate_drone',
-    bigot:      'enemy_gentrifier',
-    police:     'enemy_hb2_enforcer'
-};
-
-// Named-loot → sprite key. Renderer looks up loot.name here so themed
-// legendary/epic drops get unique art instead of the generic gem.
-const NAMED_LOOT_SPRITES = {
-    'Crown of Eleanor Rykener':         'loot_crown',
-    "LaBeija's Trophy":                 'loot_pride_medallion',
-    'The Mausoleum Flower':             'loot_bouquet',
-    'Hearth Stone':                     'loot_gravl_heart',
-    "Mother's Fierce Light":            'loot_pride_medallion',
-    "House Mother's Sash":              'loot_pride_medallion',
-    'Stonewall Brick':                  'loot_bike_lock_grounded',
-    "Compton's Cafeteria Sugar Shaker": 'loot_chalk_bag',
-    "Lili's Last Brushstroke":          'loot_spray_can',
-    'Safe Shelter Key':                 'loot_bike_lock',
-    'STAR House Key':                   'loot_bike_lock',
-    "Rivera's Megaphone":               'loot_spray_can',
-    "Mama Gloria's Charm Book":         'loot_forage_basket',
-    "Mariela's Tarot Deck":             'loot_forage_basket',
-    "Boylan's Memoir":                  'loot_forage_basket',
-    'Vicks Touch of Care':              'loot_chalk_bag',
-    "Sawant's Petition":                'loot_banjo',
-    'Homegrown Families Blessing':      'loot_bouquet',
-    "Marsha's Hairpin":                 'loot_pride_medallion',
-    "Sylvia's Lighter":                 'loot_spray_can',
-    'Stonewall Coin':                   'loot_pride_medallion',
-    "Hirschfeld's Notes":               'loot_forage_basket',
-    "Christine's Letter":               'loot_forage_basket',
-    'Gilded Pronoun Pin':               'loot_pride_medallion',
-    "Eleanor's Diary":                  'loot_forage_basket',
-    'Resistance Pin':                   'loot_pride_medallion',
-    'Pride Shoelace':                   'loot_pride_medallion',
-    'Youth OUTright Badge':             'loot_pride_medallion',
-    "Mutual-Aid Token":                 'loot_chalk_bag',
-    'Solidarity Charm':                 'loot_pride_medallion',
-    'Liberation Pamphlet':              'loot_forage_basket'
-};
+// Enemy/NPC/loot sprites are disabled — everything draws procedurally.
+const ENEMY_SPRITES = {};
+const NAMED_LOOT_SPRITES = {};
 
 const images = {};
 for (const k of Object.keys(ASSET_PATHS)) images[k] = new Image();
@@ -680,13 +613,7 @@ function updateParticles() {
 function startCamp() {
     UI.showCamp(
         game,
-        () => {
-            // If the player opened the camp modal from inside the hub
-            // (campfire interaction), just close it — don't regenerate the
-            // hub and yank them back to the spawn tile.
-            if (game.inHub && gameStarted) return;
-            enterHub();
-        },
+        () => { startDungeon(); },
         () => {
             const penalty = (game.player.trait && game.player.trait.id === 'gatekept') ? 2 : 0;
             const cost = game.persistent.healthCost + penalty;
@@ -731,6 +658,17 @@ function startCamp() {
     if (aiBtn) aiBtn.onclick = () => GeminiUI.start(game);
     const topAiBtn = document.getElementById('ai-btn');
     if (topAiBtn) topAiBtn.onclick = () => GeminiUI.start(game);
+
+    // "Visit the Safehouse Village" button — optional side area, not on the
+    // run critical path. Closes the camp modal and drops the player in the
+    // village. From there they can walk back to the wasteland portal.
+    const villageBtn = document.getElementById('visit-town-btn');
+    if (villageBtn) {
+        villageBtn.onclick = () => {
+            UI.modals.camp.style.display = 'none';
+            enterHub();
+        };
+    }
 }
 
 async function descend() {
@@ -794,12 +732,16 @@ function enterHub() {
     p.percent = 0; p.hitstun = 0;
     p.damageImmune = 0;
 
-    generateHubMap(game);
+    const stats = generateHubMap(game) || {};
     game.camInitialized = false;
     lastPromptTile = null;
     UI.updateStatus(game);
-    UI.addMessage('🏠 Welcome to the Safehouse. Walk right to the portal to enter the wasteland.', 'special');
-    UI.addMessage('💬 Talk to residents (USE/F). Quest log: J. Campfire (F-tile) re-opens upgrades.', 'special');
+    UI.addMessage('🏘️ Welcome to the Safehouse Village. Walk right → the magenta PORTAL returns you to the wasteland.', 'special');
+    UI.addMessage(
+        `💬 Talk to residents (USE/F) · Quest log: J · Campfire (F): upgrades. ` +
+        `Village growing: ${stats.residents || 0} residents · ${stats.figuresMet || 0}/${stats.totalFigures || 27} figures met · ${stats.zinesCollected || 0}/19 zines. Meet more in the wasteland and they move in here.`,
+        'special'
+    );
     gameStarted = true;
 }
 
@@ -2450,7 +2392,7 @@ function draw() {
                     ctx.textAlign = 'left';
                 }
             } else if (r.type === 'troll') {
-                const bob = Math.sin(game.animFrame * 0.4 + r.x) * 2;
+                const bob = Math.sin(game.animFrame * 0.16 + r.x) * 1.4;
                 const et = r.entity.enemyType || 'troll';
                 let size = 20, h = 24;
 
@@ -2606,7 +2548,12 @@ function draw() {
             } else if (r.type === 'player') {
                 if (r.entity.hurtCooldown % 2 === 0) {
                     // DRAW PROCEDURAL PUNK PLAYER
-                    const bob = Math.sin(game.animFrame * 0.4) * 2;
+                    // Idle bob is slow + tiny, and only really shows when the
+                    // player is moving on the ground — a fast bob made the
+                    // character feel like it was hopping and hurt aiming.
+                    const moving = r.entity.onGround && Math.abs(r.entity.vx || 0) > 0.4;
+                    const bobAmt = moving ? 1.4 : 0.5;
+                    const bob = Math.sin(game.animFrame * 0.14) * bobAmt;
                     const pal = PALETTES[r.entity.colorPalette || 0];
                         
                         // Get body and accent colors (cycle for rainbow)
