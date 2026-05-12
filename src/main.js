@@ -1125,11 +1125,17 @@ function interact() {
             Audio.playLoot();
             onItemCollectedForQuests(item.healingKey);
         } else if (item.type === 'treasure') {
-            game.treasures++;
-            game.persistent.treasures++;
-            game.player.scrapEarned = (game.player.scrapEarned || 0) + 1;
-            UI.addMessage(`Picked up ${item.name}!`, 'treasure');
-            Audio.playLoot();
+            if (item.decorative) {
+                // Village dressing — no scrap, just a warm beat.
+                UI.addMessage(`You admire the ${item.name}. The village feels a little more like home.`, 'special');
+                Audio.playLoot && Audio.playLoot();
+            } else {
+                game.treasures++;
+                game.persistent.treasures++;
+                game.player.scrapEarned = (game.player.scrapEarned || 0) + 1;
+                UI.addMessage(`Picked up ${item.name}!`, 'treasure');
+                Audio.playLoot();
+            }
         } else if (item.type === 'loot') {
             // Tiered loot: scrap + tier-specific effect (heal, buff, perma-heart).
             const scrap = item.scrap || 1;
