@@ -481,8 +481,9 @@ export const DialogueUI = {
     currentNPC: null,
     currentNode: null,
 
-    start(game, npcKey) {
+    start(game, npcKey, onClose) {
         this.currentGame = game;
+        this.onCloseCallback = onClose || null;
         this.currentNPC = HISTORICAL_FIGURES[npcKey];
         this.currentNPCKey = npcKey;
         
@@ -742,11 +743,13 @@ export const DialogueUI = {
 
     close() {
         UI.modals.conversation.style.display = 'none';
-        // Stop speech when closing
         if (window.speechSynthesis) window.speechSynthesis.cancel();
+        const cb = this.onCloseCallback;
         this.currentGame = null;
         this.currentNPC = null;
         this.currentNode = null;
+        this.onCloseCallback = null;
+        if (cb) cb();
     }
 };
 

@@ -901,6 +901,8 @@ async function descend() {
     // Fade out
     overlay.style.opacity = '0';
     setTimeout(() => overlay.remove(), 600);
+
+    levelUp();
 }
 
 // Enter the hub town. Called from startCamp's "Enter Wasteland" callback so
@@ -1266,7 +1268,7 @@ function interact() {
             game.persistent.seenFigures[npc.figureKey] = true;
             game.historicalFigures++;
         }
-        DialogueUI.start(game, npc.figureKey);
+        DialogueUI.start(game, npc.figureKey, () => addXP(150));
         // In dungeon: NPC disappears after conversation (they move on).
         // In hub village: NPCs persist so you can talk to them again.
         if (!game.inHub) {
@@ -1274,7 +1276,6 @@ function interact() {
         }
         saveGame();
         UI.updateStatus(game);
-        addXP(150);
         draw();
         if (game.zines >= 19 && game.historicalFigures >= 9) {
             UI.showVictory();
