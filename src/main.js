@@ -379,195 +379,22 @@ function generateHeirs() {
 
 // === Asset manifest ===
 // Drop a file at the listed path and it picks up automatically.
+// NOTE: the batch of AI-generated character / enemy / NPC / loot / item
+// sprites had un-keyed green backgrounds and rendered as "walking squares".
+// They are intentionally NOT loaded — the procedural hand-drawn rendering
+// (punk protagonist with the pink/blue Ray-Ban visor, shaped enemies, etc.)
+// looks better and animates. Only world-floor/wall textures and the clean
+// zine pickup icon are loaded; everything that walks draws procedurally.
 const ASSET_PATHS = {
-    // ── Player ──────────────────────────────────────────────────────────
-    player:             '/images/spr_player.png',
-    player_blue:        '/images/spr_player_blue.png',
-    player_pink:        '/images/spr_player_pink.png',
-    player_rainbow:     '/images/spr_player_rainbow.png',
-    // ── Core sprites ────────────────────────────────────────────────────
-    chest:              '/images/spr_chest.png',
-    chest_open:         '/images/spr_chest_open.png',
-    zine:               '/images/spr_zine.png',
-    boss:               '/images/spr_boss.png',
-    // ── NPC figure sprites ──────────────────────────────────────────────
-    npc_community_mothers: '/images/spr_community_mothers.png',
-    npc_marsha:         '/images/spr_marsha.png',
-    npc_sylvia:         '/images/spr_sylvia.png',
-    npc_eleanor:        '/images/spr_eleanor.png',
-    npc_charley:        '/images/spr_charley.png',
-    npc_dora:           '/images/spr_dora.png',
-    npc_hart:           '/images/spr_hart.png',
-    npc_lili:           '/images/spr_lili.png',
-    npc_lucy:           '/images/spr_lucy.png',
-    npc_christine:      '/images/spr_christine.png',
-    npc_holly:          '/images/spr_holly.png',
-    npc_zeke:           '/images/spr_zeke.png',
-    npc_divine:         '/images/spr_divine.png',
-    npc_peyton:         '/images/spr_peyton.png',
-    npc_allison:        '/images/spr_allison.png',
-    // ── Enemy sprites ───────────────────────────────────────────────────
-    enemy:              '/images/spr_enemy.png',
-    enemy_wraith:       '/images/spr_wraith.png',
-    enemy_gatekeeper:   '/images/spr_gatekeeper.png',
-    enemy_concern:      '/images/spr_concern_troll.png',
-    enemy_police:       '/images/spr_police.png',
-    enemy_bigot:        '/images/spr_bigot.png',
-    enemy_swarm:        '/images/spr_swarm.png',
-    enemy_boss:         '/images/spr_boss.png',
-    enemy_cop_bot:      '/images/spr_cop_bot.png',
-    enemy_noise:        '/images/spr_noise_ordinance.png',
-    enemy_preacher:     '/images/spr_preacher.png',
-    enemy_dark_beast:   '/images/spr_dark_beast.png',
-    enemy_ghost:        '/images/spr_ghost_enemy.png',
-    enemy_bureaucracy:  '/images/spr_bureaucracy_enemy.png',
-    enemy_corporate_drone: '/images/spr_corporate_drone.png',
-    enemy_gentrifier:   '/images/spr_gentrifier.png',
-    enemy_hb2_enforcer: '/images/spr_hb2_enforcer.png',
-    // ── Themed loot art ─────────────────────────────────────────────────
-    loot_crown:              '/images/spr_crown.png',
-    loot_pride_medallion:    '/images/spr_pride_medallion.png',
-    loot_bouquet:            '/images/spr_bouquet.png',
-    loot_banjo:              '/images/spr_banjo.png',
-    loot_chalk_bag:          '/images/spr_chalk_bag.png',
-    loot_bike_lock:          '/images/spr_bike_lock.png',
-    loot_bike_lock_grounded: '/images/spr_bike_lock_grounded.png',
-    loot_forage_basket:      '/images/spr_forage_basket.png',
-    loot_gravl_heart:        '/images/spr_gravl_heart.png',
-    loot_spray_can:          '/images/spr_spray_can.png',
-    loot_tattoo_gun:         '/images/spr_tattoo_gun.png',
-    // ── Generated item art ──────────────────────────────────────────────
-    item_archive:        '/images/item_archive.png',
-    item_bloom:          '/images/item_bloom.png',
-    item_bodhi:          '/images/item_bodhi.png',
-    item_book:           '/images/item_book.png',
-    item_civic_shield:   '/images/item_civic_shield.png',
-    item_crystal:        '/images/item_crystal.png',
-    item_electric_dirt:  '/images/item_electric_dirt.png',
-    item_fierce_light:   '/images/item_fierce_light.png',
-    item_firestorm:      '/images/item_firestorm.png',
-    item_hearth:         '/images/item_hearth.png',
-    item_homegrown:      '/images/item_homegrown.png',
-    item_kindred:        '/images/item_kindred.png',
-    item_outright:       '/images/item_outright.png',
-    item_phoenix:        '/images/item_phoenix.png',
-    item_pick:           '/images/item_pick.png',
-    item_pride_flag:     '/images/item_pride_flag.png',
-    item_resistance_pin: '/images/item_resistance_pin.png',
-    item_shelter_key:    '/images/item_shelter_key.png',
-    item_stonewall:      '/images/item_stonewall.png',
-    item_sweet_tea:      '/images/item_sweet_tea.png',
-    item_tea:            '/images/item_tea.png',
-    item_trans_charm:    '/images/item_trans_charm.png',
-    // ── Tile textures ───────────────────────────────────────────────────
-    tile_floor:       '/images/tile_floor.png',
-    tile_wall:        '/images/tile_wall.png',
-    tile_platform:    '/images/tile_platform.png',
-    tile_dirt:        '/images/tile_dirt.png',
-    tile_grass:       '/images/tile_grass.png',
-    tile_ice:         '/images/tile_ice.png',
-    tile_trampoline:  '/images/tile_trampoline.png',
-    tile_spikes:      '/images/tile_spikes.png',
-    tile_water:       '/images/tile_water.png',
-    tile_acid:        '/images/tile_acid.png',
-    tile_neon_border: '/images/tile_neon_border.png',
-    tile_background:  '/images/tile_background.png',
-    // ── Zine covers ─────────────────────────────────────────────────────
-    zine_abolition:   '/images/zine_abolition.png',
-    zine_anarchist:   '/images/zine_anarchist.png',
-    zine_appalachia:  '/images/zine_appalachia.png',
-    zine_art:         '/images/zine_art.png',
-    zine_diy:         '/images/zine_diy.png',
-    zine_herbal:      '/images/zine_herbal.png',
-    zine_history:     '/images/zine_history.png',
-    zine_music:       '/images/zine_music.png',
-    zine_mutual_aid:  '/images/zine_mutual_aid.png',
-    zine_poetry:      '/images/zine_poetry.png',
-    zine_punk:        '/images/zine_punk.png',
-    zine_queer:       '/images/zine_queer.png',
-    zine_witch:       '/images/zine_witch.png'
+    tile_floor: '/images/tex_floor.png',   // clean pre-AI floor texture
+    tile_wall:  '/images/tex_wall.png',    // clean pre-AI wall texture
+    zine:       '/images/zine.png'         // clean scroll icon for zine pickups
 };
 
-// Enemy type → sprite key. Uses dedicated sprites first.
-const ENEMY_SPRITES = {
-    troll:      'enemy_dark_beast',
-    wraith:     'enemy_wraith',
-    gatekeeper: 'enemy_gatekeeper',
-    concern:    'enemy_concern',
-    police:     'enemy_police',
-    bigot:      'enemy_bigot',
-    swarm:      'enemy_swarm',
-    cop_bot:    'enemy_cop_bot',
-    noise:      'enemy_noise',
-    preacher:   'enemy_preacher'
-};
-
-// NPC figure key → sprite key. Renderer falls back to colored filler
-// when a figure's sprite isn't loaded.
-const NPC_SPRITES = {
-    'community_mothers':     'npc_community_mothers',
-    'marsha':                'npc_marsha',
-    'sylvia':                'npc_sylvia',
-    'eleanor':               'npc_eleanor',
-    'charley':               'npc_charley',
-    'dora':                  'npc_dora',
-    'alan':                  'npc_hart',
-    'lili':                  'npc_lili',
-    'lucy':                  'npc_lucy',
-    'christine':             'npc_christine',
-    'holly':                 'npc_holly',
-    'william_dorsey_swann':  'npc_zeke',
-    'divine':                'npc_divine',
-    'peyton_oconner':        'npc_peyton',
-    'allison_scott':         'npc_allison',
-    'mama_gloria':           'npc_holly',
-    'blade_journalists':     'npc_divine',
-    'crystal_labeija':       'npc_divine',
-    'paris_dupree':          'npc_zeke',
-    'dorian_corey':          'npc_holly',
-    'kenya_cuevas':          'npc_allison',
-    'cleopatra_kambugu':     'npc_dora',
-    'mariela_munoz':         'npc_lucy'
-};
-// Named-loot → sprite key. Uses the new item_ art where available.
-const NAMED_LOOT_SPRITES = {
-    'Crown of Eleanor Rykener':         'loot_crown',
-    "LaBeija's Trophy":                 'loot_pride_medallion',
-    'The Mausoleum Flower':             'loot_bouquet',
-    'Hearth Stone':                     'item_hearth',
-    "Mother's Fierce Light":            'item_fierce_light',
-    "House Mother's Sash":              'loot_pride_medallion',
-    'Stonewall Brick':                  'item_stonewall',
-    "Compton's Cafeteria Sugar Shaker": 'item_sweet_tea',
-    "Lili's Last Brushstroke":          'loot_spray_can',
-    'Safe Shelter Key':                 'item_shelter_key',
-    'STAR House Key':                   'item_shelter_key',
-    "Rivera's Megaphone":               'loot_spray_can',
-    "Mama Gloria's Charm Book":         'item_book',
-    "Mariela's Tarot Deck":             'item_bodhi',
-    "Boylan's Memoir":                  'item_book',
-    'Vicks Touch of Care':              'item_kindred',
-    "Sawant's Petition":                'item_civic_shield',
-    'Homegrown Families Blessing':      'item_homegrown',
-    "Marsha's Hairpin":                 'loot_pride_medallion',
-    "Sylvia's Lighter":                 'item_firestorm',
-    'Stonewall Coin':                   'item_stonewall',
-    "Hirschfeld's Notes":               'item_archive',
-    "Christine's Letter":               'item_book',
-    'Gilded Pronoun Pin':               'item_resistance_pin',
-    "Eleanor's Diary":                  'item_book',
-    'Resistance Pin':                   'item_resistance_pin',
-    'Pride Shoelace':                   'item_pride_flag',
-    'Youth OUTright Badge':             'item_outright',
-    "Mutual-Aid Token":                 'item_kindred',
-    'Solidarity Charm':                 'item_trans_charm',
-    'Liberation Pamphlet':              'item_archive',
-    'Archival Fragment':                'item_archive',
-    'Phoenix Flame':                    'item_phoenix',
-    'Bloom of Resistance':              'item_bloom',
-    'Electric Dirt':                    'item_electric_dirt',
-    'Bodhi Seed':                       'item_bodhi'
-};
+// Entity sprites disabled — everything draws procedurally.
+const ENEMY_SPRITES = {};
+const NPC_SPRITES = {};
+const NAMED_LOOT_SPRITES = {};
 
 const images = {};
 for (const k of Object.keys(ASSET_PATHS)) images[k] = new Image();
@@ -806,11 +633,10 @@ function startCamp() {
     UI.showCamp(
         game,
         () => {
-            // If the player opened the camp modal from inside the hub
-            // (campfire interaction), just close it — don't regenerate the
-            // hub and yank them back to the spawn tile.
-            if (game.inHub && gameStarted) return;
-            enterHub();
+            // "Enter the Wasteland" goes straight to the dungeon — the village
+            // is an optional side area reached via its own button, never on
+            // the run critical path.
+            startDungeon();
         },
         () => {
             const penalty = (game.player.trait && game.player.trait.id === 'gatekept') ? 2 : 0;
@@ -2581,7 +2407,7 @@ function draw() {
                     ctx.textAlign = 'left';
                 }
             } else if (r.type === 'troll') {
-                const bob = Math.sin(game.animFrame * 0.4 + r.x) * 2;
+                const bob = Math.sin(game.animFrame * 0.16 + r.x) * 1.4;
                 const et = r.entity.enemyType || 'troll';
                 let size = 20, h = 24;
 
@@ -2756,7 +2582,11 @@ function draw() {
                         ctx.restore();
                     } else {
                     // DRAW PROCEDURAL PUNK PLAYER
-                    const bob = Math.sin(game.animFrame * 0.4) * 2;
+                    // Slow, tiny idle bob — only really shows while moving on
+                    // the ground. A fast bob made the character feel like it
+                    // was hopping and threw off aiming.
+                    const _moving = r.entity.onGround && Math.abs(r.entity.vx || 0) > 0.4;
+                    const bob = Math.sin(game.animFrame * 0.14) * (_moving ? 1.4 : 0.5);
                     const pal = PALETTES[r.entity.colorPalette || 0];
                         
                         // Get body and accent colors (cycle for rainbow)
