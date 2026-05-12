@@ -457,9 +457,19 @@ const ASSET_PATHS = {
     item_sweet_tea:      '/images/item_sweet_tea.png',
     item_tea:            '/images/item_tea.png',
     item_trans_charm:    '/images/item_trans_charm.png',
-    // ── Tile textures (clean pre-AI floor/wall) ─────────────────────────
-    tile_floor: '/images/tex_floor.png',
-    tile_wall:  '/images/tex_wall.png'
+    // ── Tile textures ────────────────────────────────────────────────────
+    tile_floor:      '/images/tex_floor.png',
+    tile_wall:       '/images/tex_wall.png',
+    tile_platform:   '/images/tile_platform.png',
+    tile_dirt:       '/images/tile_dirt.png',
+    tile_grass:      '/images/tile_grass.png',
+    tile_ice:        '/images/tile_ice.png',
+    tile_trampoline: '/images/tile_trampoline.png',
+    tile_spikes:     '/images/tile_spikes.png',
+    tile_water:      '/images/tile_water.png',
+    tile_acid:       '/images/tile_acid.png',
+    tile_neon_border:'/images/tile_neon_border.png',
+    tile_background: '/images/tile_background.png'
 };
 
 // Enemy type → sprite key. Auto-reject filters out any that load with an
@@ -499,6 +509,9 @@ const NPC_SPRITES = {
     'cleopatra_kambugu':     'npc_dora',
     'mariela_munoz':         'npc_lucy'
 };
+
+window.NPC_SPRITES   = NPC_SPRITES;
+window.ASSET_PATHS   = ASSET_PATHS;
 
 // Named-loot → sprite key.
 const NAMED_LOOT_SPRITES = {
@@ -666,6 +679,7 @@ function playIntro(onDone) {
     let idx = 0;
     let timer = null;
     let cleanedUp = false;
+    let slideShownAt = 0;
 
     // Build dot indicators (one per scene).
     dotsEl.innerHTML = '';
@@ -678,6 +692,7 @@ function playIntro(onDone) {
 
     function show(i) {
         if (timer) { clearTimeout(timer); timer = null; }
+        slideShownAt = Date.now();
         scenes.forEach((s, n) => s.classList.toggle('active', n === i));
         dots.forEach((d, n) => d.classList.toggle('active', n === i));
         if (i < scenes.length - 1) {
@@ -717,8 +732,11 @@ function playIntro(onDone) {
         }
     }
     function onClick(e) {
-        // Ignore clicks on the buttons themselves — they have their own handlers.
         if (e.target.closest('#intro-controls-bar')) return;
+        // Guard: ignore accidental taps within 800 ms of the slide appearing.
+        // This prevents a touch that opens the intro from immediately skipping
+        // the first scene on mobile.
+        if (Date.now() - slideShownAt < 800) return;
         advance();
     }
     function skip(e) { e.stopPropagation(); finish(); }
@@ -762,15 +780,8 @@ function addXP(amount) {
     const p = game.player;
     p.xp = (p.xp || 0) + amount;
     p.xpToNext = p.xpToNext || 100;
-    
-    UI.addMessage(`+${amount} XP`, 'special');
-    
-    if (p.xp >= p.xpToNext) {
-        p.xp -= p.xpToNext;
-        p.level = (p.level || 1) + 1;
-        p.xpToNext = Math.floor(p.xpToNext * 1.5);
-        levelUp();
-    }
+    // XP bar fills up as a progress indicator — level ups are milestone-only
+    // (floor completion or finishing an ancestor conversation in the dungeon).
     UI.updateStatus(game);
 }
 window.addXP = addXP;
@@ -1268,7 +1279,9 @@ function interact() {
             game.persistent.seenFigures[npc.figureKey] = true;
             game.historicalFigures++;
         }
-        DialogueUI.start(game, npc.figureKey, () => addXP(150));
+        // Village is a safe space — no level-up reward for chatting there.
+        // In the dungeon, finishing a conversation with an ancestor grants a perk.
+        DialogueUI.start(game, npc.figureKey, game.inHub ? null : () => levelUp());
         // In dungeon: NPC disappears after conversation (they move on).
         // In hub village: NPCs persist so you can talk to them again.
         if (!game.inHub) {
@@ -1725,9 +1738,9 @@ const stars = [];
 // === Platformer physics constants (Rogue Legacy inspired) ===
 const PLAYER_W = 0.65; // Slightly narrower for better platforming
 const PLAYER_H = 0.9;
-const GRAVITY = 0.65;
-const TERMINAL_VY = 12;
-const JUMP_SPEED = -7.5;
+const GRAVITY = 0.42;
+const TERMINAL_VY = 10;
+const JUMP_SPEED = -8.0;
 const COYOTE_FRAMES = 10;
 const JUMP_BUFFER_FRAMES = 10;
 const DASH_FRAMES = 8;
@@ -3775,6 +3788,11 @@ function setupControls() {
         tjZone.addEventListener('pointerup', endJoy);
         tjZone.addEventListener('pointercancel', endJoy);
         tjZone.addEventListener('pointerleave', endJoy);
+        // Safety net: if the pointer somehow escapes the zone (e.g. a mid-gesture
+        // browser interrupt on iOS), make sure the axis resets so the player
+        // never gets stuck walking in one direction.
+        window.addEventListener('pointerup',     (e) => { if (e.pointerId === joyId) endJoy(e); });
+        window.addEventListener('pointercancel', (e) => { if (e.pointerId === joyId) endJoy(e); });
     }
 
     // ---- Action buttons -------------------------------------------------

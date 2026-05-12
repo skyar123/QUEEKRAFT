@@ -486,7 +486,15 @@ export const DialogueUI = {
         this.onCloseCallback = onClose || null;
         this.currentNPC = HISTORICAL_FIGURES[npcKey];
         this.currentNPCKey = npcKey;
-        
+
+        // Show the NPC's hand-drawn sprite as the portrait, falling back to generic.
+        const portraitEl = document.querySelector('#conversation-modal img');
+        if (portraitEl) {
+            const spriteKey = window.NPC_SPRITES && window.NPC_SPRITES[npcKey];
+            portraitEl.src = (spriteKey && window.ASSET_PATHS && window.ASSET_PATHS[spriteKey])
+                || '/images/portrait_npc.png';
+        }
+
         if (!game.persistent.npcEncounters) game.persistent.npcEncounters = {};
         game.persistent.npcEncounters[npcKey] = (game.persistent.npcEncounters[npcKey] || 0) + 1;
         const runs = game.persistent.npcEncounters[npcKey];

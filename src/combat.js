@@ -488,6 +488,7 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
         UI.addMessage(`${enemy.enemyType === 'boss' ? 'THE BOSS' : 'Enemy'} defeated!`, 'victory');
         game.trolls = game.trolls.filter(t => t !== enemy);
         game.player.kills = (game.player.kills || 0) + 1;
+        if (typeof window.addXP === 'function') window.addXP(5);
         if (typeof window.__onEnemyKilledForQuests === 'function') {
             window.__onEnemyKilledForQuests(enemy.enemyType);
         }
@@ -517,6 +518,7 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
             game.player.scrapEarned = (game.player.scrapEarned || 0) + 15;
             game.player.health = game.player.maxHealth;
             Audio.playLoot();
+            if (typeof window.addXP === 'function') window.addXP(30);
             // Boss drops a guaranteed Legendary plus some secondaries.
             dropLoot(game, enemy);
             const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
