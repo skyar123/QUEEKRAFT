@@ -8,6 +8,7 @@ export const UI = {
         hearts: document.getElementById('player-hearts'),
         zines: document.getElementById('zines'),
         figures: document.getElementById('figures'),
+        echoes: document.getElementById('echoes'),
         treasures: document.getElementById('treasures'),
         level: document.getElementById('player-level'),
         xpBar: document.getElementById('xp-bar-fill')
@@ -38,6 +39,10 @@ export const UI = {
         this.status.depth.textContent = game.depth;
         this.status.zines.textContent = game.zines;
         this.status.figures.textContent = game.historicalFigures;
+        if (this.status.echoes) {
+            const e = (game.persistent && game.persistent.seenEchoes) ? Object.keys(game.persistent.seenEchoes).length : 0;
+            this.status.echoes.textContent = e;
+        }
         this.status.treasures.textContent = game.treasures;
         this.status.level.textContent = game.player.level || 1;
         

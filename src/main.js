@@ -704,9 +704,11 @@ function playIntro(onDone) {
     const scenes = Array.from(screen.querySelectorAll('.intro-scene'));
     if (!scenes.length) { onDone && onDone(); return; }
 
-    // Per-scene auto-advance times in ms. The CONTROLS scene & the final
-    // logo scene linger longer because they have more to read / no dialog.
-    const sceneDurations = [3200, 3200, 3500, 3200, 4200, 4200, 6500, 8000];
+    // Per-scene auto-advance times in ms. Scenes with more text linger longer.
+    // Order matches the intro-scene DOM: 0 walls / 1 burned / 2 echoes / 3 keeper /
+    // 4 mission / 5 village / 6 descent / 7 stealth / 8 lineage / 9 controls /
+    // 10 logo. Missing entries fall back to 3500ms.
+    const sceneDurations = [3200, 3600, 3800, 3200, 4400, 4800, 5200, 4400, 4800, 6500, 8000];
 
     let idx = 0;
     let timer = null;
