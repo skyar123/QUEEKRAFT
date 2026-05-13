@@ -326,6 +326,34 @@ const PALETTES = [
         colors: ['#E40303','#FF8C00','#FFED00','#008026','#24408E','#732982','#FFFFFF','#FFAFC8','#74D7EE','#613915','#000000'] }
 ];
 
+// ---------------------------------------------------------------------------
+// Depth zones. The wasteland changes character the deeper you go — each tier
+// has a name, a tint the renderer washes over floors/walls, an accent glow,
+// and a flavour line the descent screen prints when you first cross into it.
+// `wall` / `floor` are rgba overlay strings; `glow` recolours the floor halo.
+const DEPTH_ZONES = [
+    { from: 1, name: 'THE SURFACE RUINS',
+      flavour: 'Boarded storefronts, dead neon, our names spray-bombed over the demolition notices.',
+      wall: 'rgba(255,113,206,0.10)', floor: 'rgba(1,205,254,0.08)', glow: 'rgba(1,205,254,0.30)', particle: '#FF71CE' },
+    { from: 3, name: 'THE BUREAUCRACY LEVELS',
+      flavour: 'Fluorescent hum. Cubicle maze. A three-hundred-year waitlist printed on the walls.',
+      wall: 'rgba(120,160,90,0.12)', floor: 'rgba(150,170,110,0.10)', glow: 'rgba(150,200,120,0.28)', particle: '#9ACD32' },
+    { from: 5, name: 'THE ARCHIVE DEPTHS',
+      flavour: 'Dust and gold light. Every zine they tried to burn, shelved and breathing down here.',
+      wall: 'rgba(255,180,60,0.12)', floor: 'rgba(255,200,80,0.09)', glow: 'rgba(255,200,90,0.30)', particle: '#FFD700' },
+    { from: 7, name: 'THE DEEP-GRID',
+      flavour: 'The air bites. Old machine-ghosts glitch in the corners of the toxic dark.',
+      wall: 'rgba(150,80,200,0.16)', floor: 'rgba(120,60,160,0.12)', glow: 'rgba(180,100,255,0.34)', particle: '#B967DB' },
+    { from: 9, name: 'THE CORE',
+      flavour: 'White light. Quiet. The place under everything, where the lineage actually lives.',
+      wall: 'rgba(255,255,255,0.10)', floor: 'rgba(255,240,200,0.10)', glow: 'rgba(255,240,200,0.36)', particle: '#FFFFFF' }
+];
+function depthZone(depth) {
+    let z = DEPTH_ZONES[0];
+    for (const cand of DEPTH_ZONES) if ((depth || 1) >= cand.from) z = cand;
+    return z;
+}
+
 // Per-figure filler colors used when no sprite asset exists.
 // body = main silhouette, accent = flower/decoration, hat = hat brim color (null = no hat)
 const NPC_FILLER_COLORS = {
@@ -878,18 +906,33 @@ function startCamp() {
 
 async function descend() {
     UI.addMessage("Descending into the deeper archives...", "special");
-    
+
+    // Are we crossing into a new depth zone? If so the transition screen names it.
+    const nextDepth = game.depth + 1;
+    const prevZone = depthZone(game.depth);
+    const nextZone = depthZone(nextDepth);
+    const enteringNewZone = nextZone.name !== prevZone.name;
+
     // Depth Transition Effect
     const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:black;z-index:9999;opacity:0;transition:opacity 0.5s;display:flex;align-items:center;justify-content:center;color:#5BCEFA;font-size:32px;text-shadow:0 0 20px #5BCEFA;';
-    overlay.textContent = `LEVEL ${game.depth + 1}`;
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:black;z-index:9999;opacity:0;transition:opacity 0.5s;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 24px;color:#5BCEFA;text-shadow:0 0 20px #5BCEFA;font-family:VT323,monospace;';
+    if (enteringNewZone) {
+        overlay.innerHTML =
+            `<div style="font-size:18px;letter-spacing:4px;color:#FFD700;text-shadow:0 0 12px #FFD700;margin-bottom:10px;">▼ NOW ENTERING ▼</div>` +
+            `<div style="font-size:40px;color:#FF71CE;text-shadow:0 0 22px #FF71CE;margin-bottom:14px;">${nextZone.name}</div>` +
+            `<div style="font-size:18px;color:#01CDFE;max-width:520px;font-style:italic;">${nextZone.flavour}</div>` +
+            `<div style="font-size:16px;color:#888;margin-top:14px;">Depth ${nextDepth}</div>`;
+    } else {
+        overlay.textContent = `DEPTH ${nextDepth}`;
+        overlay.style.fontSize = '32px';
+    }
     document.body.appendChild(overlay);
     
-    // Fade in
+    // Fade in — linger longer when there's flavour text to read.
     await new Promise(r => {
         overlay.offsetWidth; // reflow
         overlay.style.opacity = '1';
-        setTimeout(r, 600);
+        setTimeout(r, enteringNewZone ? 2600 : 600);
     });
 
     game.depth++;
@@ -908,6 +951,7 @@ async function descend() {
     game.camInitialized = false;
     UI.updateStatus(game);
     UI.addMessage(`📍 Checkpoint reached: Depth ${game.depth}`, 'special');
+    if (enteringNewZone) UI.addMessage(`— ${nextZone.name} — ${nextZone.flavour}`, 'special');
 
     // Fade out
     overlay.style.opacity = '0';
@@ -995,7 +1039,9 @@ function startDungeon() {
     generateMap(game);
     updateFOV();
     UI.updateStatus(game);
-    UI.addMessage("🏳️‍⚧️ You enter the wasteland!", "special");
+    const startZone = depthZone(game.depth);
+    UI.addMessage(`🏳️‍⚧️ ${startZone.name}. ${startZone.flavour}`, "special");
+    UI.addMessage("👁 Enemies show '!' when they've spotted you, '?' when searching. Stay behind them and don't make noise to slip past.", "special");
     if (p.classObj) UI.addMessage(`Class: ${p.classObj.name}. Press R for ${p.classObj.power}.`, "special");
     // Mark the game as live ONLY after generateMap has populated game.map.
     // Until this flips, the rAF loop short-circuits — preventing the player
@@ -1036,6 +1082,46 @@ function isPassable(x, y) {
 // Legacy turn-based movement kept as a no-op shim — platformer physics handles motion now.
 function movePlayer(_dx, _dy) { /* deprecated by platformer physics */ }
 
+// ---------------------------------------------------------------------------
+// Stealth / line-of-sight perception. An enemy "perceives" the player when:
+//   • the player is right on top of it (dist ≤ 2 — can't sneak through someone)
+//   • OR the player is making noise (attacking / dashing) and within hearing
+//   • OR the player is within the enemy's facing cone AND in line of sight
+//     (no solid wall on the straight line between them) AND within sight range
+// Approaching an unaware enemy from behind, quietly, lets you slip past.
+// `troll.facing` is ±1, updated whenever the enemy moves horizontally.
+function losClear(ax, ay, bx, by) {
+    // Walk a coarse line from (ax,ay) to (bx,by); blocked by any '#' tile.
+    const dx = bx - ax, dy = by - ay;
+    const steps = Math.max(Math.abs(dx), Math.abs(dy));
+    if (steps === 0) return true;
+    for (let i = 1; i < steps; i++) {
+        const x = Math.round(ax + (dx * i) / steps);
+        const y = Math.round(ay + (dy * i) / steps);
+        if (game.map[`${x},${y}`] === '#') return false;
+    }
+    return true;
+}
+function playerIsNoisy() {
+    // Attacking and dashing make a racket — enemies within hearing notice
+    // regardless of which way they're facing.
+    return !!game.attackAnim || (game.player.dashTimer || 0) > 0;
+}
+function perceivesPlayer(troll, tx, ty, px, py, sightRange) {
+    const dist = Math.abs(px - tx) + Math.abs(py - ty);
+    if (dist > sightRange + 1) return false;     // far beyond hearing/sight
+    if (dist <= 2) return true;                  // can't slip past a body
+    // Stealth trait: only the close-range check above applies.
+    if (game.player.trait && game.player.trait.id === 'stealth') return false;
+    if (playerIsNoisy() && dist <= sightRange) return true;   // heard you
+    if (dist > sightRange) return false;
+    // Facing cone: player must be in front of (or directly above/below) the enemy.
+    const face = troll.facing || 1;
+    const sideOK = (px === tx) || (Math.sign(px - tx) === face);
+    if (!sideOK) return false;
+    return losClear(tx, ty, px, py);
+}
+
 function processTurn() {
     // Decrement attack cooldown each turn (for power attack delay)
     if (game.player.attackCooldown > 0) game.player.attackCooldown--;
@@ -1072,7 +1158,22 @@ function processTurn() {
         const dist = Math.abs(px - tx) + Math.abs(py - ty);
         let alertRadius = troll.alertRadius;
         if (game.player.trait && game.player.trait.id === 'clocked') alertRadius += 3;
-        if (game.player.trait && game.player.trait.id === 'stealth') alertRadius = 1;
+        if (game.player.trait && game.player.trait.id === 'stealth') alertRadius = Math.min(alertRadius, 3);
+
+        // Perception + alert state. `hunting` gates every "move toward player"
+        // branch below; once an enemy perceives you it keeps coming for a few
+        // turns even if you break line of sight (and trolls never give up).
+        const seen = perceivesPlayer(troll, tx, ty, px, py, alertRadius);
+        if (seen) {
+            troll.awareTurns = (troll.enemyType === 'troll' || troll.enemyType === 'police') ? 999 : 10;
+            troll.alertGlyph = '!';
+        } else if (troll.awareTurns > 0) {
+            troll.awareTurns--;
+            troll.alertGlyph = '?';
+        } else {
+            troll.alertGlyph = '';
+        }
+        const hunting = seen || troll.awareTurns > 0;
 
         // Returns true if (ex, ey) is inside a protected room (safe shelter or hearth).
         const isProtectedRoom = (ex, ey) => {
@@ -1086,6 +1187,7 @@ function processTurn() {
             // Path on tile coordinates (enemy float positions don't index the map).
             const tdx = px > tx ? 1 : px < tx ? -1 : 0;
             const tdy = py > ty ? 1 : py < ty ? -1 : 0;
+            if (tdx !== 0) troll.facing = tdx;   // turn to face the chase
             const nx1 = tx + tdx, ny1 = ty + tdy;
             const nx2 = tx + tdx, ny2 = ty;
             const nx3 = tx,       ny3 = ty + tdy;
@@ -1104,7 +1206,7 @@ function processTurn() {
             if (dist <= 1) {
                 takeDamage(game, 1);
                 UI.addMessage("Concern Troll whispers 'Are you SURE about this?'", 'death');
-            } else if (dist <= alertRadius) {
+            } else if (hunting) {
                 stepToward();
             }
             return;
@@ -1153,7 +1255,7 @@ function processTurn() {
         // WRAITH: teleports, high dodge — attack if adjacent
         if (troll.enemyType === 'wraith') {
             if (dist <= 1) { takeDamage(game, 1); return; }
-            if (dist <= alertRadius && Math.random() < 0.6) {
+            if (hunting && Math.random() < 0.6) {
                 for (let i = 0; i < 5; i++) game.particles.push({x: troll.x, y: troll.y, vx: 0, vy: -0.4, life: 1, color: '#39FF14'});
                 stepToward();
             }
@@ -1163,42 +1265,43 @@ function processTurn() {
         // POLICE: fast, aggressive, 2 damage
         if (troll.enemyType === 'police') {
             if (dist <= 1) { takeDamage(game, 2); return; }
-            if (dist <= alertRadius) stepToward();
+            if (hunting) stepToward();
             return;
         }
 
         // SWARM (new): tiny, fast, 1 dmg, can stack
         if (troll.enemyType === 'swarm') {
             if (dist <= 1) { takeDamage(game, 1); return; }
-            if (dist <= alertRadius) { stepToward(); stepToward(); }
+            if (hunting) { stepToward(); stepToward(); }
             return;
         }
 
         // BIGOT (new): far-range projectile thrower (logical adjacency = 2)
         if (troll.enemyType === 'bigot') {
-            if (dist <= 4 && Math.random() < 0.3) {
+            if (hunting && dist <= 4 && Math.random() < 0.3) {
                 takeDamage(game, 1);
                 UI.addMessage("Bigot threw a slur at you.", 'death');
                 game.floatingText.push({ x: troll.x, y: troll.y, text: '!', life: 30, color: '#FF0000' });
                 return;
             }
             if (dist <= 1) { takeDamage(game, 1); return; }
-            if (dist <= alertRadius) stepToward();
+            if (hunting) stepToward();
             return;
         }
 
-        // DEFAULT TROLL: chase forever once alerted, 1 damage on contact
+        // DEFAULT TROLL: chase relentlessly once it's noticed you, 1 damage on contact
         if (dist <= 1) { takeDamage(game, 1); return; }
-        if (dist <= alertRadius) {
+        if (hunting) {
             troll.chasingTurns = 99;
             stepToward();
             return;
         }
 
-        // Idle wander
+        // Idle wander — also nudges its facing so it isn't always staring right.
         if (Math.random() < 0.4) {
             const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
             const [rx, ry] = dirs[Math.floor(Math.random() * dirs.length)];
+            if (rx !== 0) troll.facing = rx;
             const nx = tx + rx, ny = ty + ry;
             if (isPassable(nx, ny) && !game.trolls.find(t => trollTileX(t) === nx && trollTileY(t) === ny)) {
                 troll.x = nx;
@@ -2184,6 +2287,10 @@ function draw() {
     const px = tileX();
     const py = tileY();
 
+    // Depth-zone tint: washed over plain dungeon tiles so the wasteland reads
+    // differently the deeper you are. Null in the village (it has its own look).
+    const envZone = game.inHub ? null : depthZone(game.depth);
+
     // Vertigo trait → tilt the canvas slightly based on horizontal velocity
     const isVertigo = game.player.traits && game.player.traits.some(t => t.id === 'vertigo');
     const isGreyscale = game.player.traits && game.player.traits.some(t => t.id === 'colorblind');
@@ -2299,6 +2406,13 @@ function draw() {
                 if (inCharmSchool && r.isVisible) wallGlow = 'rgba(32,178,170,0.35)';
                 const glow = wallGlow;
                 drawTile(ctx, sx, sy, '#0a0a0a', true, glow, patterns.wall);
+                // Depth-zone wash on plain walls (skip special rooms — they have their own tint).
+                if (envZone && r.isVisible && !inHearth && !inShelter && !inBallroom && !inStarHouse && !inCharmSchool) {
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = envZone.wall;
+                    ctx.fillRect(sx, sy, T, T);
+                    ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+                }
 
                 // Mural text on ceiling walls
                 if (r.isVisible && game.muralTiles && game.muralTiles[`${r.x},${r.y}`]) {
@@ -2327,7 +2441,15 @@ function draw() {
             } else {
                 const floorColor = r.isVisible ? '#0a0a0a' : '#030303';
                 let floorGlow = r.isVisible ? 'rgba(1,205,254,0.3)' : null;
+                if (envZone && r.isVisible) floorGlow = envZone.glow;
                 drawTile(ctx, sx, sy, floorColor, false, floorGlow, r.isVisible ? patterns.floor : null);
+                // Depth-zone wash on plain floors (skip special rooms / stairs).
+                if (envZone && r.isVisible && r.tile !== '>' && !inHearth && !inShelter && !inBallroom && !inStarHouse && !inCharmSchool) {
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = envZone.floor;
+                    ctx.fillRect(sx, sy, T, T);
+                    ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+                }
                 // Hearth warm amber overlay on floor
                 if (inHearth && r.isVisible && r.tile !== '>') {
                     ctx.globalAlpha = 0.12;
@@ -2736,6 +2858,21 @@ function draw() {
                 ctx.fillRect(drawX - barW/2, drawY - h - 12 + bob, barW, 5);
                 ctx.fillStyle = '#FF71CE';
                 ctx.fillRect(drawX - barW/2, drawY - h - 12 + bob, barW * (r.entity.health / r.entity.maxHealth), 5);
+
+                // Stealth alert glyph: '?' = heard/half-noticed (still searching),
+                // '!' = has spotted you and is hunting. No glyph = unaware (sneak past).
+                if (r.entity.alertGlyph) {
+                    const alerted = r.entity.alertGlyph === '!';
+                    ctx.save();
+                    ctx.font = 'bold 18px VT323';
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = alerted ? '#FF0040' : '#FFD700';
+                    ctx.shadowColor = ctx.fillStyle;
+                    ctx.shadowBlur = 10;
+                    const jy = alerted ? Math.sin(game.animFrame * 0.5) * 2 : 0;
+                    ctx.fillText(r.entity.alertGlyph, drawX, drawY - h - 20 + bob + jy);
+                    ctx.restore();
+                }
 
                 // Status effect glyphs floating above the health bar.
                 if (r.entity.status) {
