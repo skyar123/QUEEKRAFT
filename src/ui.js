@@ -113,17 +113,48 @@ export const UI = {
 
     
     startRefusal(game, enemy) {
-        document.getElementById('conversation-name').textContent = 'Refusal: ' + enemy.enemyType;
-        document.getElementById('conversation-text').textContent = 'An oppressor approaches. Refuse them on your own terms.';
-        
+        const ENEMY_DISPLAY = {
+            gatekeeper: 'GATEKEEPER',
+            concern: 'CONCERN TROLL',
+            bigot: 'BIGOT',
+            police: 'POLICE',
+        };
+        const ENEMY_PORTRAITS = {
+            gatekeeper: '/images/spr_gatekeeper.png',
+            concern:    '/images/spr_concern_troll.png',
+            bigot:      '/images/spr_bigot.png',
+            police:     '/images/spr_police.png',
+        };
+        const ENEMY_OPENERS = {
+            gatekeeper: "They're checking a clipboard, looking you up and down. \"I don't think you belong here.\"",
+            concern:    "They sidle up with a tight smile. \"I'm just asking questions. You don't have to get so upset.\"",
+            bigot:      "They plant themselves in your path, jaw set, arms crossed. They want you to feel small.",
+            police:     "They slow as they pass. Hand near the belt. Eyes measuring you up before you've said a word.",
+        };
+        const displayName = ENEMY_DISPLAY[enemy.enemyType] || enemy.enemyType.toUpperCase();
+        document.getElementById('conversation-name').textContent = 'REFUSAL: ' + displayName;
+        document.getElementById('conversation-text').textContent =
+            ENEMY_OPENERS[enemy.enemyType] || 'An oppressor approaches. Refuse them on your own terms.';
+
+        const portraitEl = document.querySelector('#conversation-modal img');
+        if (portraitEl) {
+            portraitEl.src = ENEMY_PORTRAITS[enemy.enemyType] || '/images/portrait_npc.png';
+        }
+
         const choicesContainer = document.getElementById('conversation-choices');
         choicesContainer.innerHTML = '';
 
-        const options = [
+        const POLICE_OPTIONS = [
+            "I know my rights. I don't answer questions.",
+            "Am I being detained? If not, I'm leaving.",
+            "I'm not engaging. Have a day."
+        ];
+        const DEFAULT_OPTIONS = [
             "I don't have time for this.",
             "Your opinion is noted and immediately discarded.",
             "Bestie... no."
         ];
+        const options = enemy.enemyType === 'police' ? POLICE_OPTIONS : DEFAULT_OPTIONS;
 
         options.forEach((opt, index) => {
             const btn = document.createElement('button');

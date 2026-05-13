@@ -240,7 +240,11 @@ export function generateMap(game) {
         return { x: cx, y: cy };
     }
 
-    const zineKeys = Object.keys(ZINES);
+    // Prefer zines the player hasn't collected yet so missed ones always resurface.
+    const seenZines = (game.persistent && game.persistent.seenZines) || {};
+    const allZineKeys = Object.keys(ZINES);
+    const uncollected = allZineKeys.filter(k => !seenZines[k]);
+    const zineKeys = uncollected.length > 0 ? uncollected : allZineKeys;
     const zinesThisLevel = Math.min(3, zineKeys.length, usable.length);
     for (let i = 0; i < zinesThisLevel; i++) {
         const room = popRandomRoom();

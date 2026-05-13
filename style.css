@@ -296,7 +296,7 @@ body, html {
 .t-dash {
     width: 64px; height: 64px; font-size: 14px;
     right: calc(38px + env(safe-area-inset-right));
-    bottom: calc(216px + env(safe-area-inset-bottom));
+    bottom: calc(296px + env(safe-area-inset-bottom));
     border-color: var(--punk-cyan);
     color: var(--punk-cyan);
     background: rgba(1, 205, 254, 0.16);
@@ -320,7 +320,7 @@ body, html {
 .t-use {
     width: 48px; height: 48px; font-size: 12px;
     right: calc(32px + env(safe-area-inset-right));
-    bottom: calc(296px + env(safe-area-inset-bottom));
+    bottom: calc(216px + env(safe-area-inset-bottom));
     border-radius: 10px;
     border-color: rgba(255,255,255,0.55);
     color: rgba(255,255,255,0.85);
@@ -458,13 +458,13 @@ body, html {
               bottom: calc(20px + env(safe-area-inset-bottom));
               right: calc(96px + env(safe-area-inset-right)); }
     .t-dash { width: 54px; height: 54px;
-              bottom: calc(140px + env(safe-area-inset-bottom));
+              bottom: calc(196px + env(safe-area-inset-bottom));
               right: calc(28px + env(safe-area-inset-right)); }
     .t-pwr  { width: 54px; height: 54px;
               bottom: calc(96px + env(safe-area-inset-bottom));
               right: calc(120px + env(safe-area-inset-right)); }
     .t-use  { width: 42px; height: 42px;
-              bottom: calc(196px + env(safe-area-inset-bottom));
+              bottom: calc(140px + env(safe-area-inset-bottom));
               right: calc(22px + env(safe-area-inset-right)); }
     #tj-base { width: 100px; height: 100px; }
     #tj-stick { width: 44px; height: 44px; margin: -22px 0 0 -22px; }
@@ -476,7 +476,7 @@ body, html {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(0,0,0,0.85);
     display: none; align-items: center; justify-content: center;
-    z-index: 2000; padding: 15px;
+    z-index: 50000; padding: 15px;
     backdrop-filter: blur(5px);
 }
 

@@ -1383,9 +1383,8 @@ function interact() {
             game.persistent.seenFigures[npc.figureKey] = true;
             game.historicalFigures++;
         }
-        // Village is a safe space — no level-up reward for chatting there.
-        // In the dungeon, finishing a conversation with an ancestor / echo grants a perk.
-        DialogueUI.start(game, npc.figureKey, game.inHub ? null : () => levelUp());
+        // Level-ups are earned only by completing a floor (descend()), not from dialogue.
+        DialogueUI.start(game, npc.figureKey, null);
         // In dungeon: NPC disappears after conversation (they move on).
         // In hub village: NPCs persist so you can talk to them again.
         if (!game.inHub) {
@@ -1774,6 +1773,13 @@ const FIXED_DT = 1 / 60;
 const MAX_FRAME_DT = 0.1; // clamp huge tab-switch hitches so we don't death-spiral
 let paused = false;
 let questLogVisible = false;
+
+function setQuestLogVisible(v) {
+    questLogVisible = v;
+    const tc = document.getElementById('touch-controls');
+    if (tc) tc.style.visibility = v ? 'hidden' : '';
+}
+window.__setQuestLogVisible = setQuestLogVisible;
 // Set true the first time generateMap finishes so physics doesn't run against
 // an empty map (which would let the player free-fall through "nothing" while
 // the camp modal is open). Without this, slow asset loads on a real
@@ -2435,7 +2441,7 @@ function draw() {
             } else if (r.tile === 'T') {
                 drawTile(ctx, sx, sy, '#1a0a14', true, null, r.isVisible ? patterns.trampoline : null);
             } else if (r.tile === '^') {
-                drawTile(ctx, sx, sy, '#1a0a14', false, null, r.isVisible ? patterns.spikes : null);
+                drawTile(ctx, sx, sy, '#2a0505', false, r.isVisible ? 'rgba(220,40,40,0.55)' : null, r.isVisible ? patterns.spikes : null);
             } else if (r.tile === '=') {
                 drawTile(ctx, sx, sy, '#1a0a14', false, null, r.isVisible ? patterns.platform : null);
             } else if (r.tile === 'C') {
@@ -3885,7 +3891,7 @@ function setupControls() {
         } else if (e.code === 'Enter' || e.code === 'KeyF') {
             interact();
         } else if (e.code === 'KeyJ') {
-            questLogVisible = !questLogVisible;
+            setQuestLogVisible(!questLogVisible);
         } else if (e.code === 'F1') {
             showFps = !showFps;
             e.preventDefault();
@@ -4178,7 +4184,7 @@ function setupControls() {
     const aiBtn = document.getElementById('t-ai');
     if (aiBtn) aiBtn.addEventListener('click', () => GeminiUI.start(game));
     const questBtn = document.getElementById('t-quest');
-    if (questBtn) questBtn.addEventListener('click', () => { questLogVisible = !questLogVisible; });
+    if (questBtn) questBtn.addEventListener('click', () => { setQuestLogVisible(!questLogVisible); });
 
     // Pause requires a long-press (~600 ms) so it can't trigger by accident.
     const pauseBtn  = document.getElementById('t-pause');
