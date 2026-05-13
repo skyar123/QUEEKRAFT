@@ -2985,6 +2985,27 @@ function draw() {
                         ctx.fillRect(drawX - 6 - legSpread, drawY - 8 + bob, 5, 10);
                         ctx.fillRect(drawX + 1 + legSpread, drawY - 8 + bob, 5, 10);
                     } // end procedural else
+
+                    // S.O.U.L. data-degradation glitch on the avatar — a clone
+                    // of a clone. Frequency + strength scale with generation.
+                    const deg = soulDegradation();
+                    if (deg > 0.01) {
+                        const period = Math.max(7, Math.round(28 - deg * 30));
+                        if (game.animFrame % period < 2) {
+                            const px0 = drawX - 30, py0 = drawY - 70, pw = 60, ph = 72;
+                            const sh = 3 + Math.random() * 9;
+                            const sy = py0 + Math.random() * (ph - sh);
+                            const shift = (Math.random() - 0.5) * deg * 34;
+                            try { ctx.drawImage(canvas, px0, sy, pw, sh, px0 + shift, sy, pw, sh); } catch (e) {}
+                        }
+                        // Faint chromatic ghost on the avatar region.
+                        if (game.animFrame % 6 === 0) {
+                            ctx.globalAlpha = deg * 0.22;
+                            ctx.fillStyle = game.animFrame % 12 === 0 ? '#01CDFE' : '#FF00AA';
+                            ctx.fillRect(drawX - 12 + (Math.random()-0.5)*4, drawY - 36, 24, 30);
+                            ctx.globalAlpha = 1;
+                        }
+                    }
                 }
             }
             
@@ -4190,6 +4211,17 @@ function applyHeir(heir) {
     game.player.traits = heir.traits || [heir.trait];
     game.player.classObj = heir.classObj || null;
     document.getElementById('player-name').textContent = heir.name;
+    // S.O.U.L. transfer cost: each generation strips a fragment of the
+    // original consciousness. `lineage.length` = how many heirs have fallen.
+    const gen = lineage.length;
+    const integrity = Math.max(20, 100 - gen * 9);
+    UI.addMessage(`🧬 GENERATION ${gen + 1}. S.O.U.L. integrity: ${integrity}%. The transfer cost another fragment — but you're still here.`, 'special');
+}
+
+// Data-degradation level for the current heir (0..0.6), derived live from how
+// many heirs have fallen. Used by the player renderer to glitch the avatar.
+function soulDegradation() {
+    return Math.min(0.6, (lineage.length || 0) * 0.09);
 }
 
 // Ensure setupControls is called once on load, even though initGame does startCamp
