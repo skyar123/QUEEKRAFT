@@ -1,4 +1,4 @@
-import { ZINES, HISTORICAL_FIGURES, TREASURES, HEALING_ITEMS } from './data.js';
+import { ZINES, HISTORICAL_FIGURES, TREASURES, HEALING_ITEMS, ECHO_KEYS } from './data.js';
 
 const MURAL_MESSAGES = [
     "You are powerful, you are loved",
@@ -23,7 +23,13 @@ const MURAL_MESSAGES = [
     "We were sacred before they told us we were wrong",
     "23 children. Not one of them I turned away.",
     "Stay close. Stay quiet. Get past them. We need you deeper.",
-    "They struck our names from the records. We carved them here."
+    "They struck our names from the records. We carved them here.",
+    // The deeper shelves — the Archive holds whole stories, not just zines.
+    "The Archive keeps more than zines. It keeps whole stories. Some are leaking.",
+    "If you find a room that's flickering — someone's still inside it. Say hello.",
+    "Fin is the part of Lu that lived. Every echo has one of those. Find it.",
+    "The signal doesn't stop just because the broadcast does.",
+    "A story that didn't survive intact is still a story. Hold it anyway."
 ];
 
 export function pick(arr) {
@@ -157,6 +163,7 @@ export function generateMap(game) {
     game.ballroomRooms = new Set();
     game.starHouseRooms = new Set();
     game.charmSchoolRooms = new Set();
+    game.echoRooms = new Set();
     game.muralTiles = {};
 
     game.mapWidth = ROOMS_X * ROOM_W;
@@ -374,6 +381,30 @@ export function generateMap(game) {
         });
     }
 
+    // ── Echo Chamber (depth ≥ 3, ~22% per floor) ─────────────────────────────
+    // A story the Archive couldn't quite hold — it's leaking, and someone from
+    // it is still in there. Datamosh-tinted; enemies don't path in. Spawns one
+    // un-met Echo character and a small "Fragment" pickup.
+    if (usable.length > 0 && game.depth >= 3 && Math.random() < 0.22) {
+        const unmet = ECHO_KEYS.filter(k => !(game.persistent.seenEchoes && game.persistent.seenEchoes[k]));
+        if (unmet.length > 0) {
+            const echoRoom = popRandomRoom();
+            game.echoRooms.add(`${echoRoom.rx},${echoRoom.ry}`);
+            const pos = inRoomFloorTile(echoRoom);
+            game.npcs.push({ x: pos.x, y: pos.y, figureKey: pick(unmet), type: 'echo' });
+            game.items.push({
+                x: roomCenterX(echoRoom.rx) - 1, y: roomFloorY(echoRoom.ry) - 1,
+                type: 'loot', tier: 'epic',
+                name: 'Archival Fragment',
+                scrap: 8, effect: 'rage_vial',
+                color: '#B967DB', glow: '#B967DB'
+            });
+            // Glitchy mural over the chamber.
+            const wx = roomCenterX(echoRoom.rx), wy = echoRoom.ry * ROOM_H;
+            game.muralTiles[`${wx},${wy}`] = 'a story that didn\'t survive intact — keeper, hold it anyway';
+        }
+    }
+
     // ── Allison Scott near a mural room ──────────────────────────────────────
     if (usable.length > 0 && !game.persistent.seenFigures['allison_scott'] && game.depth >= 2 && Math.random() < 0.4) {
         const muralRoom = popRandomRoom();
@@ -565,6 +596,7 @@ export function generateHubMap(game) {
     game.ballroomRooms = new Set();
     game.starHouseRooms = new Set();
     game.charmSchoolRooms = new Set();
+    game.echoRooms = new Set();
     game.mapWidth = VLG_W;
     game.mapHeight = VLG_H;
     game.seen = {};

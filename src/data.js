@@ -766,8 +766,170 @@ export const HISTORICAL_FIGURES = {
             }
         },
         fact: "Coccinelle (1931–2006) was a French actress and cabaret performer among the first trans women in France to undergo gender-affirming surgery (1958) and live openly. She was an international celebrity in the 1950s–60s and a trailblazer for European trans visibility."
+    },
+
+    // ───────────────────────────────────────────────────────────────────────
+    // ECHOES — the Archive holds more than zines. Down in the deeper shelves
+    // it's holding whole *stories* — other queer survival narratives that
+    // didn't survive intact. They leak. When you find an Echo Chamber, someone
+    // from one of those stories is still in there, real to themselves. These
+    // entries are flagged `echo: true` so they don't count toward the 9
+    // ancestors; `room` is the chamber's display name.
+    'echo_lu_fin': {
+        name: 'Lu (& Fin)', era: 'an unfinished story', echo: true, room: 'THE WIBBLY-WOBBLY ECHO',
+        dialogue: {
+            greeting: {
+                text: "Marshmallow ground. Licorice thrones in the distance. The boy with the Doc Martens — that's Lu. The bright loud one bouncing around him in the blue suit — that's Fin. Fin grins: \"Oh GOOD, an audience! Lu, look, the Archive remembered us!\"",
+                choices: [
+                    { text: "What is this place?", next: "place" },
+                    { text: "Lu — are you okay?", next: "lu" }
+                ]
+            },
+            place: {
+                text: "Fin: \"It's the part of the story where Lu almost didn't make it. His parents wouldn't say his name. He came here instead.\" Fin's voice doesn't drop. \"But here's the trick — I'm not a separate person. I'm the piece of him that still thinks happiness is possible. So he made it. He's making it. Watch — he's looking up.\"",
+                choices: [{ text: "Then I'm glad you're loud.", next: "gift" }]
+            },
+            lu: {
+                text: "Lu, quiet: \"...I'm a man. I knew it the way you know your own hands. They didn't, or wouldn't. I came here so tired.\" Fin, gently for once: \"And then you stayed. You let me hang around. Tell them what we found.\" Lu, a little surprised at himself: \"...a way through. Invisible until you trust it's there.\"",
+                choices: [{ text: "Show me the way through.", next: "gift" }]
+            },
+            gift: {
+                text: "Fin spins in a circle. \"Take this — the trick of seeing the path that isn't drawn yet. It's how Lu got out. It's how anyone gets out.\" The marshmallow ground bounces you a little higher than physics allows.",
+                reward: 'ability_vision',
+                choices: [{ text: "Thank you, Lu. Thank you, Fin.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Fin: \"Toward the chocolate waterfalls now, Lu. We earned it.\" Lu, almost smiling: \"...okay. Okay.\" They walk off into colour.",
+                choices: []
+            }
+        },
+        fact: "From the play 'Fin, Luna and The Wibbly Wobbly Way To Happiness': Lu, a young trans man, processes the trauma of parental rejection in a surreal afterlife; Fin — 'genderless and genderful' — is revealed to be the fragment of Lu's own consciousness that never stopped believing in joy. The story is about integration: surviving by reclaiming your own resilience."
+    },
+    'echo_barry_scott': {
+        name: 'Barry & Scott', era: 'a story still being repaired', echo: true, room: 'THE MEMORY ECHO',
+        dialogue: {
+            greeting: {
+                text: "A cramped studio apartment — VHS tapes, a box TV hissing static. It keeps flickering: a redwood forest, a hotel room, headlights. A big awkward man (Barry) flinches at each shift. A young person in skinny jeans (Scott, they/them) stands between him and the worst of it. Scott: \"Hey. Easy. The walls are doing the thing again. Breathe with me.\"",
+                choices: [
+                    { text: "What's happening to him?", next: "barry" },
+                    { text: "Scott — are *you* okay?", next: "scott" }
+                ]
+            },
+            barry: {
+                text: "Scott, low: \"My dad. He did a lot of damage when I was small — a DUI with me in the car, a night in a hotel I still dream about. He's sick. Schizophrenia, the drinking. The room turns into those nights and he gets lost in them.\" Barry, surfacing: \"...I was a monster. I'm not — I'm trying not to be. Every day. That's the job now.\"",
+                choices: [{ text: "Trying every day counts.", next: "gift" }]
+            },
+            scott: {
+                text: "Scott shrugs, careful. \"I learned to go quiet to survive him. I'm un-learning it. Came back to talk it through — not to fix him, just to... be a person in the room with him. We're both doing the work.\" Barry, watching the walls steady: \"...thank you for staying in the room.\"",
+                choices: [{ text: "How do you keep the room from shifting?", next: "gift" }]
+            },
+            gift: {
+                text: "Scott presses something into your hand — a small ordinary stone. \"It's a grounding thing. When the world starts turning into the bad memory, you hold it and it... slows. Lets you heal in real time instead of bleeding in flashback time. Take it. We've got each other.\"",
+                reward: 'item_bloom',
+                choices: [{ text: "Thank you. Both of you, hold on.", next: "farewell" }]
+            },
+            farewell: {
+                text: "The apartment stops flickering — just an apartment, just two people in it. Barry exhales. Scott nods at you once, like a promise.",
+                choices: []
+            }
+        },
+        fact: "From the play 'Super Big Shit Hairballs': Barry, a man battling addiction and mental illness, is interrupted mid-suicide-attempt by his estranged non-binary child Scott, who comes to process childhood trauma. The room shifts into memories of past harm; the play ends not on absolution but on a fragile, real reconciliation — and the recognition that recovery is a daily act."
+    },
+    'echo_projection_booth': {
+        name: 'The Projection Booth', era: 'a transmission, ongoing', echo: true, room: 'THE FREQUENCY ECHO',
+        dialogue: {
+            greeting: {
+                text: "A drive-in lot, late, rain on every windshield. Voices crackle in over the radio — a dozen cars, nobody getting out, everybody talking. A woman's voice, fragile: \"...I think I'm just *playing* mother. It's the longest improv scene I've ever done and I don't have the script.\" A booth somewhere hums and answers in all of them at once.",
+                choices: [
+                    { text: "Who am I listening to?", next: "voices" },
+                    { text: "What is the Booth?", next: "booth" }
+                ]
+            },
+            voices: {
+                text: "The Booth: \"Hector tracks his son in a 214-column spreadsheet and still can't find the column for *connection*. Barry hasn't spoken to his kid in three years and is rehearsing the apology. Skylar — that's the scared one — is learning that 'playing mother' and 'being one' might be the same act, performed long enough. They can't see each other. They're learning to reach anyway. So are you.\"",
+                choices: [{ text: "How do I reach across, then?", next: "gift" }]
+            },
+            booth: {
+                text: "The Booth: \"I'm the part of every transmission that doesn't end. A signal doesn't stop just because the broadcast does — it keeps going, out past where anyone's listening. Memory works the same. So does love, if you let it. The static is just the distance. Tune through it.\"",
+                choices: [{ text: "Then tune me through.", next: "gift" }]
+            },
+            gift: {
+                text: "The radios all hiss to one clean frequency for a moment. \"There. You can hear the architecture now — the ways through these walls that nobody mapped. Passages. The Archive hides them; the signal doesn't. Go.\" The dial steadies. Hidden routes flicker into being around you.",
+                reward: 'reveal_passage',
+                choices: [{ text: "Thank you. Keep transmitting.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Dawn somewhere. One by one the voices sign off — \"...goodnight, kid\" — \"...I'll call this time\" — \"...I love you, even from here.\" The rain keeps falling. The Booth keeps humming.",
+                choices: []
+            }
+        },
+        fact: "From the audio play 'STATIC': isolated in cars at a rainy drive-in, estranged parents and children speak only over radio frequencies — about imperfection, distance, and learning to reach each other anyway. The Projection Booth is the omniscient, gentle presence that signals and memories never truly end."
+    },
+    'echo_andi_mann': {
+        name: 'Andi Mann', era: 'a story too tangled to shelve', echo: true, room: 'THE BIG-TOP ECHO',
+        dialogue: {
+            greeting: {
+                text: "Sawdust and rigging. A circus that's all knives and debt — a ringmaster everyone owes and everyone wants dead, a knife-thrower running an affair, a clown counting the money he lent that's never coming back. A wiry crew-hand sidles up, low: \"Don't make eye contact with the bearded lady, she's having a year. Name's Andi. I, uh — I don't actually work here.\"",
+                choices: [
+                    { text: "Then what are you doing here?", next: "job" },
+                    { text: "Why is this place such a mess?", next: "mess" }
+                ]
+            },
+            job: {
+                text: "Andi, quieter: \"Half this troupe is hiding from a warrant. I'm the one sent in to find which half. Undercover so deep I've started believing my own cover story. Queer kid who ran away to the circus — that part's true, actually. The badge is the costume.\" A wry look. \"You learn things, working a place where everyone's pretending. Like which pretending keeps people alive.\"",
+                choices: [{ text: "Teach me something useful.", next: "gift" }]
+            },
+            mess: {
+                text: "Andi: \"It's a chosen family, technically — they just chose *poorly*, and then chose each other anyway, and now they can't leave. Debts and grudges and one bad ringmaster. It's not so different from a House. Same architecture. Different lighting.\" He glances over his shoulder. \"Anyway. You didn't see me.\"",
+                choices: [{ text: "Slip me something for the road.", next: "gift" }]
+            },
+            gift: {
+                text: "Andi palms you something cold and sharp from under his coat. \"Off the books. Bites hard, no questions. Use it before anyone clocks that you're not part of the act — which, around here, you've got about thirty seconds for.\" He's already drifting back into the crowd, somebody else entirely.",
+                reward: 'ability_rage',
+                choices: [{ text: "I owe you one, Andi.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Somewhere behind the big top a deal goes wrong, loudly. Andi is, conveniently, not there. The story keeps tangling without you.",
+                choices: []
+            }
+        },
+        fact: "From the 'Murder Mystery' character roster: a circus syndicate webbed with debt, romance and revenge — twenty performers orbiting a ringmaster everyone owes. Andi Mann is the undercover fixer planted inside, hunting fugitives among the runaways: a queer kid whose origin story is real even when the badge is a costume."
+    },
+    'echo_zo': {
+        name: 'Zo', era: 'a story that ate itself', echo: true, room: 'THE APOCALYPSE ECHO',
+        dialogue: {
+            greeting: {
+                text: "A worn living room dressed for the end of the world — Trump poster, mounted rifles, a window that, if you look too long, shows the cardboard backstage behind it. Someone with colour-streaked hair, a flask, and a neon-green gun is sitting on the couch eating lavender macaroons. They don't look up. \"Oh good. Another one. Hi. I'm Zo. None of this is real, by the way. Macaroon?\"",
+                choices: [
+                    { text: "What do you mean 'not real'?", next: "real" },
+                    { text: "Why are you still here, then?", next: "stay" }
+                ]
+            },
+            real: {
+                text: "Zo gestures with the gun, bored. \"This was a play. A bad one. Trump zombies, trigger-warning jokes, two actors who hated each other. It collapsed — I shot the script, basically — and then it just... kept going without an audience. So now it's an Echo. I'm the part that knows.\" A beat. \"Knowing doesn't help as much as you'd think.\"",
+                choices: [{ text: "It might. Knowing kept you queer and alive.", next: "stay" }]
+            },
+            stay: {
+                text: "Zo finally looks at you. The edge under the boredom: \"...volunteer-run radical queer bookstore. That was my real life. Before. I keep the gun because the things that come through these walls don't care that they're fictional — and neither do I, when one's chewing on me.\" A shrug. \"You learn to make a weapon out of whatever the story left lying around. That's basically the whole skill.\"",
+                choices: [{ text: "Then arm me before I leave.", next: "gift" }]
+            },
+            gift: {
+                text: "Zo tosses you something humming and green. \"It shoots... certainty. Point it at whatever's coming and it stops being able to argue with you for a while. Won't kill you, won't fix you — just buys time. Everything good does.\" They go back to the macaroons. \"Tell the Archive its filing system sucks.\"",
+                reward: 'item_shield',
+                choices: [{ text: "I will. Stay sharp, Zo.", next: "farewell" }]
+            },
+            farewell: {
+                text: "Outside the cardboard window, something approaches. Zo doesn't move. \"Door's that way. Run faster than the metaphor.\"",
+                choices: []
+            }
+        },
+        fact: "From the play 'Make This Play Great Again: A Trump-Infested Zombie Apocalypse': a post-apocalyptic survival story that dissolves into the meta-drama of the actors performing it. Zo — genderqueer, radicalized, formerly of a communist queer bookstore — is its chaos agent, the one who breaks the fourth wall, and the one who keeps surviving anyway."
     }
 };
+
+// Echo figures live inside HISTORICAL_FIGURES (so the dialogue UI works
+// unchanged) but are tracked separately and never count toward the ancestors.
+export const ECHO_KEYS = ['echo_lu_fin', 'echo_barry_scott', 'echo_projection_booth', 'echo_andi_mann', 'echo_zo'];
 
 export const TREASURES = {
     'flag': { name: 'Pride Flag', desc: 'A beautiful rainbow flag!', image: '/images/item_pride_flag.png' },
