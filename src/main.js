@@ -692,10 +692,9 @@ function initGame() {
 }
 
 // ---------------------------------------------------------------------------
-// Cinematic intro. Walks through a fixed sequence of scenes with auto-advance
-// timers, dot indicators, and SPACE / TAP / Next-button to step manually.
-// Skip jumps straight to the camp screen. Used on first run and replayable
-// from the camp's "Replay Intro Story" button.
+// Cinematic intro. Walks through a fixed sequence of scenes with dot indicators.
+// SPACE / TAP / Next-button advance manually; Skip jumps straight to camp.
+// Used on first run and replayable from the camp's "Replay Intro Story" button.
 function playIntro(onDone) {
     const screen = document.getElementById('intro-screen');
     const dotsEl = document.getElementById('intro-dots');
@@ -704,14 +703,7 @@ function playIntro(onDone) {
     const scenes = Array.from(screen.querySelectorAll('.intro-scene'));
     if (!scenes.length) { onDone && onDone(); return; }
 
-    // Per-scene auto-advance times in ms. Scenes with more text linger longer.
-    // Order matches the intro-scene DOM: 0 walls / 1 burned / 2 echoes / 3 keeper /
-    // 4 mission / 5 village / 6 descent / 7 stealth / 8 lineage / 9 controls /
-    // 10 logo. Missing entries fall back to 3500ms.
-    const sceneDurations = [3200, 3600, 3800, 3200, 4400, 4800, 5200, 4400, 4800, 6500, 8000];
-
     let idx = 0;
-    let timer = null;
     let cleanedUp = false;
     let slideShownAt = 0;
 
@@ -725,14 +717,9 @@ function playIntro(onDone) {
     const dots = Array.from(dotsEl.querySelectorAll('.dot'));
 
     function show(i) {
-        if (timer) { clearTimeout(timer); timer = null; }
         slideShownAt = Date.now();
         scenes.forEach((s, n) => s.classList.toggle('active', n === i));
         dots.forEach((d, n) => d.classList.toggle('active', n === i));
-        if (i < scenes.length - 1) {
-            const dur = sceneDurations[i] || 3500;
-            timer = setTimeout(() => show(i + 1), dur);
-        }
     }
 
     function advance() {
@@ -747,7 +734,6 @@ function playIntro(onDone) {
     function finish() {
         if (cleanedUp) return;
         cleanedUp = true;
-        if (timer) { clearTimeout(timer); timer = null; }
         screen.style.display = 'none';
         document.removeEventListener('keydown', onKey, true);
         screen.removeEventListener('click', onClick);

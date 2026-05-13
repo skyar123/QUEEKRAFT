@@ -82,19 +82,19 @@ export const UI = {
         if (overlay && quoteEl) {
             quoteEl.innerHTML = `"${quote}"`;
             overlay.style.display = 'flex';
-            
-            // Trigger reflow
             void overlay.offsetWidth;
-            
             overlay.style.opacity = '1';
-            
-            setTimeout(() => {
+
+            const zineModal = this.modals.zine;
+            const dismiss = () => {
+                overlay.removeEventListener('click', dismiss);
                 overlay.style.opacity = '0';
                 setTimeout(() => {
                     overlay.style.display = 'none';
-                    this.modals.zine.style.display = 'flex';
+                    zineModal.style.display = 'flex';
                 }, 500);
-            }, 1800);
+            };
+            overlay.addEventListener('click', dismiss);
         } else {
             this.modals.zine.style.display = 'flex';
         }
