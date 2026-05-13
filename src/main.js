@@ -1,7 +1,7 @@
 import { UI, DialogueUI, GeminiUI } from './ui.js';
 import { generateMap, generateHubMap } from './map.js';
 import { attackEnemy, takeDamage, tickStatus, tickCombo, resetCombo, applyStatus, isFrozen } from './combat.js';
-import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS } from './data.js';
+import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS, ECHO_KEYS } from './data.js';
 import { Audio } from './audio.js';
 
 // Expose UI globally so map.js village generator can show status messages.
@@ -21,6 +21,9 @@ const game = {
         damageCost: 5,
         seenZines: {},
         seenFigures: {},
+        // Echo characters met in Echo Chambers — tracked apart from the
+        // ancestors so they never inflate the 9/9 count.
+        seenEchoes: {},
         // Difficulty mode persists across runs so the player can crank it
         // back up after dying on Easy. Default Normal until the player picks.
         difficulty: 'normal',
@@ -179,6 +182,7 @@ function loadGame() {
     if (typeof game.persistent.deepestReached !== 'number') game.persistent.deepestReached = 1;
     if (typeof game.persistent.seenIntro !== 'boolean') game.persistent.seenIntro = false;
     if (!game.persistent.quests || typeof game.persistent.quests !== 'object') game.persistent.quests = {};
+    if (!game.persistent.seenEchoes || typeof game.persistent.seenEchoes !== 'object') game.persistent.seenEchoes = {};
     if (!game.persistent.npcEncounters || typeof game.persistent.npcEncounters !== 'object') game.persistent.npcEncounters = {};
     if (!Array.isArray(game.persistent.mural)) game.persistent.mural = [];
 }
@@ -1180,7 +1184,8 @@ function processTurn() {
             const erx = Math.floor(ex / 10), ery = Math.floor(ey / 10);
             const rk = `${erx},${ery}`;
             return (game.safeShelterRooms && game.safeShelterRooms.has(rk)) ||
-                   (game.hearthRooms && game.hearthRooms.has(rk));
+                   (game.hearthRooms && game.hearthRooms.has(rk)) ||
+                   (game.echoRooms && game.echoRooms.has(rk));
         };
 
         const stepToward = () => {
@@ -1378,12 +1383,20 @@ function interact() {
     const npc = game.npcs.find(n => entityNear(n));
 
     if (npc) {
-        if (!game.persistent.seenFigures[npc.figureKey]) {
+        const figData = HISTORICAL_FIGURES[npc.figureKey];
+        const isEcho = !!(figData && figData.echo) || npc.type === 'echo';
+        if (isEcho) {
+            if (!game.persistent.seenEchoes[npc.figureKey]) {
+                game.persistent.seenEchoes[npc.figureKey] = true;
+                const n = Object.keys(game.persistent.seenEchoes).length;
+                UI.addMessage(`📼 ECHO RECOVERED (${n}/${ECHO_KEYS.length}). The Archive holds another story whole. ${figData ? figData.room : ''}`, 'special');
+            }
+        } else if (!game.persistent.seenFigures[npc.figureKey]) {
             game.persistent.seenFigures[npc.figureKey] = true;
             game.historicalFigures++;
         }
         // Village is a safe space — no level-up reward for chatting there.
-        // In the dungeon, finishing a conversation with an ancestor grants a perk.
+        // In the dungeon, finishing a conversation with an ancestor / echo grants a perk.
         DialogueUI.start(game, npc.figureKey, game.inHub ? null : () => levelUp());
         // In dungeon: NPC disappears after conversation (they move on).
         // In hub village: NPCs persist so you can talk to them again.
@@ -2394,6 +2407,7 @@ function draw() {
             const inBallroom = game.ballroomRooms && game.ballroomRooms.has(roomKey);
             const inStarHouse = game.starHouseRooms && game.starHouseRooms.has(roomKey);
             const inCharmSchool = game.charmSchoolRooms && game.charmSchoolRooms.has(roomKey);
+            const inEcho = game.echoRooms && game.echoRooms.has(roomKey);
 
             ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
             if (r.tile === '#') {
@@ -2404,10 +2418,11 @@ function draw() {
                 if (inBallroom && r.isVisible) wallGlow = 'rgba(255,215,0,0.40)';
                 if (inStarHouse && r.isVisible) wallGlow = 'rgba(220,50,50,0.35)';
                 if (inCharmSchool && r.isVisible) wallGlow = 'rgba(32,178,170,0.35)';
+                if (inEcho && r.isVisible) wallGlow = 'rgba(185,103,219,0.42)';
                 const glow = wallGlow;
                 drawTile(ctx, sx, sy, '#0a0a0a', true, glow, patterns.wall);
                 // Depth-zone wash on plain walls (skip special rooms — they have their own tint).
-                if (envZone && r.isVisible && !inHearth && !inShelter && !inBallroom && !inStarHouse && !inCharmSchool) {
+                if (envZone && r.isVisible && !inHearth && !inShelter && !inBallroom && !inStarHouse && !inCharmSchool && !inEcho) {
                     ctx.globalAlpha = 1;
                     ctx.fillStyle = envZone.wall;
                     ctx.fillRect(sx, sy, T, T);
@@ -2444,7 +2459,7 @@ function draw() {
                 if (envZone && r.isVisible) floorGlow = envZone.glow;
                 drawTile(ctx, sx, sy, floorColor, false, floorGlow, r.isVisible ? patterns.floor : null);
                 // Depth-zone wash on plain floors (skip special rooms / stairs).
-                if (envZone && r.isVisible && r.tile !== '>' && !inHearth && !inShelter && !inBallroom && !inStarHouse && !inCharmSchool) {
+                if (envZone && r.isVisible && r.tile !== '>' && !inHearth && !inShelter && !inBallroom && !inStarHouse && !inCharmSchool && !inEcho) {
                     ctx.globalAlpha = 1;
                     ctx.fillStyle = envZone.floor;
                     ctx.fillRect(sx, sy, T, T);
@@ -2485,6 +2500,19 @@ function draw() {
                     ctx.globalAlpha = 0.12;
                     ctx.fillStyle = 'rgba(32,178,170,0.15)';
                     ctx.fillRect(sx, sy, T, T);
+                    ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+                }
+                // Echo Chamber: datamosh-purple wash + an unstable flicker, like
+                // the floor itself is a frame that didn't render quite right.
+                if (inEcho && r.isVisible && r.tile !== '>') {
+                    ctx.globalAlpha = 0.16;
+                    ctx.fillStyle = (game.animFrame % 9 < 3) ? 'rgba(185,103,219,0.22)' : 'rgba(1,205,254,0.16)';
+                    ctx.fillRect(sx, sy, T, T);
+                    if ((Math.floor(game.animFrame * 0.5) + r.x * 3 + r.y * 7) % 17 === 0) {
+                        ctx.globalAlpha = 0.22;
+                        ctx.fillStyle = '#000';
+                        ctx.fillRect(sx, sy + (game.animFrame % T), T, 2);
+                    }
                     ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
                 }
                 if (r.tile === 'D') {
@@ -2681,6 +2709,42 @@ function draw() {
                         ctx.fillRect(drawX - 1, drawY - 8 + bob, 2, 6);
                     }
                 }
+            } else if (r.type === 'npc' && r.entity.type === 'echo') {
+                // ECHO character — a figure from a half-lost story, rendered as
+                // an unstable, datamosh-flickering silhouette. Not the polished
+                // sprite or the cute filler: something the Archive is straining
+                // to hold in one shape.
+                const bob = Math.sin(game.animFrame * 0.22) * 2;
+                const cols = ['#B967DB', '#01CDFE', '#FF00AA', '#FFFFFF'];
+                const c1 = cols[game.animFrame % cols.length];
+                const c2 = cols[(game.animFrame + 2) % cols.length];
+                const jx = (Math.random() - 0.5) * 3, jy2 = (Math.random() - 0.5) * 3;
+                ctx.save();
+                ctx.globalAlpha = 0.85;
+                // Two offset silhouettes (chromatic split)
+                for (const [c, ox] of [[c1, -2], [c2, 2]]) {
+                    ctx.fillStyle = c; ctx.shadowColor = c; ctx.shadowBlur = 14; ctx.globalAlpha = 0.55;
+                    ctx.beginPath();
+                    ctx.roundRect(drawX - 9 + ox + jx, drawY - 30 + bob + jy2, 18, 22, 5);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(drawX + ox + jx, drawY - 34 + bob + jy2, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                // Datamosh strips across the figure
+                if (game.animFrame % 5 < 2) {
+                    const sy0 = drawY - 40 + bob + Math.random() * 30;
+                    ctx.globalAlpha = 0.4; ctx.shadowBlur = 0; ctx.fillStyle = c2;
+                    ctx.fillRect(drawX - 16 + (Math.random() - 0.5) * 14, sy0, 32, 2 + Math.random() * 4);
+                }
+                ctx.restore();
+                // Glyph above: a recovered-tape mark, or a flicker between '?' and '!'
+                ctx.save();
+                ctx.font = 'bold 16px VT323'; ctx.textAlign = 'center';
+                ctx.fillStyle = '#B967DB'; ctx.shadowColor = '#B967DB'; ctx.shadowBlur = 10;
+                ctx.fillText(game.animFrame % 24 < 12 ? '📼' : '?', drawX, drawY - 44 + bob);
+                ctx.restore();
+                ctx.textAlign = 'left';
             } else if (r.type === 'npc') {
                 const bob = Math.sin(game.animFrame * 0.3) * 2;
                 const figKey = r.entity.figureKey;
