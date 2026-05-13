@@ -481,11 +481,20 @@ export const DialogueUI = {
     currentNPC: null,
     currentNode: null,
 
-    start(game, npcKey) {
+    start(game, npcKey, onClose) {
         this.currentGame = game;
+        this.onCloseCallback = onClose || null;
         this.currentNPC = HISTORICAL_FIGURES[npcKey];
         this.currentNPCKey = npcKey;
-        
+
+        // Show the NPC's hand-drawn sprite as the portrait, falling back to generic.
+        const portraitEl = document.querySelector('#conversation-modal img');
+        if (portraitEl) {
+            const spriteKey = window.NPC_SPRITES && window.NPC_SPRITES[npcKey];
+            portraitEl.src = (spriteKey && window.ASSET_PATHS && window.ASSET_PATHS[spriteKey])
+                || '/images/portrait_npc.png';
+        }
+
         if (!game.persistent.npcEncounters) game.persistent.npcEncounters = {};
         game.persistent.npcEncounters[npcKey] = (game.persistent.npcEncounters[npcKey] || 0) + 1;
         const runs = game.persistent.npcEncounters[npcKey];
@@ -742,11 +751,13 @@ export const DialogueUI = {
 
     close() {
         UI.modals.conversation.style.display = 'none';
-        // Stop speech when closing
         if (window.speechSynthesis) window.speechSynthesis.cancel();
+        const cb = this.onCloseCallback;
         this.currentGame = null;
         this.currentNPC = null;
         this.currentNode = null;
+        this.onCloseCallback = null;
+        if (cb) cb();
     }
 };
 

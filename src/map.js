@@ -503,7 +503,7 @@ export function generateMap(game) {
 //   - Zone tints turn from dim to vivid once a zone has at least one resident.
 
 const VLG_W = 60;
-const VLG_H = 14;
+const VLG_H = 20;     // taller for buildings + rooftops
 const ZONE_W = 10;    // each of the 6 zones is 10 tiles wide
 const ZONES = [
     { id: 'hearth',   name: 'HEARTH KITCHEN', tint: 'hearth',       npcs: ['community_mothers', 'mama_gloria', 'mariela_munoz', 'gauri_sawant'] },
@@ -559,137 +559,166 @@ export function generateHubMap(game) {
     game.mapHeight = VLG_H;
     game.seen = {};
 
-    // Solid border + 2-thick floor at the bottom.
+    // Layout constants
+    const streetY  = VLG_H - 4;   // ground-level street the player walks on
+    const roofY    = 4;            // top of building rooftops
+    const skyY     = 1;            // open sky rows above rooftops
+    const wallH    = streetY - roofY; // interior height of each building
+
+    // Fill everything solid, then carve out sky + street
     fillRect(game.map, 0, 0, VLG_W, VLG_H, '#');
-    fillRect(game.map, 1, 1, VLG_W - 2, VLG_H - 3, '.');
+    // Sky
+    fillRect(game.map, 1, skyY, VLG_W - 2, roofY - skyY, '.');
+    // Street (walkable ground level)
+    fillRect(game.map, 1, streetY, VLG_W - 2, 1, '.');
 
-    const floorY = VLG_H - 3;        // row the player stands on
-    const ceilingFelt = 1;            // top of open interior
+    // ── Building shells ──────────────────────────────────────────────────
+    // Each zone gets a building: exterior walls from roofY to streetY,
+    // interior carved open, a doorway at ground level, and windows.
+    for (let z = 0; z < ZONES.length; z++) {
+        const bx0 = z * ZONE_W + 1;   // building left wall x
+        const bx1 = (z + 1) * ZONE_W - 1; // building right wall x
 
-    // Carve vertical divider walls between zones; doorway = 3 tiles tall at
-    // the floor level so the player can walk between rooms without jumping.
-    for (let z = 1; z < ZONES.length; z++) {
-        const dividerX = z * ZONE_W;
-        for (let y = ceilingFelt; y < floorY - 2; y++) game.map[`${dividerX},${y}`] = '#';
-        // Doorway carve
-        game.map[`${dividerX},${floorY}`] = '.';
-        game.map[`${dividerX},${floorY - 1}`] = '.';
-        game.map[`${dividerX},${floorY - 2}`] = '.';
+        // Exterior side walls
+        for (let y = roofY; y < streetY; y++) {
+            game.map[`${bx0},${y}`] = '#';
+            game.map[`${bx1},${y}`] = '#';
+        }
+        // Rooftop cap (solid row)
+        for (let x = bx0; x <= bx1; x++) game.map[`${x},${roofY}`] = '#';
+
+        // Interior open space
+        fillRect(game.map, bx0 + 1, roofY + 1, bx1 - bx0 - 1, streetY - roofY - 1, '.');
+
+        // Doorway (3 tiles tall) at the center of each building front
+        const doorX = z * ZONE_W + Math.floor(ZONE_W / 2);
+        for (let y = streetY - 3; y < streetY; y++) game.map[`${doorX},${y}`] = '.';
+
+        // Windows — two per building, symmetrical
+        const winY1 = roofY + 2, winY2 = roofY + 3;
+        game.map[`${bx0 + 2},${winY1}`] = '.';
+        game.map[`${bx0 + 2},${winY2}`] = '.';
+        game.map[`${bx1 - 2},${winY1}`] = '.';
+        game.map[`${bx1 - 2},${winY2}`] = '.';
+
+        // Shared divider wall between buildings (solid pillar at zone boundary)
+        // already solid from the initial fill — just ensure doorway gap in street
+        if (z > 0) {
+            const divX = z * ZONE_W;
+            game.map[`${divX},${streetY}`] = '.'; // street-level gap so player can walk
+        }
     }
 
-    // Per-zone interior decoration. seenZines drives how decorated the
-    // village is — fewer zines = fewer decorative platforms / items.
+    // ── Zone tints, signs & decoration ──────────────────────────────────
     const zinesCollected = Object.keys(game.persistent && game.persistent.seenZines || {}).length;
-    const figuresMet = Object.keys(game.persistent && game.persistent.seenFigures || {}).length;
-    const decorationDensity = Math.min(1, 0.25 + zinesCollected / 19); // 0.25..1.0
+    const figuresMet     = Object.keys(game.persistent && game.persistent.seenFigures || {}).length;
+    const decorated      = Math.min(1, 0.25 + zinesCollected / 19);
 
     for (let z = 0; z < ZONES.length; z++) {
         const zone = ZONES[z];
-        const x0 = z * ZONE_W + 1;
-        const x1 = (z + 1) * ZONE_W - 1;
-        const cx = z * ZONE_W + Math.floor(ZONE_W / 2);
+        const bx0  = z * ZONE_W + 1;
+        const bx1  = (z + 1) * ZONE_W - 1;
+        const cx   = z * ZONE_W + Math.floor(ZONE_W / 2);
+        const interior = bx0 + 1; // first walkable tile inside building
 
-        // Apply zone tint by inserting into the matching room set (only when
-        // the zone has any resident — empty zones stay dim).
-        const zoneRoomKey = `${z},0`;
         const willBeOccupied = zoneHasAnyResident(zone, game);
-        if (willBeOccupied) applyZoneTint(game, zone.tint, zoneRoomKey);
+        if (willBeOccupied) applyZoneTint(game, zone.tint, `${z},0`);
 
-        // Sign above the zone — written to muralTiles so the existing ceiling
-        // mural renderer prints it. Two tiles wide center of zone.
-        if (willBeOccupied) {
-            game.muralTiles[`${cx - 1},0`] = zone.name;
-        } else {
-            game.muralTiles[`${cx - 1},0`] = '[LOCKED]';
-        }
+        // Zone name written on the rooftop so it's visible from the street
+        game.muralTiles[`${cx - 1},${roofY}`] = willBeOccupied ? zone.name : '[LOCKED]';
 
-        // Decorative platforms per zone — give each zone a recognizable silhouette.
+        // ── Per-zone interior layout ─────────────────────────────────────
         if (zone.id === 'hearth') {
-            // Long counter platform like a kitchen island.
-            placePlatform(game.map, x0 + 1, floorY - 2, 5);
-            if (decorationDensity > 0.5) placePlatform(game.map, x0 + 4, floorY - 4, 2); // shelf
+            // Kitchen island counter + wall shelf
+            placePlatform(game.map, interior,     streetY - 2, 5);
+            placePlatform(game.map, interior + 3, streetY - 5, 3);  // high shelf
+            if (decorated > 0.4) placePlatform(game.map, interior + 1, streetY - 4, 2);
         } else if (zone.id === 'drag') {
-            // Bar counter + bottle shelf.
-            placePlatform(game.map, x0 + 2, floorY - 2, 6);
-            if (decorationDensity > 0.4) placePlatform(game.map, x0 + 1, floorY - 5, 7);
+            // Bar counter runs the length; loft balcony above
+            placePlatform(game.map, interior,     streetY - 2, 7);  // bar top
+            placePlatform(game.map, interior,     streetY - 6, 4);  // loft level
+            placePlatform(game.map, interior + 5, streetY - 4, 2);  // loft steps
         } else if (zone.id === 'ballroom') {
-            // Raised stage center.
-            placePlatform(game.map, x0 + 2, floorY - 1, 6);
-            placePlatform(game.map, x0 + 3, floorY - 2, 4);
-            if (decorationDensity > 0.6) placePlatform(game.map, x0 + 4, floorY - 3, 2);
+            // Raised stage in center with step up + spotlights (high platforms)
+            placePlatform(game.map, interior + 1, streetY - 2, 6);  // stage floor
+            placePlatform(game.map, interior + 2, streetY - 4, 4);  // stage raised
+            placePlatform(game.map, interior + 3, streetY - 6, 2);  // top of stage
+            if (decorated > 0.5) {
+                placePlatform(game.map, interior,     streetY - 7, 1); // spotlight box L
+                placePlatform(game.map, interior + 6, streetY - 7, 1); // spotlight box R
+            }
         } else if (zone.id === 'archive') {
-            // Stacked bookshelves up the right wall.
-            placePlatform(game.map, x0, floorY - 5, 4);
-            placePlatform(game.map, x0 + 1, floorY - 3, 3);
-            if (decorationDensity > 0.5) placePlatform(game.map, x0 + 5, floorY - 4, 3);
+            // Tall bookshelves as vertical pillars with walkable tops
+            for (let sx of [interior, interior + 3, interior + 6]) {
+                for (let y = streetY - 2; y >= streetY - 6; y -= 2) {
+                    placePlatform(game.map, sx, y, 2);
+                }
+            }
+            if (decorated > 0.5) placePlatform(game.map, interior + 1, streetY - 7, 5); // top gallery
         } else if (zone.id === 'star') {
-            // Bunk-bed platforms (shelter bunks).
-            placePlatform(game.map, x0 + 1, floorY - 2, 3);
-            placePlatform(game.map, x0 + 5, floorY - 2, 3);
-            if (decorationDensity > 0.4) {
-                placePlatform(game.map, x0 + 1, floorY - 4, 3);
-                placePlatform(game.map, x0 + 5, floorY - 4, 3);
+            // Bunk beds: pairs of platforms at two heights per side
+            placePlatform(game.map, interior,     streetY - 2, 3);
+            placePlatform(game.map, interior + 5, streetY - 2, 3);
+            placePlatform(game.map, interior,     streetY - 4, 3);
+            placePlatform(game.map, interior + 5, streetY - 4, 3);
+            if (decorated > 0.4) {
+                placePlatform(game.map, interior + 2, streetY - 6, 4); // top bunk loft
             }
         } else if (zone.id === 'atrium') {
-            // Wide open entrance hall with two low benches.
-            placePlatform(game.map, x0 + 1, floorY - 2, 2);
-            placePlatform(game.map, x0 + 5, floorY - 2, 2);
+            // Grand entrance: wide steps leading to portal
+            placePlatform(game.map, interior,     streetY - 2, 2);
+            placePlatform(game.map, interior + 5, streetY - 2, 2);
+            if (decorated > 0.3) placePlatform(game.map, interior + 2, streetY - 4, 4);
         }
 
-        // Scatter "bouquet" decoration items based on zinesCollected — purely
-        // visual loot stand-ins that the player CAN pick up but mostly read as
-        // village dressing.
-        if (willBeOccupied && Math.random() < decorationDensity) {
-            const decorX = x0 + 1 + Math.floor(Math.random() * Math.max(1, (x1 - x0 - 2)));
+        // Rooftop platform — reachable via building interior; accessible on all zones
+        placePlatform(game.map, bx0 + 1, roofY + 1, bx1 - bx0 - 2);
+
+        // Decorative item scatter
+        if (willBeOccupied && Math.random() < decorated) {
             game.items.push({
-                x: decorX, y: floorY,
-                type: 'treasure',
-                name: 'Bouquet (gift)',
-                decorative: true
+                x: interior + 1 + Math.floor(Math.random() * Math.max(1, bx1 - bx0 - 3)),
+                y: streetY,
+                type: 'treasure', name: 'Bouquet (gift)', decorative: true
             });
         }
     }
 
-    // Special tiles: 'F' campfire near spawn (left); 'D' wasteland portal
-    // at the right end of the atrium.
-    game.map[`${3},${floorY}`] = 'F';
-    game.map[`${VLG_W - 3},${floorY}`] = 'D';
+    // Campfire at street entrance; wasteland portal at far right
+    game.map[`3,${streetY}`]              = 'F';
+    game.map[`${VLG_W - 3},${streetY}`]  = 'D';
 
-    // Mark the whole village as already seen so the player isn't blindfolded.
+    // Reveal entire village on first visit
     for (let y = 0; y < VLG_H; y++) {
         for (let x = 0; x < VLG_W; x++) game.seen[`${x},${y}`] = true;
     }
 
-    // Spawn the player on the left side of the Hearth Kitchen, facing the campfire.
+    // Spawn player at village entrance by the campfire
     game.player.x = 1.5;
-    game.player.y = floorY;
+    game.player.y = streetY;
     game.player.vx = 0;
     game.player.vy = 0;
     game.player.onGround = true;
 
-    // Populate each zone's NPCs. CORE_RESIDENTS always appear; others only
-    // if game.persistent.seenFigures has marked them met in the dungeon.
+    // Populate NPCs — CORE_RESIDENTS always present; others need seenFigures
     for (let z = 0; z < ZONES.length; z++) {
         const zone = ZONES[z];
-        const x0 = z * ZONE_W + 1;
-        const x1 = (z + 1) * ZONE_W - 1;
+        const bx0  = z * ZONE_W + 1;
+        const bx1  = (z + 1) * ZONE_W - 1;
         const eligible = zone.npcs.filter(k =>
-            HISTORICAL_FIGURES[k] && (CORE_RESIDENTS.has(k) || (game.persistent.seenFigures && game.persistent.seenFigures[k]))
+            HISTORICAL_FIGURES[k] &&
+            (CORE_RESIDENTS.has(k) || (game.persistent.seenFigures && game.persistent.seenFigures[k]))
         );
-        // Spread NPCs across the zone width, leaving gaps for furniture.
-        const slots = Math.max(eligible.length, 1);
-        const step = Math.max(1, Math.floor((x1 - x0) / (slots + 1)));
+        const step = Math.max(1, Math.floor((bx1 - bx0) / (eligible.length + 1)));
         eligible.forEach((figureKey, i) => {
-            const px = x0 + step * (i + 1);
-            game.npcs.push({ x: px, y: floorY, figureKey, type: 'historical' });
+            game.npcs.push({ x: bx0 + step * (i + 1), y: streetY, figureKey, type: 'historical' });
         });
     }
 
-    // Village status message so the player sees how much life the village has.
     const totalFigures = Object.keys(HISTORICAL_FIGURES).length;
     if (typeof window !== 'undefined' && window.UI && window.UI.addMessage) {
         window.UI.addMessage(
-            `🏘️ Village: ${game.npcs.length} residents · ${figuresMet}/${totalFigures} figures met · ${zinesCollected}/19 zines archived. Walk right to return to the wasteland.`,
+            `Village: ${game.npcs.length} residents · ${figuresMet}/${totalFigures} figures met · ${zinesCollected}/19 zines. Walk right to return to the wasteland.`,
             'special'
         );
     }
