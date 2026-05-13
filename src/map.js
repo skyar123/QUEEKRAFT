@@ -13,7 +13,17 @@ const MURAL_MESSAGES = [
     "Aaji Cha Ghar: Grandma's Home",
     "Casa de las Muñecas — we shelter our own",
     "Motherhood belongs to us",
-    "Every house is built on love"
+    "Every house is built on love",
+    // Drawn from the lineage: real words, scrawled where the demolition crews can't reach.
+    "No one dies alone while I'm standing — K. Cuevas",
+    "Family is a verb. Conjugate it daily.",
+    "I am happy because I am a lady, a mother, a grandmother — M. Muñoz",
+    "It's not about manners. It's about love. — Mama Gloria",
+    "Pay it no mind, but never let it go unsaid",
+    "We were sacred before they told us we were wrong",
+    "23 children. Not one of them I turned away.",
+    "Stay close. Stay quiet. Get past them. We need you deeper.",
+    "They struck our names from the records. We carved them here."
 ];
 
 export function pick(arr) {
