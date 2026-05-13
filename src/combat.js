@@ -485,7 +485,19 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
         game.screenShake = Math.max(game.screenShake || 0, isFinisher ? 0.85 : 0.55);
     }
     if (enemy.health <= 0) {
-        UI.addMessage(`${enemy.enemyType === 'boss' ? 'THE BOSS' : 'Enemy'} defeated!`, 'victory');
+        // Themed defeat flair (from the QUEEKRAFT design notes): the system's
+        // foot-soldiers fall apart in character.
+        const FALL_LINES = {
+            gatekeeper: "Gatekeeper's clipboard scatters across the floor.",
+            bigot:      "The Gentrifier crumbles into a pile of eviction notices.",
+            police:     "The HB2 Enforcer powers down. Badge cracks.",
+            concern:    "The Corporate Drone whispers 'have you considered—' then nothing.",
+            wraith:     "The wraith glitches out of frame.",
+            troll:      "The Dark Beast destabilizes — too much hate to hold a shape.",
+            swarm:      "The Algorithm fragment de-resolves."
+        };
+        const fall = FALL_LINES[enemy.enemyType];
+        UI.addMessage(fall || `${enemy.enemyType === 'boss' ? 'THE BOSS' : 'Enemy'} defeated!`, 'victory');
         game.trolls = game.trolls.filter(t => t !== enemy);
         game.player.kills = (game.player.kills || 0) + 1;
         if (typeof window.addXP === 'function') window.addXP(5);
@@ -498,16 +510,19 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
             dropLoot(game, enemy);
         }
 
-        // Death explosion
+        // Death explosion — gatekeepers spray "paper" white squares; others
+        // burst in pride colours.
         const expCount = enemy.enemyType === 'boss' ? 100 : 20;
-        const colors = ['#01CDFE','#FF71CE','#FFD700','#39FF14'];
+        const paper = enemy.enemyType === 'gatekeeper' || enemy.enemyType === 'bigot';
+        const colors = paper ? ['#FFFFFF','#E8E8E8','#CCCCCC','#F5F5DC'] : ['#01CDFE','#FF71CE','#FFD700','#39FF14'];
         for (let i = 0; i < expCount; i++) {
             game.particles.push({
                 x: enemy.x, y: enemy.y,
                 vx: (Math.random() - 0.5) * (enemy.enemyType === 'boss' ? 1.0 : 0.5),
                 vy: (Math.random() - 0.5) * (enemy.enemyType === 'boss' ? 1.0 : 0.5),
                 life: 1.0,
-                color: colors[i % colors.length]
+                color: colors[i % colors.length],
+                size: paper ? 3 : 2
             });
         }
 
