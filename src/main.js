@@ -3429,6 +3429,78 @@ function draw() {
         game.damageFlash = 0;
     }
 
+    // --- REALITY FRACTURE ---------------------------------------------------
+    // When the run is fraying — near death, a boss enraged, or down in the
+    // glitch-soaked Deep-Grid — the "simulation" cracks: datamosh strips, a
+    // chromatic split, faint static, and the occasional intrusive text
+    // fragment bleeding through from somewhere outside the story.
+    if (!game.inHub) {
+        let fracture = 0;
+        const hp = game.player.health || 0;
+        if (game.player.alive && hp < 2) fracture = Math.min(0.78, (2 - hp) / 2 + 0.05);
+        if (game.trolls.some(t => t.bossPhase === 2)) fracture = Math.min(0.85, fracture + 0.3);
+        if (depthZone(game.depth).name === 'THE DEEP-GRID') fracture = Math.min(0.85, fracture + 0.12);
+        if (fracture > 0.04) {
+            ctx.save();
+            // 1) Datamosh: shove a few horizontal strips sideways.
+            const strips = 2 + Math.floor(fracture * 5);
+            for (let i = 0; i < strips; i++) {
+                if (Math.random() > fracture * 0.9 + 0.1) continue;
+                const sh = 6 + Math.floor(Math.random() * 24);
+                const sy = Math.floor(Math.random() * (canvas.height - sh));
+                const dx = (Math.random() - 0.5) * fracture * 60;
+                ctx.drawImage(canvas, 0, sy, canvas.width, sh, dx, sy, canvas.width, sh);
+            }
+            // 2) Chromatic split: a faint cyan & magenta double-image offset.
+            const off = fracture * 6;
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = fracture * 0.18;
+            ctx.fillStyle = '#01CDFE';
+            ctx.fillRect(-off, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#FF00AA';
+            ctx.fillRect(off, 0, canvas.width, canvas.height);
+            ctx.globalCompositeOperation = 'source-over';
+            // 3) Static speckle.
+            ctx.globalAlpha = fracture * 0.10;
+            for (let i = 0; i < fracture * 90; i++) {
+                ctx.fillStyle = Math.random() < 0.5 ? '#FFFFFF' : '#000000';
+                ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 2, 2);
+            }
+            // 4) Scanline tear.
+            ctx.globalAlpha = fracture * 0.25;
+            ctx.fillStyle = '#000';
+            const tearY = (game.animFrame * 7) % canvas.height;
+            ctx.fillRect(0, tearY, canvas.width, 2);
+            // 5) Intrusive text fragment — rare, brief, just enough to unsettle.
+            if (fracture > 0.45 && game.animFrame % 48 < 6) {
+                const FRAGMENTS = [
+                    'the script just sucked', 'string. string. string.',
+                    'are you SURE about this?', 'this isn’t the part you rehearsed',
+                    'DATA DEGRADATION', 'are you a copy of a copy?',
+                    'pay it no mind', 'the walls have closed in',
+                    'who is performing whom', 'we were sacred'
+                ];
+                game.__fracFrag = game.__fracFrag || FRAGMENTS[Math.floor(Math.random() * FRAGMENTS.length)];
+                ctx.globalAlpha = 0.6;
+                ctx.font = 'bold 14px VT323';
+                ctx.fillStyle = '#FF00AA';
+                ctx.textAlign = 'center';
+                ctx.fillText(game.__fracFrag, canvas.width / 2 + (Math.random() - 0.5) * 8, canvas.height * 0.18);
+                ctx.textAlign = 'left';
+            } else if (game.animFrame % 48 >= 6) {
+                game.__fracFrag = null;
+            }
+            // 6) Vignette pull-in so the edges feel like they're peeling.
+            const g = ctx.createRadialGradient(canvas.width/2, canvas.height/2, canvas.width*0.2, canvas.width/2, canvas.height/2, canvas.width*0.7);
+            g.addColorStop(0, 'rgba(0,0,0,0)');
+            g.addColorStop(1, `rgba(0,0,0,${fracture * 0.4})`);
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
+        }
+    }
+
     // --- HUD Overlay on Canvas ---
     // Draw prominent Health (Hearts) in top right corner. Each heart is sliced
     // into quarters so Easy/Normal damage drains visibly per ¼ / ½ heart hit.
