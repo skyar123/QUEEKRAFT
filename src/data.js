@@ -776,94 +776,94 @@ export const HISTORICAL_FIGURES = {
     // entries are flagged `echo: true` so they don't count toward the 9
     // ancestors; `room` is the chamber's display name.
     'echo_lu_fin': {
-        name: 'Lu (& Fin)', era: 'an unfinished story', echo: true, room: 'THE WIBBLY-WOBBLY ECHO',
+        name: 'Lu', era: 'a young trans man, surviving', echo: true, room: 'THE WIBBLY-WOBBLY ECHO',
         dialogue: {
             greeting: {
-                text: "Marshmallow ground. Licorice thrones in the distance. The boy with the Doc Martens — that's Lu. The bright loud one bouncing around him in the blue suit — that's Fin. Fin grins: \"Oh GOOD, an audience! Lu, look, the Archive remembered us!\"",
+                text: "A young man in heavy boots stands on ground that gives like marshmallow. He looks up, surprised. \"Oh. Hi. I'm Lu. I came here when home stopped being safe — when they wouldn't say my name. I'm still figuring out how to leave.\"",
                 choices: [
-                    { text: "What is this place?", next: "place" },
-                    { text: "Lu — are you okay?", next: "lu" }
+                    { text: "What kept you here?", next: "stayed" },
+                    { text: "How are you doing now?", next: "now" }
                 ]
             },
-            place: {
-                text: "Fin: \"It's the part of the story where Lu almost didn't make it. His parents wouldn't say his name. He came here instead.\" Fin's voice doesn't drop. \"But here's the trick — I'm not a separate person. I'm the piece of him that still thinks happiness is possible. So he made it. He's making it. Watch — he's looking up.\"",
-                choices: [{ text: "Then I'm glad you're loud.", next: "gift" }]
+            stayed: {
+                text: "Lu, quiet: \"I was so tired. The kind of tired where you don't trust your own footing. So I sat down on the soft ground and I let it hold me a while. That's not nothing. Sometimes resting is what saves your life.\"",
+                choices: [{ text: "I needed to hear that.", next: "gift" }]
             },
-            lu: {
-                text: "Lu, quiet: \"...I'm a man. I knew it the way you know your own hands. They didn't, or wouldn't. I came here so tired.\" Fin, gently for once: \"And then you stayed. You let me hang around. Tell them what we found.\" Lu, a little surprised at himself: \"...a way through. Invisible until you trust it's there.\"",
-                choices: [{ text: "Show me the way through.", next: "gift" }]
+            now: {
+                text: "Lu shrugs, almost smiling. \"Better. I started believing the path was there even when I couldn't see it drawn. Turns out you only have to trust it for a step at a time. That's the trick, I think. The whole trick.\"",
+                choices: [{ text: "Show me the trick.", next: "gift" }]
             },
             gift: {
-                text: "Fin spins in a circle. \"Take this — the trick of seeing the path that isn't drawn yet. It's how Lu got out. It's how anyone gets out.\" The marshmallow ground bounces you a little higher than physics allows.",
+                text: "Lu hands you something small and warm. \"Here. The trick of seeing the path that isn't drawn yet. It's how I got out. It's how anyone gets out.\" The marshmallow ground bounces you a little higher than physics allows.",
                 reward: 'ability_vision',
-                choices: [{ text: "Thank you, Lu. Thank you, Fin.", next: "farewell" }]
+                choices: [{ text: "Thank you, Lu.", next: "farewell" }]
             },
             farewell: {
-                text: "Fin: \"Toward the chocolate waterfalls now, Lu. We earned it.\" Lu, almost smiling: \"...okay. Okay.\" They walk off into colour.",
+                text: "Lu nods at you once, like a promise to himself, and starts walking. The licorice towers in the distance look closer than they did a minute ago.",
                 choices: []
             }
         },
-        fact: "From the play 'Fin, Luna and The Wibbly Wobbly Way To Happiness': Lu, a young trans man, processes the trauma of parental rejection in a surreal afterlife; Fin — 'genderless and genderful' — is revealed to be the fragment of Lu's own consciousness that never stopped believing in joy. The story is about integration: surviving by reclaiming your own resilience."
+        fact: "Lu is a young trans man processing the trauma of parental rejection. His story is about integration and stamina: surviving by reclaiming your own resilience, one step at a time."
     },
     'echo_barry_scott': {
-        name: 'Barry & Scott', era: 'a story still being repaired', echo: true, room: 'THE MEMORY ECHO',
+        name: 'Scott', era: 'a survivor doing the work', echo: true, room: 'THE MEMORY ECHO',
         dialogue: {
             greeting: {
-                text: "A cramped studio apartment — VHS tapes, a box TV hissing static. It keeps flickering: a redwood forest, a hotel room, headlights. A big awkward man (Barry) flinches at each shift. A young person in skinny jeans (Scott, they/them) stands between him and the worst of it. Scott: \"Hey. Easy. The walls are doing the thing again. Breathe with me.\"",
+                text: "A cramped studio apartment. VHS tapes. A box TV hissing static. The walls keep flickering — a redwood forest, a hotel room, headlights — and a young person in skinny jeans is standing very still in the middle of it. \"Hey. I'm Scott — they/them. The walls are doing the thing again. Breathe with me a second.\"",
                 choices: [
-                    { text: "What's happening to him?", next: "barry" },
-                    { text: "Scott — are *you* okay?", next: "scott" }
+                    { text: "What's happening to the room?", next: "room" },
+                    { text: "Are *you* okay?", next: "you" }
                 ]
             },
-            barry: {
-                text: "Scott, low: \"My dad. He did a lot of damage when I was small — a DUI with me in the car, a night in a hotel I still dream about. He's sick. Schizophrenia, the drinking. The room turns into those nights and he gets lost in them.\" Barry, surfacing: \"...I was a monster. I'm not — I'm trying not to be. Every day. That's the job now.\"",
-                choices: [{ text: "Trying every day counts.", next: "gift" }]
-            },
-            scott: {
-                text: "Scott shrugs, careful. \"I learned to go quiet to survive him. I'm un-learning it. Came back to talk it through — not to fix him, just to... be a person in the room with him. We're both doing the work.\" Barry, watching the walls steady: \"...thank you for staying in the room.\"",
+            room: {
+                text: "Scott, low: \"It's memory bleeding. My dad did a lot of damage when I was small — a DUI with me in the car, a night in a hotel I still dream about. The room turns into those nights when I let it. I'm here to learn how to stand in the room without it eating me.\"",
                 choices: [{ text: "How do you keep the room from shifting?", next: "gift" }]
             },
+            you: {
+                text: "Scott shrugs, careful. \"I learned to go quiet to survive him. I'm un-learning it. Came back to talk it through — not to fix anyone, just to be a person who doesn't disappear when the room gets loud. That's the work. Some days I do it.\"",
+                choices: [{ text: "Some days is enough.", next: "gift" }]
+            },
             gift: {
-                text: "Scott presses something into your hand — a small ordinary stone. \"It's a grounding thing. When the world starts turning into the bad memory, you hold it and it... slows. Lets you heal in real time instead of bleeding in flashback time. Take it. We've got each other.\"",
+                text: "Scott presses something into your hand — a small ordinary stone. \"It's a grounding thing. When the world starts turning into the bad memory, you hold it and it... slows. Lets you heal in real time instead of bleeding in flashback time. Take it.\"",
                 reward: 'item_bloom',
-                choices: [{ text: "Thank you. Both of you, hold on.", next: "farewell" }]
+                choices: [{ text: "Thank you, Scott. Hold on.", next: "farewell" }]
             },
             farewell: {
-                text: "The apartment stops flickering — just an apartment, just two people in it. Barry exhales. Scott nods at you once, like a promise.",
+                text: "The apartment stops flickering. Just an apartment now. Just one person in it, breathing on purpose. Scott nods at you once, like a promise.",
                 choices: []
             }
         },
-        fact: "From the play 'Super Big Shit Hairballs': Barry, a man battling addiction and mental illness, is interrupted mid-suicide-attempt by his estranged non-binary child Scott, who comes to process childhood trauma. The room shifts into memories of past harm; the play ends not on absolution but on a fragile, real reconciliation — and the recognition that recovery is a daily act."
+        fact: "Scott is a non-binary survivor of childhood trauma, learning to stand inside their own past without it consuming them. Their story is that recovery is a daily act, not a finish line."
     },
     'echo_projection_booth': {
-        name: 'The Projection Booth', era: 'a transmission, ongoing', echo: true, room: 'THE FREQUENCY ECHO',
+        name: 'Skylar', era: 'a parent learning the part', echo: true, room: 'THE FREQUENCY ECHO',
         dialogue: {
             greeting: {
-                text: "A drive-in lot, late, rain on every windshield. Voices crackle in over the radio — a dozen cars, nobody getting out, everybody talking. A woman's voice, fragile: \"...I think I'm just *playing* mother. It's the longest improv scene I've ever done and I don't have the script.\" A booth somewhere hums and answers in all of them at once.",
+                text: "A drive-in lot, late. Rain on every windshield. A woman is sitting alone in a parked car, talking into a CB radio like she's not sure anyone's listening. She glances up when you approach. \"Oh — sorry. I was rehearsing. I'm Skylar. I think I'm just *playing* mother. It's the longest improv scene I've ever done and I don't have the script.\"",
                 choices: [
-                    { text: "Who am I listening to?", next: "voices" },
-                    { text: "What is the Booth?", next: "booth" }
+                    { text: "Who are you talking to?", next: "talking" },
+                    { text: "Why the radio?", next: "radio" }
                 ]
             },
-            voices: {
-                text: "The Booth: \"Hector tracks his son in a 214-column spreadsheet and still can't find the column for *connection*. Barry hasn't spoken to his kid in three years and is rehearsing the apology. Skylar — that's the scared one — is learning that 'playing mother' and 'being one' might be the same act, performed long enough. They can't see each other. They're learning to reach anyway. So are you.\"",
-                choices: [{ text: "How do I reach across, then?", next: "gift" }]
+            talking: {
+                text: "Skylar's voice goes small. \"My kid. I haven't seen them in months. They needed space. I'm trying to figure out what to say if they ever pick up. So I keep practicing. Out loud. Into the rain. It's stupid.\" A beat. \"It's not stupid.\"",
+                choices: [{ text: "It's not stupid.", next: "gift" }]
             },
-            booth: {
-                text: "The Booth: \"I'm the part of every transmission that doesn't end. A signal doesn't stop just because the broadcast does — it keeps going, out past where anyone's listening. Memory works the same. So does love, if you let it. The static is just the distance. Tune through it.\"",
-                choices: [{ text: "Then tune me through.", next: "gift" }]
+            radio: {
+                text: "Skylar: \"Because I can't reach them in person yet. So I send the signal anyway, in case they ever turn the dial. Love is allowed to travel further than the listener.\" She looks at you. \"That's the thing I had to learn. It still counts when no one's tuning in.\"",
+                choices: [{ text: "Then keep transmitting.", next: "gift" }]
             },
             gift: {
-                text: "The radios all hiss to one clean frequency for a moment. \"There. You can hear the architecture now — the ways through these walls that nobody mapped. Passages. The Archive hides them; the signal doesn't. Go.\" The dial steadies. Hidden routes flicker into being around you.",
+                text: "Skylar twists a dial and the static clears for a moment. \"There. You can hear the architecture now — passages between the rooms, the places no one's mapped. The Archive hides them; the signal doesn't. Go on. Walk through.\" Hidden routes flicker into being around you.",
                 reward: 'reveal_passage',
-                choices: [{ text: "Thank you. Keep transmitting.", next: "farewell" }]
+                choices: [{ text: "Thank you, Skylar.", next: "farewell" }]
             },
             farewell: {
-                text: "Dawn somewhere. One by one the voices sign off — \"...goodnight, kid\" — \"...I'll call this time\" — \"...I love you, even from here.\" The rain keeps falling. The Booth keeps humming.",
+                text: "Skylar settles back in the driver's seat and lifts the CB again. \"...goodnight, kid. I love you, even from here.\" The rain keeps falling. The signal keeps going.",
                 choices: []
             }
         },
-        fact: "From the audio play 'STATIC': isolated in cars at a rainy drive-in, estranged parents and children speak only over radio frequencies — about imperfection, distance, and learning to reach each other anyway. The Projection Booth is the omniscient, gentle presence that signals and memories never truly end."
+        fact: "Skylar is a parent learning that love sent into static still counts. Her story is about reaching for someone you can't yet hold, and trusting the signal to travel."
     },
     'echo_andi_mann': {
         name: 'Andi Mann', era: 'a story too tangled to shelve', echo: true, room: 'THE BIG-TOP ECHO',

@@ -133,6 +133,15 @@ body, html {
     align-items: center;
     gap: 8px;
 }
+#status-line .stat-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 0 4px;
+    border-right: 1px solid rgba(255, 113, 206, 0.25);
+}
+#status-line .stat-cell:last-child { border-right: none; }
+#status-line .stat-lbl-short { display: none; }
 
 #xp-bar-container {
     width: 60px;
@@ -153,7 +162,25 @@ body, html {
 }
 
 @media (max-width: 480px) {
-    #status-line { font-size: 11px; padding: 2px 6px; }
+    #status-line {
+        font-size: 11px;
+        padding: 4px 8px;
+        max-width: calc(100% - 12px);
+        left: 6px;
+        right: 6px;
+        transform: none;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 4px 6px;
+        line-height: 1.4;
+    }
+    #status-line .stat-name { display: none; }
+    #status-line .stat-lbl-full { display: none; }
+    #status-line .stat-lbl-short { display: inline; }
+    #status-line .stat-cell { padding: 0 2px; }
     #message-area { font-size: 12px; height: 38px; }
 }
 

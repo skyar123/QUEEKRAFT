@@ -588,34 +588,10 @@ const NAMED_LOOT_SPRITES = {
 const images = {};
 for (const k of Object.keys(ASSET_PATHS)) images[k] = new Image();
 
-// Detect un-keyed backgrounds: if all four corners of the loaded image are
-// (nearly) fully opaque, it's a flat-background render, not a sprite cut-out
-// — flag it so imgReady() rejects it and the procedural art is used instead.
-// Tile textures are exempt (they're meant to tile edge-to-edge).
-const TEXTURE_KEYS = new Set(['tile_floor', 'tile_wall']);
-function markIfOpaqueBackground(key, img) {
-    if (TEXTURE_KEYS.has(key)) return;
-    try {
-        const c = document.createElement('canvas');
-        const S = 24;
-        c.width = S; c.height = S;
-        const cx = c.getContext('2d', { willReadFrequently: true });
-        cx.drawImage(img, 0, 0, S, S);
-        const corners = [
-            cx.getImageData(0, 0, 1, 1).data[3],
-            cx.getImageData(S - 1, 0, 1, 1).data[3],
-            cx.getImageData(0, S - 1, 1, 1).data[3],
-            cx.getImageData(S - 1, S - 1, 1, 1).data[3]
-        ];
-        const opaqueCorners = corners.filter(a => a > 240).length;
-        if (opaqueCorners >= 3) {
-            img.__opaqueBg = true;
-            console.warn(`Sprite "${key}" has an opaque background — using procedural fallback.`);
-        }
-    } catch (e) {
-        // Canvas tainted or failed — leave the sprite enabled.
-    }
-}
+// Opacity check disabled — the artist's hand-drawn sprites/tiles often have
+// opaque backgrounds and were being misclassified as "missing transparency",
+// forcing the procedural fallback. Trust the asset; if it loads, render it.
+function markIfOpaqueBackground(_key, _img) { /* no-op */ }
 
 let pendingImages = Object.keys(ASSET_PATHS).length;
 let initStarted = false;
@@ -2441,7 +2417,7 @@ function draw() {
             } else if (r.tile === 'T') {
                 drawTile(ctx, sx, sy, '#1a0a14', true, null, r.isVisible ? patterns.trampoline : null);
             } else if (r.tile === '^') {
-                drawTile(ctx, sx, sy, '#2a0505', false, r.isVisible ? 'rgba(220,40,40,0.55)' : null, r.isVisible ? patterns.spikes : null);
+                drawTile(ctx, sx, sy, '#1a0a14', false, null, r.isVisible ? patterns.spikes : null);
             } else if (r.tile === '=') {
                 drawTile(ctx, sx, sy, '#1a0a14', false, null, r.isVisible ? patterns.platform : null);
             } else if (r.tile === 'C') {
@@ -3434,10 +3410,10 @@ function draw() {
         }
     }
 
-    // Class power HUD
+    // Class power HUD — positioned below the hearts row so they don't overlap.
     if (game.player.classObj) {
         const cls = game.player.classObj;
-        const w = 160, h = 16, x0 = canvas.width - w - 8, y0 = 8;
+        const w = 160, h = 16, x0 = canvas.width - w - 8, y0 = 44;
         ctx.fillStyle = 'rgba(0,0,0,0.7)';
         ctx.fillRect(x0 - 2, y0 - 2, w + 4, h + 4);
         ctx.strokeStyle = '#01CDFE';
