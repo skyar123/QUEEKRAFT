@@ -921,6 +921,12 @@ async function descend() {
     UI.addMessage(`📍 Checkpoint reached: Depth ${game.depth}`, 'special');
     if (enteringNewZone) UI.addMessage(`— ${nextZone.name} — ${nextZone.flavour}`, 'special');
 
+    // Surviving the floor: +1 max heart and heal to full. Perk choice is the
+    // level-up reward; the heart is a separate, unconditional descent bonus.
+    game.player.maxHealth += 1;
+    game.player.health = game.player.maxHealth;
+    UI.addMessage('❤️ +1 Max Heart — the wasteland made you tougher.', 'healing');
+
     // Fade out
     overlay.style.opacity = '0';
     setTimeout(() => overlay.remove(), 600);
@@ -1090,6 +1096,23 @@ function perceivesPlayer(troll, tx, ty, px, py, sightRange) {
     return losClear(tx, ty, px, py);
 }
 
+// Observation lines surfaced when the player is near a police enemy but
+// hasn't been detected — pulled from what you'd actually see watching a cop
+// loiter on a corner. Surfaced one at a time, no repeats per encounter.
+const POLICE_OBSERVATIONS = [
+    "They're running a plate. The tablet's slow. They tap the screen, annoyed.",
+    "Hand resting on the belt without thinking. Muscle memory.",
+    "A jogger crosses the street to avoid them. The cop notices. Or doesn't.",
+    "Radio chirps — something muffled, a number code. They don't answer.",
+    "They check their watch. Lean against the wall. Yawn.",
+    "Eye-contact with a kid walking past. The kid speeds up.",
+    "Writing something down. Slowly. Twice.",
+    "Adjusting the vest. It looks heavy.",
+    "Stopped to talk to another cop. Both laughing too loud.",
+    "Scanning everyone who passes. Sorting them. You can see it on their face.",
+    "They spit on the sidewalk. No one corrects them."
+];
+
 function processTurn() {
     // Decrement attack cooldown each turn (for power attack delay)
     if (game.player.attackCooldown > 0) game.player.attackCooldown--;
@@ -1231,10 +1254,21 @@ function processTurn() {
             return;
         }
 
-        // POLICE: fast, aggressive, 2 damage
+        // POLICE: fast, aggressive, 2 damage.
+        // If the player is within observing range but the cop hasn't perceived
+        // them yet, occasionally surface an ambient observation line.
         if (troll.enemyType === 'police') {
             if (dist <= 1) { takeDamage(game, 2); return; }
-            if (hunting) stepToward();
+            if (hunting) { stepToward(); return; }
+            if (dist <= 12 && Math.random() < 0.08) {
+                troll._observedLines = troll._observedLines || [];
+                const pool = POLICE_OBSERVATIONS.filter(l => !troll._observedLines.includes(l));
+                if (pool.length > 0) {
+                    const line = pool[Math.floor(Math.random() * pool.length)];
+                    troll._observedLines.push(line);
+                    UI.addMessage(`👁 ${line}`, 'system');
+                }
+            }
             return;
         }
 
