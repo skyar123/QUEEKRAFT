@@ -1113,6 +1113,38 @@ const POLICE_OBSERVATIONS = [
     "They spit on the sidewalk. No one corrects them."
 ];
 
+// What you observe watching a gatekeeper work — the mundane choreography of
+// deciding who belongs. No repeats per gatekeeper instance.
+const GATEKEEPER_OBSERVATIONS = [
+    "Clipboard in hand, barely looking up.",
+    "Two people go in. One gets waved back. Nobody explains why.",
+    "They look you up and down — not at your face. At everything around your face.",
+    "The velvet rope is half a foot. But it might as well be a wall.",
+    "A group of suits waved in without ID check. You counted them.",
+    "Someone argues quietly. The gatekeeper doesn't move a muscle.",
+    "Stamp on the wrist for some people. Nothing for others.",
+    "They check something on their phone. No one knows what list that is.",
+    "Two more turned away. They don't look surprised.",
+    "A nod to someone they recognize. The whole equation changes with a nod.",
+    "They lean on the wall. Bored. This is easy work for them."
+];
+
+// What you observe watching a bigot in the wild — coiled, scanning, waiting
+// for a reason. No repeats per bigot instance.
+const BIGOT_OBSERVATIONS = [
+    "Muttering under their breath. You catch one word.",
+    "They stop walking when you pass. Their whole body says something.",
+    "Glancing at their phone, then at you. Then back at their phone.",
+    "A hard stare. Not curious — assessing.",
+    "Shoulders go tight when someone walks too close.",
+    "They call out to someone across the street. Not loud. Just enough.",
+    "Watching from a doorway. Still. Coiled.",
+    "That specific kind of looking away that isn't looking away.",
+    "They shift. Their weight. Their jaw. Waiting for something.",
+    "A comment under the breath directed nowhere. But you're the only one there.",
+    "They move to take up more space. Deliberate."
+];
+
 function processTurn() {
     // Decrement attack cooldown each turn (for power attack delay)
     if (game.player.attackCooldown > 0) game.player.attackCooldown--;
@@ -1140,9 +1172,20 @@ function processTurn() {
         const ty = trollTileY(troll);
 
         if (troll.enemyType === 'gatekeeper') {
-            // Gatekeepers don't move but DO attack if adjacent
+            // Gatekeepers don't move but DO attack if adjacent.
+            // When the player is nearby but not yet caught, surface ambient
+            // observations about the gatekeeper's sorting behaviour.
             const dist = Math.abs(px - tx) + Math.abs(py - ty);
-            if (dist <= 1) takeDamage(game, 2);
+            if (dist <= 1) { takeDamage(game, 2); return; }
+            if (dist <= 8 && Math.random() < 0.10) {
+                troll._observedLines = troll._observedLines || [];
+                const pool = GATEKEEPER_OBSERVATIONS.filter(l => !troll._observedLines.includes(l));
+                if (pool.length > 0) {
+                    const line = pool[Math.floor(Math.random() * pool.length)];
+                    troll._observedLines.push(line);
+                    UI.addMessage(`👁 ${line}`, 'system');
+                }
+            }
             return;
         }
 
@@ -1279,7 +1322,9 @@ function processTurn() {
             return;
         }
 
-        // BIGOT (new): far-range projectile thrower (logical adjacency = 2)
+        // BIGOT (new): far-range projectile thrower (logical adjacency = 2).
+        // When the player is in range but hasn't been detected, surface ambient
+        // observations — coiled, scanning, looking for a reason.
         if (troll.enemyType === 'bigot') {
             if (hunting && dist <= 4 && Math.random() < 0.3) {
                 takeDamage(game, 1);
@@ -1288,7 +1333,16 @@ function processTurn() {
                 return;
             }
             if (dist <= 1) { takeDamage(game, 1); return; }
-            if (hunting) stepToward();
+            if (hunting) { stepToward(); return; }
+            if (dist <= 10 && Math.random() < 0.07) {
+                troll._observedLines = troll._observedLines || [];
+                const pool = BIGOT_OBSERVATIONS.filter(l => !troll._observedLines.includes(l));
+                if (pool.length > 0) {
+                    const line = pool[Math.floor(Math.random() * pool.length)];
+                    troll._observedLines.push(line);
+                    UI.addMessage(`👁 ${line}`, 'system');
+                }
+            }
             return;
         }
 
