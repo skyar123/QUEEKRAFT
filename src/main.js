@@ -130,7 +130,17 @@ const TRAITS = [
     { id: 'bipolar',   name: 'Big Mood',        desc: 'Damage swings wildly between 0.5x and 2.5x.' },
     { id: 'insomnia',  name: 'No Sleep',        desc: 'Always alert. Coyote time doubled.' },
     { id: 'chronic',   name: 'Chronic Pain',    desc: 'Every step hurts. Slower, but extra invuln frames.' },
-    { id: 'glitter',   name: 'Glitter Trail',   desc: 'You leave sparkles wherever you walk. Pure aesthetic.' }
+    { id: 'glitter',   name: 'Glitter Trail',   desc: 'You leave sparkles wherever you walk. Pure aesthetic.' },
+    { id: 'hypervigilance',  name: 'PTSD: Hypervigilance', desc: 'Always scanning for threats. Enemies spot you from +3 tiles — but you see their alert glyph 2 ticks earlier. DSM Criterion E2.' },
+    { id: 'mixed_features',  name: 'Mixed Features',       desc: 'Opposite-polarity symptoms bleed through. Damage randomly 0.5x–2.5x. DSM specifier: 3+ opposite symptoms. Highest suicide risk.' },
+    { id: 'melancholic_dep', name: 'Melancholic Features', desc: 'Non-reactive mood, distinct quality of sadness. -1 max HP but kills restore 0.5 HP. Early-morning awakening. Somatic treatments best.' },
+    { id: 'atypical_dep',    name: 'Atypical Features',    desc: 'Mood reactivity preserved. Healing items +1 bonus when collected back-to-back. Rejection sensitivity persists between episodes.' },
+    { id: 'seasonal_affect', name: 'Seasonal Affective',   desc: 'Regular temporal pattern. Even-depth floors: +1 dmg (spring). Odd-depth floors: -1 effective HP (winter). Light therapy = depth 1.' },
+    { id: 'catatonic_ep',    name: 'Catatonic Episode',    desc: 'Periodic freeze (3s of stupor), then explosive burst (3x dmg for 1s). First-line: lorazepam. Do not give antipsychotics first.' },
+    { id: 'rejection_sens',  name: 'Rejection Sensitivity',desc: 'BPD-linked trait. Long-standing interpersonal pattern. Enemies who flee deal +1 dmg on return. The abandonment fear amplifies threat.' },
+    { id: 'anhedonia',       name: 'Anhedonia',            desc: 'Loss of interest or pleasure in almost all activities. Items feel dull (+25% less scrap value). Required criterion for MDD or melancholic.' },
+    { id: 'psychomotor_ag',  name: 'Psychomotor Agitation',desc: 'Observable restlessness — pacing, hand-wringing. Move 30% faster but lose 1 HP per 10s of movement. MDD/mania criterion.' },
+    { id: 'flight_ideas',    name: 'Flight of Ideas',      desc: 'Racing thoughts, rapidly shifting between topics. Manic symptom DIG FAST F. Special: attack cooldown halved, direction locks randomly.' }
 ];
 
 const CLASSES = [
@@ -139,7 +149,9 @@ const CLASSES = [
     { id: 'archivist',  name: 'Library Archivist', power: 'TIME DILATION',  desc: 'R: Slow enemies for 4s.' },
     { id: 'brawler',    name: 'Glitter Brawler',   power: 'PRIDE DASH',     desc: 'R: Dash + invuln. Auto-kills weak foes.' },
     { id: 'dealer',     name: 'Hormone Dealer',    power: 'HRT BUMP',       desc: 'R: Heal 2 HP and gain temp damage boost.' },
-    { id: 'aidworker',  name: 'Mutual Aid Worker', power: 'SOLIDARITY',     desc: 'R: Healing aura. Restores 1 HP every 2s for 8s.' }
+    { id: 'aidworker',  name: 'Mutual Aid Worker', power: 'SOLIDARITY',     desc: 'R: Healing aura. Restores 1 HP every 2s for 8s.' },
+    { id: 'clinician',     name: 'Field Clinician (LCSW-in-Training)', power: 'FORMULATION',      desc: 'R: Clinical formulation — instantly identifies enemy weakness. Next hit kills any enemy at 3 HP or below. Your training is the weapon.' },
+    { id: 'peer_spec',     name: 'Certified Peer Specialist',           power: 'SHARED EXPERIENCE', desc: 'R: Full heal + nearby enemies briefly non-hostile (2s). You have been where they are. That knowledge is power.' }
 ];
 const NAMES = ['Ash', 'River', 'Rowan', 'Sage', 'Onyx', 'Quinn', 'Zephyr', 'Nova', 'Vesper', 'Wren', 'Indigo', 'Marlow', 'Sky', 'Phoenix', 'August'];
 
@@ -350,7 +362,13 @@ const DEPTH_ZONES = [
       wall: 'rgba(150,80,200,0.16)', floor: 'rgba(120,60,160,0.12)', glow: 'rgba(180,100,255,0.34)', particle: '#B967DB' },
     { from: 9, name: 'THE CORE',
       flavour: 'White light. Quiet. The place under everything, where the lineage actually lives.',
-      wall: 'rgba(255,255,255,0.10)', floor: 'rgba(255,240,200,0.10)', glow: 'rgba(255,240,200,0.36)', particle: '#FFFFFF' }
+      wall: 'rgba(255,255,255,0.10)', floor: 'rgba(255,240,200,0.10)', glow: 'rgba(255,240,200,0.36)', particle: '#FFFFFF' },
+    { from: 11, name: 'THE MOOD WARD',
+      flavour: 'Fluorescent white. Locked doors. The DSM is on every wall. This is where they tried to name what was wrong with us — and sometimes got it right.',
+      wall: 'rgba(200,220,255,0.14)', floor: 'rgba(180,200,240,0.11)', glow: 'rgba(180,210,255,0.38)', particle: '#B0C4DE' },
+    { from: 13, name: 'THE CLINICAL ARCHIVE',
+      flavour: 'Quiet. Organized. Every case file, every formulation, every treatment plan that was ever written with care — held here. The LCSW lives in these stacks.',
+      wall: 'rgba(255,220,100,0.13)', floor: 'rgba(240,200,80,0.10)', glow: 'rgba(255,230,120,0.36)', particle: '#F0C040' }
 ];
 function depthZone(depth) {
     let z = DEPTH_ZONES[0];
@@ -513,7 +531,10 @@ const ENEMY_SPRITES = {
     concern:    'enemy_concern',
     police:     'enemy_police',
     bigot:      'enemy_bigot',
-    swarm:      'enemy_swarm'
+    swarm:      'enemy_swarm',
+    ruminator:  'enemy_wraith',
+    avoidance:  'enemy_concern',
+    compulsion: 'enemy_gatekeeper'
 };
 
 // NPC figure key → sprite key. Falls back to colored filler when the
@@ -1047,6 +1068,11 @@ function updateFOV() {
     let fovRadius = 9;
     if (game.player.trait && game.player.trait.id === 'dysphoria') fovRadius = 5;
     if (game.player.traits && game.player.traits.some(t => t.id === 'autism')) fovRadius += 2;
+    if (game.player.traits && game.player.traits.some(t => t.id === 'seasonal_affect')) {
+        // Even depths = summer boost (+1 effective fov), odd = winter reduction
+        if (game.depth % 2 === 0) fovRadius += 1;
+        else fovRadius = Math.max(3, fovRadius - 1);
+    }
 
     const px = tileX(), py = tileY();
     for (let dy = -fovRadius; dy <= fovRadius; dy++) {
@@ -1150,6 +1176,7 @@ function processTurn() {
         const dist = Math.abs(px - tx) + Math.abs(py - ty);
         let alertRadius = troll.alertRadius;
         if (game.player.trait && game.player.trait.id === 'clocked') alertRadius += 3;
+        if (game.player.traits && game.player.traits.some(t => t.id === 'hypervigilance')) alertRadius += 3;
         if (game.player.trait && game.player.trait.id === 'stealth') alertRadius = Math.min(alertRadius, 3);
 
         // Perception + alert state. `hunting` gates every "move toward player"
@@ -1279,6 +1306,68 @@ function processTurn() {
             }
             if (dist <= 1) { takeDamage(game, 1); return; }
             if (hunting) stepToward();
+            return;
+        }
+
+        // RUMINATION: The thought that circles back. Slow but relentlessly persistent.
+        // Gets a small speed boost each time it's near the player (ruminative loop).
+        if (troll.enemyType === 'ruminator') {
+            if (dist <= 1) {
+                takeDamage(game, 1);
+                UI.addMessage("The Rumination whispers: 'But what if you had done it differently...'", 'death');
+                return;
+            }
+            if (hunting) {
+                troll.ruminationSteps = (troll.ruminationSteps || 0) + 1;
+                if (troll.ruminationSteps > 5) {
+                    stepToward();  // accelerates after sustained pursuit
+                }
+                stepToward();
+            }
+            return;
+        }
+
+        // AVOIDANCE: Flees the player — but sends anxiety damage when it runs.
+        // Represents PTSD avoidance: the more you chase, the more it costs you.
+        if (troll.enemyType === 'avoidance') {
+            if (dist <= 1) {
+                // Cornered avoidance lashes out
+                takeDamage(game, 1);
+                UI.addMessage("The Avoidance, cornered, strikes back. Avoidance maintains the fear.", 'death');
+                return;
+            }
+            if (hunting && dist <= 5) {
+                // Flee from player — step away
+                const adx = tx - px, ady = ty - py;
+                const fled = [[-adx, 0], [0, -ady], [-adx, -ady]];
+                for (const [fdx, fdy] of fled) {
+                    const nx = tx + Math.sign(fdx), ny = ty + Math.sign(fdy);
+                    if (isPassable(nx, ny)) { troll.x = nx; troll.y = ny; break; }
+                }
+                // Anxiety at range: low chance of remote damage
+                if (Math.random() < 0.15) {
+                    takeDamage(game, 1);
+                    UI.addMessage("The Avoidance radiates anxiety — even at a distance, it costs you.", 'death');
+                }
+            }
+            return;
+        }
+
+        // COMPULSION: Moves in a fixed repetitive patrol pattern.
+        // Predictable — but must be interrupted to stop the loop.
+        if (troll.enemyType === 'compulsion') {
+            if (dist <= 1) {
+                takeDamage(game, 1);
+                UI.addMessage("The Compulsion runs its loop. You stepped into the pattern.", 'death');
+                return;
+            }
+            // Patrol back and forth — ignore player unless directly in path
+            troll.compDir = troll.compDir || 1;
+            troll.compSteps = (troll.compSteps || 0) + 1;
+            if (troll.compSteps >= 4) { troll.compDir *= -1; troll.compSteps = 0; }
+            const compNx = tx + troll.compDir;
+            if (isPassable(compNx, ty)) { troll.x = compNx; troll.y = ty; }
+            else { troll.compDir *= -1; troll.compSteps = 0; }
             return;
         }
 
