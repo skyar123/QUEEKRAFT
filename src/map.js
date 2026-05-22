@@ -521,55 +521,24 @@ export function generateMap(game) {
 }
 
 // ---------------------------------------------------------------------------
-// Safehouse Village — an optional cozy hub. NOT on the run critical path
-// anymore (camp's "Enter the Wasteland" still goes straight to the dungeon);
-// this is reached via the camp's "🏘️ Visit the Safehouse Village" button.
+// Safehouse Sanctuary — a multi-floor vertical building. The player enters at
+// the Lobby (top) and drops through the central shaft to visit ancestors on
+// the floors matching the dungeon depth where each was first met.
 //
-// The village is six zones divided by interior walls with carved doorways:
+//   FLOOR 0  ─ LOBBY ─ campfire (F), zine rack, wasteland portal (D)
+//   FLOOR 1  ─ Ancestors met at depth 1  (Surface Ruins)
+//   FLOOR 2  ─ Ancestors met at depth 2  (Surface Ruins)
+//   FLOOR 3  ─ Ancestors met at depth 3  (Bureaucracy Levels)
+//   ... etc. Empty floors are abandoned; occupied ones are tinted by depth zone.
 //
-//   ┌────────┬──────────┬───────────┬───────────┬──────────┬───────────┐
-//   │ HEARTH │ DRAG BAR │ BALLROOM  │  ARCHIVE  │  STAR    │  ATRIUM   │
-//   │ (warm) │  (teal)  │  (gold)   │ (blue/pk) │  (red)   │ (neutral) │
-//   └────────┴──────────┴───────────┴───────────┴──────────┴───────────┘
-//        F (campfire)                                        D (portal)
+// Each floor (FLOOR_H = 10 tiles):
+//   y+0  ceiling row   (#, except shaft cols: always .)
+//   y+1–7 interior     (. open; two side platforms for jumping back up)
+//   y+8  platform row  (# sides, = at shaft — one-way, drop with Down+Jump)
+//   y+9  sub-floor gap (# sides, . at shaft — lets player jump back through)
 //
-// Each zone uses an existing room-set (hearthRooms, charmSchoolRooms, etc.)
-// so the tile renderer's per-room tint already lights it correctly.
-//
-// Village GROWS with progress (the player's ask):
-//   - Core quest givers always appear so the quest loop works on first visit.
-//   - Other NPCs only show after the player has met them in the dungeon
-//     (game.persistent.seenFigures[key] === true).
-//   - Decorative props (bouquets/zines) scale with seenZines count.
-//   - Zone tints turn from dim to vivid once a zone has at least one resident.
-
-const VLG_W = 60;
-const VLG_H = 20;     // taller for buildings + rooftops
-const ZONE_W = 10;    // each of the 6 zones is 10 tiles wide
-const ZONES = [
-    { id: 'hearth',   name: 'HEARTH KITCHEN', tint: 'hearth',       npcs: ['community_mothers', 'mama_gloria', 'mariela_munoz', 'gauri_sawant'] },
-    { id: 'drag',     name: 'DRAG BAR',       tint: 'charmSchool',  npcs: ['marsha', 'coccinelle', 'mj_rodriguez', 'sylvia'] },
-    { id: 'ballroom', name: 'BALLROOM STAGE', tint: 'ballroom',     npcs: ['crystal_labeija', 'paris_dupree', 'angie_xtravaganza'] },
-    { id: 'archive',  name: 'THE ARCHIVE',    tint: 'safeShelter',  npcs: ['blade_journalists', 'jennifer_boylan', 'dorian_corey', 'eleanor'] },
-    { id: 'star',     name: 'STAR HOUSE',     tint: 'starHouse',    npcs: ['kenya_cuevas', 'cleopatra_kambugu', 'allison_scott', 'peyton_oconner'] },
-    { id: 'atrium',   name: 'THE ATRIUM',     tint: null,           npcs: ['william_dorsey_swann', 'wewha', 'charley', 'dora', 'alan', 'lili', 'christine', 'lucy'] }
-];
-
-// NPCs that always appear regardless of seenFigures so the quest loop is
-// usable on first visit (each is a quest giver).
-const CORE_RESIDENTS = new Set([
-    'community_mothers',
-    'marsha',
-    'crystal_labeija',
-    'blade_journalists',
-    'william_dorsey_swann'
-]);
-
-function zoneHasAnyResident(zone, game) {
-    return zone.npcs.some(k =>
-        HISTORICAL_FIGURES[k] && (CORE_RESIDENTS.has(k) || (game.persistent.seenFigures && game.persistent.seenFigures[k]))
-    );
-}
+// Ancestors only appear once met in the dungeon. seenFigures[key] stores the
+// depth at which they were first encountered (legacy true-saves → floor 1).
 
 function applyZoneTint(game, tint, roomKey) {
     if (tint === 'hearth')           game.hearthRooms.add(roomKey);
@@ -577,7 +546,6 @@ function applyZoneTint(game, tint, roomKey) {
     else if (tint === 'ballroom')    game.ballroomRooms.add(roomKey);
     else if (tint === 'safeShelter') game.safeShelterRooms.add(roomKey);
     else if (tint === 'starHouse')   game.starHouseRooms.add(roomKey);
-    // 'null' tint = no room set, renders as default dungeon-floor look.
 }
 
 export function generateHubMap(game) {
@@ -597,170 +565,139 @@ export function generateHubMap(game) {
     game.starHouseRooms = new Set();
     game.charmSchoolRooms = new Set();
     game.echoRooms = new Set();
-    game.mapWidth = VLG_W;
-    game.mapHeight = VLG_H;
     game.seen = {};
 
-    // Layout constants
-    const streetY  = VLG_H - 4;   // ground-level street the player walks on
-    const roofY    = 4;            // top of building rooftops
-    const skyY     = 1;            // open sky rows above rooftops
-    const wallH    = streetY - roofY; // interior height of each building
+    const seenFigures    = game.persistent.seenFigures || {};
+    const seenZines      = game.persistent.seenZines   || {};
+    const zinesCollected = Object.keys(seenZines).length;
 
-    // Fill everything solid, then carve out sky + street
-    fillRect(game.map, 0, 0, VLG_W, VLG_H, '#');
-    // Sky
-    fillRect(game.map, 1, skyY, VLG_W - 2, roofY - skyY, '.');
-    // Street (walkable ground level)
-    fillRect(game.map, 1, streetY, VLG_W - 2, 1, '.');
-
-    // ── Building shells ──────────────────────────────────────────────────
-    // Each zone gets a building: exterior walls from roofY to streetY,
-    // interior carved open, a doorway at ground level, and windows.
-    for (let z = 0; z < ZONES.length; z++) {
-        const bx0 = z * ZONE_W + 1;   // building left wall x
-        const bx1 = (z + 1) * ZONE_W - 1; // building right wall x
-
-        // Exterior side walls
-        for (let y = roofY; y < streetY; y++) {
-            game.map[`${bx0},${y}`] = '#';
-            game.map[`${bx1},${y}`] = '#';
-        }
-        // Rooftop cap (solid row)
-        for (let x = bx0; x <= bx1; x++) game.map[`${x},${roofY}`] = '#';
-
-        // Interior open space
-        fillRect(game.map, bx0 + 1, roofY + 1, bx1 - bx0 - 1, streetY - roofY - 1, '.');
-
-        // Doorway (3 tiles tall) at the center of each building front
-        const doorX = z * ZONE_W + Math.floor(ZONE_W / 2);
-        for (let y = streetY - 3; y < streetY; y++) game.map[`${doorX},${y}`] = '.';
-
-        // Windows — two per building, symmetrical
-        const winY1 = roofY + 2, winY2 = roofY + 3;
-        game.map[`${bx0 + 2},${winY1}`] = '.';
-        game.map[`${bx0 + 2},${winY2}`] = '.';
-        game.map[`${bx1 - 2},${winY1}`] = '.';
-        game.map[`${bx1 - 2},${winY2}`] = '.';
-
-        // Shared divider wall between buildings (solid pillar at zone boundary)
-        // already solid from the initial fill — just ensure doorway gap in street
-        if (z > 0) {
-            const divX = z * ZONE_W;
-            game.map[`${divX},${streetY}`] = '.'; // street-level gap so player can walk
-        }
+    // Group unlocked ancestors by the dungeon depth where they were first met.
+    // New saves: seenFigures[key] = depth (number ≥ 1).
+    // Legacy saves: seenFigures[key] = true  → place on floor 1.
+    const figuresByDepth = {};
+    for (const [key, val] of Object.entries(seenFigures)) {
+        if (!HISTORICAL_FIGURES[key]) continue;
+        const d = (typeof val === 'number' && val >= 1) ? Math.floor(val) : 1;
+        if (!figuresByDepth[d]) figuresByDepth[d] = [];
+        figuresByDepth[d].push(key);
     }
 
-    // ── Zone tints, signs & decoration ──────────────────────────────────
-    const zinesCollected = Object.keys(game.persistent && game.persistent.seenZines || {}).length;
-    const figuresMet     = Object.keys(game.persistent && game.persistent.seenFigures || {}).length;
-    const decorated      = Math.min(1, 0.25 + zinesCollected / 19);
+    const maxDepth  = Math.max(5, game.persistent.deepestReached || 1);
+    const NUM_FLOORS = maxDepth + 1;   // floor 0 = lobby, floor N = depth N ancestors
+    const FLOOR_H   = 10;
+    const HUB_W     = 30;
+    const HUB_H     = NUM_FLOORS * FLOOR_H + 1;
+    const SHAFT_CX  = 14;
+    const SHAFT     = new Set([SHAFT_CX - 1, SHAFT_CX, SHAFT_CX + 1]);
 
-    for (let z = 0; z < ZONES.length; z++) {
-        const zone = ZONES[z];
-        const bx0  = z * ZONE_W + 1;
-        const bx1  = (z + 1) * ZONE_W - 1;
-        const cx   = z * ZONE_W + Math.floor(ZONE_W / 2);
-        const interior = bx0 + 1; // first walkable tile inside building
+    game.mapWidth  = HUB_W;
+    game.mapHeight = HUB_H;
 
-        const willBeOccupied = zoneHasAnyResident(zone, game);
-        if (willBeOccupied) applyZoneTint(game, zone.tint, `${z},0`);
+    fillRect(game.map, 0, 0, HUB_W, HUB_H, '#');
 
-        // Zone name written on the rooftop so it's visible from the street
-        game.muralTiles[`${cx - 1},${roofY}`] = willBeOccupied ? zone.name : '[LOCKED]';
+    for (let f = 0; f < NUM_FLOORS; f++) {
+        const fTop   = f * FLOOR_H;
+        const intEnd = fTop + FLOOR_H - 3;  // last interior row (player tile level)
+        const standY = fTop + FLOOR_H - 2;  // one-way platform row
+        const subY   = fTop + FLOOR_H - 1;  // sub-floor gap (open at shaft)
 
-        // ── Per-zone interior layout ─────────────────────────────────────
-        if (zone.id === 'hearth') {
-            // Kitchen island counter + wall shelf
-            placePlatform(game.map, interior,     streetY - 2, 5);
-            placePlatform(game.map, interior + 3, streetY - 5, 3);  // high shelf
-            if (decorated > 0.4) placePlatform(game.map, interior + 1, streetY - 4, 2);
-        } else if (zone.id === 'drag') {
-            // Bar counter runs the length; loft balcony above
-            placePlatform(game.map, interior,     streetY - 2, 7);  // bar top
-            placePlatform(game.map, interior,     streetY - 6, 4);  // loft level
-            placePlatform(game.map, interior + 5, streetY - 4, 2);  // loft steps
-        } else if (zone.id === 'ballroom') {
-            // Raised stage in center with step up + spotlights (high platforms)
-            placePlatform(game.map, interior + 1, streetY - 2, 6);  // stage floor
-            placePlatform(game.map, interior + 2, streetY - 4, 4);  // stage raised
-            placePlatform(game.map, interior + 3, streetY - 6, 2);  // top of stage
-            if (decorated > 0.5) {
-                placePlatform(game.map, interior,     streetY - 7, 1); // spotlight box L
-                placePlatform(game.map, interior + 6, streetY - 7, 1); // spotlight box R
-            }
-        } else if (zone.id === 'archive') {
-            // Tall bookshelves as vertical pillars with walkable tops
-            for (let sx of [interior, interior + 3, interior + 6]) {
-                for (let y = streetY - 2; y >= streetY - 6; y -= 2) {
-                    placePlatform(game.map, sx, y, 2);
-                }
-            }
-            if (decorated > 0.5) placePlatform(game.map, interior + 1, streetY - 7, 5); // top gallery
-        } else if (zone.id === 'star') {
-            // Bunk beds: pairs of platforms at two heights per side
-            placePlatform(game.map, interior,     streetY - 2, 3);
-            placePlatform(game.map, interior + 5, streetY - 2, 3);
-            placePlatform(game.map, interior,     streetY - 4, 3);
-            placePlatform(game.map, interior + 5, streetY - 4, 3);
-            if (decorated > 0.4) {
-                placePlatform(game.map, interior + 2, streetY - 6, 4); // top bunk loft
-            }
-        } else if (zone.id === 'atrium') {
-            // Grand entrance: wide steps leading to portal
-            placePlatform(game.map, interior,     streetY - 2, 2);
-            placePlatform(game.map, interior + 5, streetY - 2, 2);
-            if (decorated > 0.3) placePlatform(game.map, interior + 2, streetY - 4, 4);
+        // Open shaft through ceiling row so players can jump between floors
+        for (const sx of SHAFT) {
+            if (sx > 0 && sx < HUB_W - 1) game.map[`${sx},${fTop}`] = '.';
         }
 
-        // Rooftop platform — reachable via building interior; accessible on all zones
-        placePlatform(game.map, bx0 + 1, roofY + 1, bx1 - bx0 - 2);
+        // Interior rows open
+        for (let y = fTop + 1; y <= intEnd; y++) {
+            for (let x = 1; x < HUB_W - 1; x++) game.map[`${x},${y}`] = '.';
+        }
 
-        // Decorative item scatter
-        if (willBeOccupied && Math.random() < decorated) {
+        // Platform row: solid sides, one-way = at shaft columns
+        for (let x = 1; x < HUB_W - 1; x++) {
+            game.map[`${x},${standY}`] = SHAFT.has(x) ? '=' : '#';
+        }
+
+        // Sub-floor gap: solid sides, open at shaft (allows jumping back up)
+        for (let x = 1; x < HUB_W - 1; x++) {
+            game.map[`${x},${subY}`] = SHAFT.has(x) ? '.' : '#';
+        }
+
+        // Side platforms so the player can jump back up to the floor above
+        placePlatform(game.map, 3,          intEnd - 2, 5);
+        placePlatform(game.map, HUB_W - 9, intEnd - 2, 5);
+
+        // Room tint keyed to the 10×10 renderer grid (erx 0-2 covers full width)
+        const tintType = f <= 2 ? 'hearth'
+            : f <= 4 ? 'safeShelter'
+            : f <= 6 ? 'ballroom'
+            : f <= 8 ? 'starHouse'
+            : 'charmSchool';
+        for (let erx = 0; erx < 3; erx++) applyZoneTint(game, tintType, `${erx},${f}`);
+
+        // Floor label on the ceiling row (readable from the floor above)
+        const figuresHere = f === 0 ? [] : (figuresByDepth[f] || []);
+        if (f === 0) {
+            game.muralTiles[`${SHAFT_CX - 5},${fTop}`] = '— SAFEHOUSE SANCTUARY —';
+        } else {
+            const zoneName = f >= 9 ? 'THE CORE'
+                : f >= 7 ? 'THE DEEP-GRID'
+                : f >= 5 ? 'THE ARCHIVE DEPTHS'
+                : f >= 3 ? 'THE BUREAUCRACY'
+                : 'THE SURFACE RUINS';
+            game.muralTiles[`${SHAFT_CX - 5},${fTop}`] = figuresHere.length
+                ? `DEPTH ${f} · ${zoneName}`
+                : `DEPTH ${f} · ABANDONED`;
+        }
+
+        // Place ancestor NPCs evenly across the floor
+        const npcY = intEnd; // player's tile-level when standing on the = platform
+        if (figuresHere.length > 0) {
+            const spread = Math.max(3, Math.floor((HUB_W - 8) / figuresHere.length));
+            figuresHere.forEach((figureKey, i) => {
+                const x = Math.min(4 + i * spread, HUB_W - 5);
+                game.npcs.push({ x, y: npcY, figureKey, type: 'historical' });
+            });
+            // Decorative bouquet on occupied floors
             game.items.push({
-                x: interior + 1 + Math.floor(Math.random() * Math.max(1, bx1 - bx0 - 3)),
-                y: streetY,
+                x: Math.floor(Math.random() * (HUB_W - 12)) + 6,
+                y: npcY,
                 type: 'treasure', name: 'Bouquet (gift)', decorative: true
             });
         }
     }
 
-    // Campfire at street entrance; wasteland portal at far right
-    game.map[`3,${streetY}`]              = 'F';
-    game.map[`${VLG_W - 3},${streetY}`]  = 'D';
+    // Lobby tiles (floor 0, interior row y = FLOOR_H - 3 = 7)
+    const lobbyIntY = FLOOR_H - 3;
+    game.map[`3,${lobbyIntY}`]             = 'F'; // campfire (upgrades)
+    game.map[`${HUB_W - 4},${lobbyIntY}`]  = 'D'; // portal to wasteland
 
-    // Reveal entire village on first visit
-    for (let y = 0; y < VLG_H; y++) {
-        for (let x = 0; x < VLG_W; x++) game.seen[`${x},${y}`] = true;
+    // Zine magazine rack — permanent interactive item, never removed
+    game.items.push({
+        x: SHAFT_CX - 5, y: lobbyIntY,
+        type: 'zinebook',
+        name: `📖 Zine Rack (${zinesCollected}/19)`
+    });
+
+    // Reveal entire hub on entry
+    for (let y = 0; y < HUB_H; y++) {
+        for (let x = 0; x < HUB_W; x++) game.seen[`${x},${y}`] = true;
     }
 
-    // Spawn player at village entrance by the campfire
+    // Spawn player in lobby just above the first = platform (y=8)
     game.player.x = 1.5;
-    game.player.y = streetY;
+    game.player.y = 7.1;
     game.player.vx = 0;
     game.player.vy = 0;
     game.player.onGround = true;
 
-    // Populate NPCs — CORE_RESIDENTS always present; others need seenFigures
-    for (let z = 0; z < ZONES.length; z++) {
-        const zone = ZONES[z];
-        const bx0  = z * ZONE_W + 1;
-        const bx1  = (z + 1) * ZONE_W - 1;
-        const eligible = zone.npcs.filter(k =>
-            HISTORICAL_FIGURES[k] &&
-            (CORE_RESIDENTS.has(k) || (game.persistent.seenFigures && game.persistent.seenFigures[k]))
-        );
-        const step = Math.max(1, Math.floor((bx1 - bx0) / (eligible.length + 1)));
-        eligible.forEach((figureKey, i) => {
-            game.npcs.push({ x: bx0 + step * (i + 1), y: streetY, figureKey, type: 'historical' });
-        });
-    }
-
+    const figuresMet   = Object.keys(seenFigures).length;
     const totalFigures = Object.keys(HISTORICAL_FIGURES).length;
     if (typeof window !== 'undefined' && window.UI && window.UI.addMessage) {
         window.UI.addMessage(
-            `Village: ${game.npcs.length} residents · ${figuresMet}/${totalFigures} figures met · ${zinesCollected}/19 zines. Walk right to return to the wasteland.`,
+            `🏛 Safehouse Sanctuary — ${figuresMet}/${totalFigures} ancestors · ${zinesCollected}/19 zines. Drop through the shaft to visit each depth level.`,
+            'special'
+        );
+        window.UI.addMessage(
+            '💬 CAMPFIRE (F): upgrades · PORTAL (D): wasteland · ZINE RACK: browse collected zines · J: quest log.',
             'special'
         );
     }
