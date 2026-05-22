@@ -800,8 +800,8 @@ function addXP(amount) {
     const p = game.player;
     p.xp = (p.xp || 0) + amount;
     p.xpToNext = p.xpToNext || 100;
-    // XP bar fills up as a progress indicator — level ups are milestone-only
-    // (floor completion or finishing an ancestor conversation in the dungeon).
+    // XP bar fills up as a progress indicator — perks are milestone-only,
+    // granted on floor completion (descending the stairs), never on dialogue.
     UI.updateStatus(game);
 }
 window.addXP = addXP;

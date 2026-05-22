@@ -531,11 +531,11 @@ export function generateMap(game) {
 //   FLOOR 3  ─ Ancestors met at depth 3  (Bureaucracy Levels)
 //   ... etc. Empty floors are abandoned; occupied ones are tinted by depth zone.
 //
-// Each floor (FLOOR_H = 10 tiles):
-//   y+0  ceiling row   (#, except shaft cols: always .)
-//   y+1–7 interior     (. open; two side platforms for jumping back up)
-//   y+8  platform row  (# sides, = at shaft — one-way, drop with Down+Jump)
-//   y+9  sub-floor gap (# sides, . at shaft — lets player jump back through)
+// Each floor (FLOOR_H = 7 tiles — sized so one jump clears exactly one floor):
+//   y+0   ceiling row  (#, except shaft cols: always .)
+//   y+1–4 interior     (. open; side platforms for extra footing)
+//   y+5   platform row (# sides, = at shaft — stand here; Down+Jump descends)
+//   y+6   sub-floor gap(# sides, . at shaft — jump straight up to ascend)
 //
 // Ancestors only appear once met in the dungeon. seenFigures[key] stores the
 // depth at which they were first encountered (legacy true-saves → floor 1).
@@ -584,7 +584,7 @@ export function generateHubMap(game) {
 
     const maxDepth  = Math.max(5, game.persistent.deepestReached || 1);
     const NUM_FLOORS = maxDepth + 1;   // floor 0 = lobby, floor N = depth N ancestors
-    const FLOOR_H   = 10;
+    const FLOOR_H   = 7;
     const HUB_W     = 30;
     const HUB_H     = NUM_FLOORS * FLOOR_H + 1;
     const SHAFT_CX  = 14;
@@ -621,17 +621,9 @@ export function generateHubMap(game) {
             game.map[`${x},${subY}`] = SHAFT.has(x) ? '.' : '#';
         }
 
-        // Side platforms so the player can jump back up to the floor above
+        // Side platforms — extra footing and room dressing on each floor
         placePlatform(game.map, 3,          intEnd - 2, 5);
         placePlatform(game.map, HUB_W - 9, intEnd - 2, 5);
-
-        // Room tint keyed to the 10×10 renderer grid (erx 0-2 covers full width)
-        const tintType = f <= 2 ? 'hearth'
-            : f <= 4 ? 'safeShelter'
-            : f <= 6 ? 'ballroom'
-            : f <= 8 ? 'starHouse'
-            : 'charmSchool';
-        for (let erx = 0; erx < 3; erx++) applyZoneTint(game, tintType, `${erx},${f}`);
 
         // Floor label on the ceiling row (readable from the floor above)
         const figuresHere = f === 0 ? [] : (figuresByDepth[f] || []);
@@ -641,31 +633,41 @@ export function generateHubMap(game) {
             const zoneName = f >= 9 ? 'THE CORE'
                 : f >= 7 ? 'THE DEEP-GRID'
                 : f >= 5 ? 'THE ARCHIVE DEPTHS'
-                : f >= 3 ? 'THE BUREAUCRACY'
+                : f >= 3 ? 'THE BUREAUCRACY LEVELS'
                 : 'THE SURFACE RUINS';
             game.muralTiles[`${SHAFT_CX - 5},${fTop}`] = figuresHere.length
                 ? `DEPTH ${f} · ${zoneName}`
                 : `DEPTH ${f} · ABANDONED`;
         }
 
-        // Place ancestor NPCs evenly across the floor
-        const npcY = intEnd; // player's tile-level when standing on the = platform
+        // Place ancestor NPCs evenly across the floor, skipping the shaft.
+        const npcY = intEnd; // player's tile level when standing on this floor
         if (figuresHere.length > 0) {
-            const spread = Math.max(3, Math.floor((HUB_W - 8) / figuresHere.length));
+            const slots = [];
+            for (let x = 4; x <= HUB_W - 5; x++) if (!SHAFT.has(x)) slots.push(x);
             figuresHere.forEach((figureKey, i) => {
-                const x = Math.min(4 + i * spread, HUB_W - 5);
-                game.npcs.push({ x, y: npcY, figureKey, type: 'historical' });
-            });
-            // Decorative bouquet on occupied floors
-            game.items.push({
-                x: Math.floor(Math.random() * (HUB_W - 12)) + 6,
-                y: npcY,
-                type: 'treasure', name: 'Bouquet (gift)', decorative: true
+                const idx = figuresHere.length === 1
+                    ? Math.floor(slots.length / 2)
+                    : Math.round(i * (slots.length - 1) / (figuresHere.length - 1));
+                game.npcs.push({ x: slots[idx], y: npcY, figureKey, type: 'historical' });
             });
         }
     }
 
-    // Lobby tiles (floor 0, interior row y = FLOOR_H - 3 = 7)
+    // Tint each 10×10 renderer room by the depth zone of the floor at its centre.
+    const roomCols = Math.ceil(HUB_W / 10);
+    const roomRows = Math.ceil(HUB_H / 10);
+    for (let ery = 0; ery < roomRows; ery++) {
+        const cf = Math.min(NUM_FLOORS - 1, Math.floor((ery * 10 + 5) / FLOOR_H));
+        const tintType = cf <= 2 ? 'hearth'
+            : cf <= 4 ? 'safeShelter'
+            : cf <= 6 ? 'ballroom'
+            : cf <= 8 ? 'starHouse'
+            : 'charmSchool';
+        for (let erx = 0; erx < roomCols; erx++) applyZoneTint(game, tintType, `${erx},${ery}`);
+    }
+
+    // Lobby tiles (floor 0, interior row y = FLOOR_H - 3 = 4)
     const lobbyIntY = FLOOR_H - 3;
     game.map[`3,${lobbyIntY}`]             = 'F'; // campfire (upgrades)
     game.map[`${HUB_W - 4},${lobbyIntY}`]  = 'D'; // portal to wasteland
@@ -682,9 +684,9 @@ export function generateHubMap(game) {
         for (let x = 0; x < HUB_W; x++) game.seen[`${x},${y}`] = true;
     }
 
-    // Spawn player in lobby just above the first = platform (y=8)
+    // Spawn player standing on the lobby platform row (standY = FLOOR_H - 2).
     game.player.x = 1.5;
-    game.player.y = 7.1;
+    game.player.y = FLOOR_H - 2.9; // standY minus player height (0.9)
     game.player.vx = 0;
     game.player.vy = 0;
     game.player.onGround = true;

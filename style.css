@@ -458,14 +458,14 @@ body, html {
               bottom: calc(20px + env(safe-area-inset-bottom));
               right: calc(96px + env(safe-area-inset-right)); }
     .t-dash { width: 54px; height: 54px;
-              bottom: calc(140px + env(safe-area-inset-bottom));
-              right: calc(28px + env(safe-area-inset-right)); }
+              bottom: calc(196px + env(safe-area-inset-bottom));
+              right: calc(22px + env(safe-area-inset-right)); }
     .t-pwr  { width: 54px; height: 54px;
               bottom: calc(96px + env(safe-area-inset-bottom));
               right: calc(120px + env(safe-area-inset-right)); }
     .t-use  { width: 42px; height: 42px;
-              bottom: calc(196px + env(safe-area-inset-bottom));
-              right: calc(22px + env(safe-area-inset-right)); }
+              bottom: calc(140px + env(safe-area-inset-bottom));
+              right: calc(28px + env(safe-area-inset-right)); }
     #tj-base { width: 100px; height: 100px; }
     #tj-stick { width: 44px; height: 44px; margin: -22px 0 0 -22px; }
     #t-combo { right: calc(96px + env(safe-area-inset-right));
