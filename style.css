@@ -295,8 +295,8 @@ body, html {
 /* DASH — smaller, above ATK */
 .t-dash {
     width: 64px; height: 64px; font-size: 14px;
-    right: calc(38px + env(safe-area-inset-right));
-    bottom: calc(216px + env(safe-area-inset-bottom));
+    right: calc(32px + env(safe-area-inset-right));
+    bottom: calc(296px + env(safe-area-inset-bottom));
     border-color: var(--punk-cyan);
     color: var(--punk-cyan);
     background: rgba(1, 205, 254, 0.16);
@@ -316,11 +316,11 @@ body, html {
 }
 .t-pwr.pressed { background: rgba(255, 215, 0, 0.42); }
 
-/* USE — small square next to dash */
+/* USE — now at DASH's old position (more prominent, used more often) */
 .t-use {
     width: 48px; height: 48px; font-size: 12px;
-    right: calc(32px + env(safe-area-inset-right));
-    bottom: calc(296px + env(safe-area-inset-bottom));
+    right: calc(38px + env(safe-area-inset-right));
+    bottom: calc(216px + env(safe-area-inset-bottom));
     border-radius: 10px;
     border-color: rgba(255,255,255,0.55);
     color: rgba(255,255,255,0.85);
@@ -458,14 +458,14 @@ body, html {
               bottom: calc(20px + env(safe-area-inset-bottom));
               right: calc(96px + env(safe-area-inset-right)); }
     .t-dash { width: 54px; height: 54px;
-              bottom: calc(140px + env(safe-area-inset-bottom));
-              right: calc(28px + env(safe-area-inset-right)); }
+              bottom: calc(196px + env(safe-area-inset-bottom));
+              right: calc(22px + env(safe-area-inset-right)); }
     .t-pwr  { width: 54px; height: 54px;
               bottom: calc(96px + env(safe-area-inset-bottom));
               right: calc(120px + env(safe-area-inset-right)); }
     .t-use  { width: 42px; height: 42px;
-              bottom: calc(196px + env(safe-area-inset-bottom));
-              right: calc(22px + env(safe-area-inset-right)); }
+              bottom: calc(140px + env(safe-area-inset-bottom));
+              right: calc(28px + env(safe-area-inset-right)); }
     #tj-base { width: 100px; height: 100px; }
     #tj-stick { width: 44px; height: 44px; margin: -22px 0 0 -22px; }
     #t-combo { right: calc(96px + env(safe-area-inset-right));

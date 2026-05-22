@@ -1,7 +1,7 @@
 import { UI, DialogueUI, GeminiUI } from './ui.js';
 import { generateMap, generateHubMap } from './map.js';
 import { attackEnemy, takeDamage, tickStatus, tickCombo, resetCombo, applyStatus, isFrozen } from './combat.js';
-import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS, ECHO_KEYS } from './data.js';
+import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS, ECHO_KEYS, ZINES } from './data.js';
 import { Audio } from './audio.js';
 
 // Expose UI globally so map.js village generator can show status messages.
@@ -800,8 +800,8 @@ function addXP(amount) {
     const p = game.player;
     p.xp = (p.xp || 0) + amount;
     p.xpToNext = p.xpToNext || 100;
-    // XP bar fills up as a progress indicator — level ups are milestone-only
-    // (floor completion or finishing an ancestor conversation in the dungeon).
+    // XP bar fills up as a progress indicator — perks are milestone-only,
+    // granted on floor completion (descending the stairs), never on dialogue.
     UI.updateStatus(game);
 }
 window.addXP = addXP;
@@ -897,6 +897,25 @@ function startCamp() {
 }
 
 async function descend() {
+    // Lock descent until the player has spoken to every ancestor and collected
+    // every zine on this floor — prevents missing content.
+    const remainingNPCs = game.npcs.length;
+    if (remainingNPCs > 0) {
+        UI.addMessage(
+            `⚠ ${remainingNPCs} ${remainingNPCs === 1 ? 'ancestor awaits' : 'ancestors await'} you on this floor. Find them before going deeper.`,
+            'special'
+        );
+        return;
+    }
+    const remainingZines = game.items.filter(i => i.type === 'zine').length;
+    if (remainingZines > 0) {
+        UI.addMessage(
+            `⚠ ${remainingZines} ${remainingZines === 1 ? 'zine remains' : 'zines remain'} uncollected here. Recover ${remainingZines === 1 ? 'it' : 'them'} before descending.`,
+            'special'
+        );
+        return;
+    }
+
     UI.addMessage("Descending into the deeper archives...", "special");
 
     // Are we crossing into a new depth zone? If so the transition screen names it.
@@ -980,11 +999,6 @@ function enterHub() {
     lastPromptTile = null;
     UI.updateStatus(game);
 
-    const figuresMet = Object.keys(game.persistent.seenFigures || {}).length;
-    const zinesCollected = Object.keys(game.persistent.seenZines || {}).length;
-    UI.addMessage(`🏘️ Welcome to the Safehouse Village. ${figuresMet} figures met — explore ${figuresMet > 3 ? '6 zones' : 'the open zones'}.`, 'special');
-    UI.addMessage('💬 Talk to residents (USE/F). Quest log: J. Campfire (F-tile) re-opens upgrades. Walk right → portal to the wasteland.', 'special');
-    if (zinesCollected > 0) UI.addMessage(`📖 ${zinesCollected}/19 zines archived — the village grows with each one.`, 'special');
     gameStarted = true;
 }
 
@@ -1068,7 +1082,7 @@ function isPassable(x, y) {
     // (enemies don't avoid spikes — they're a *player* hazard).
     // Hub-only special tiles ('D' portal, 'F' campfire) are passable too so the
     // player can stand on them to interact.
-    return tile === '.' || tile === '>' || tile === '=' || tile === '^' || tile === 'C' || tile === 'D' || tile === 'F';
+    return tile === '.' || tile === '>' || tile === '=' || tile === '^' || tile === 'C' || tile === 'D' || tile === 'F' || tile === 'Z';
 }
 
 // Legacy turn-based movement kept as a no-op shim — platformer physics handles motion now.
@@ -1380,12 +1394,13 @@ function interact() {
                 UI.addMessage(`📼 ECHO RECOVERED (${n}/${ECHO_KEYS.length}). The Archive holds another story whole. ${figData ? figData.room : ''}`, 'special');
             }
         } else if (!game.persistent.seenFigures[npc.figureKey]) {
-            game.persistent.seenFigures[npc.figureKey] = true;
+            // Store the dungeon depth at which this ancestor was first met so
+            // the safehouse can place them on the correct floor.
+            game.persistent.seenFigures[npc.figureKey] = game.depth || 1;
             game.historicalFigures++;
         }
-        // Village is a safe space — no level-up reward for chatting there.
-        // In the dungeon, finishing a conversation with an ancestor / echo grants a perk.
-        DialogueUI.start(game, npc.figureKey, game.inHub ? null : () => levelUp());
+        // No level-up for conversations — perks are earned by completing floors.
+        DialogueUI.start(game, npc.figureKey, null);
         // In dungeon: NPC disappears after conversation (they move on).
         // In hub village: NPCs persist so you can talk to them again.
         if (!game.inHub) {
@@ -1402,6 +1417,21 @@ function interact() {
 
     const item = game.items.find(i => entityNear(i));
     if (item) {
+        // Zine magazine rack — permanent, never removed, cycles through collection.
+        if (item.type === 'zinebook') {
+            const collected = Object.keys(game.persistent.seenZines || {});
+            if (collected.length === 0) {
+                UI.addMessage('📚 The zine rack is empty. Collect zines in the depths to fill it!', 'special');
+            } else {
+                game._zineRackIdx = ((game._zineRackIdx || 0) + 1) % collected.length;
+                const zineKey = collected[game._zineRackIdx];
+                UI.addMessage(`📖 Rack (${collected.length}/19): "${ZINES[zineKey] ? ZINES[zineKey].title : zineKey}" — press USE to browse more.`, 'special');
+                UI.showZine(zineKey);
+            }
+            UI.updateStatus(game);
+            draw();
+            return; // Don't remove this permanent item
+        }
         if (item.type === 'zine') {
             if (!game.persistent.seenZines[item.zineKey]) {
                 game.persistent.seenZines[item.zineKey] = true;
@@ -1711,7 +1741,16 @@ function checkPickups() {
         UI.addMessage(`You see ${fig ? fig.name : 'a historical figure'}. Press USE/F to speak.`);
         lastPromptTile = key;
     } else if (game.map[key] === '>') {
-        UI.addMessage(`Stairs down. Press USE/F to descend.`);
+        const nLeft = game.npcs.length;
+        const zLeft = game.items.filter(i => i.type === 'zine').length;
+        if (nLeft > 0 || zLeft > 0) {
+            const parts = [];
+            if (nLeft > 0) parts.push(`${nLeft} ancestor${nLeft > 1 ? 's' : ''} unmet`);
+            if (zLeft > 0) parts.push(`${zLeft} zine${zLeft > 1 ? 's' : ''} uncollected`);
+            UI.addMessage(`⚠ Stairs locked — ${parts.join(', ')} on this floor.`);
+        } else {
+            UI.addMessage(`Stairs down. Press USE/F to descend.`);
+        }
         lastPromptTile = key;
     } else if (game.map[key] === 'D') {
         UI.addMessage(`Wasteland portal. Press USE/F to enter the dungeon.`);
