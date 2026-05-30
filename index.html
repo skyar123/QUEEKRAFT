@@ -471,6 +471,36 @@
         </div>
     </div>
 
+    <!-- Codex Modal (grid of collected story cards) -->
+    <div id="codex-modal" class="modal">
+        <div class="zine-box" style="max-width:680px;width:92%;max-height:84vh;overflow-y:auto;border-color:#B967DB;">
+            <div class="zine-header" style="color:#B967DB;">📜 CODEX — STORY CARDS</div>
+            <div id="codex-count" style="text-align:center;color:#888;font-size:13px;margin-bottom:14px;"></div>
+            <div id="codex-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;"></div>
+            <button class="zine-close" id="codex-close">Close</button>
+        </div>
+    </div>
+
+    <!-- Single Story Card Modal (stacks above the Codex) -->
+    <div id="story-card-modal" class="modal" style="z-index:3500;">
+        <div class="zine-box" style="max-width:480px;text-align:center;border-color:#FFD700;">
+            <div id="story-card-icon" style="font-size:48px;margin:6px 0;">📜</div>
+            <div id="story-card-title" class="zine-header" style="color:#FFD700;">Story Card</div>
+            <div id="story-card-type" style="color:#888;letter-spacing:2px;font-size:13px;margin:4px 0 14px;text-transform:uppercase;"></div>
+            <div id="story-card-entry" class="zine-content" style="text-align:left;"></div>
+            <button class="zine-close" id="story-card-close">Close</button>
+        </div>
+    </div>
+
+    <style>
+        .codex-card { border:2px solid #FFD700; border-radius:8px; padding:12px 8px; background:rgba(20,10,30,0.6); cursor:pointer; text-align:center; transition:transform .1s, box-shadow .1s; }
+        .codex-card:hover { transform:translateY(-3px); box-shadow:0 0 14px rgba(255,215,0,0.45); }
+        .codex-card-icon { font-size:30px; line-height:1; }
+        .codex-card-name { font-weight:bold; font-size:15px; margin-top:4px; }
+        .codex-card-type { color:#888; font-size:11px; letter-spacing:1px; text-transform:uppercase; margin-top:2px; }
+        #codex-fab:hover { box-shadow:0 0 18px rgba(255,215,0,0.85) !important; }
+    </style>
+
     <div id="conversation-modal" class="modal">
         <div class="conversation-box" style="display: flex; flex-direction: column;">
             <div class="conversation-header" id="conversation-name">Historical Figure</div>

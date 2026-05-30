@@ -1,7 +1,7 @@
 import { UI, DialogueUI, GeminiUI } from './ui.js';
 import { generateMap, generateHubMap } from './map.js';
 import { attackEnemy, takeDamage, tickStatus, tickCombo, resetCombo, applyStatus, isFrozen } from './combat.js';
-import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS, ECHO_KEYS, ZINES } from './data.js';
+import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS, ECHO_KEYS, ZINES, STORY_CARDS } from './data.js';
 import { Audio } from './audio.js';
 
 // Expose UI globally so map.js village generator can show status messages.
@@ -183,6 +183,7 @@ function loadGame() {
     if (typeof game.persistent.seenIntro !== 'boolean') game.persistent.seenIntro = false;
     if (!game.persistent.quests || typeof game.persistent.quests !== 'object') game.persistent.quests = {};
     if (!game.persistent.seenEchoes || typeof game.persistent.seenEchoes !== 'object') game.persistent.seenEchoes = {};
+    if (!game.persistent.storyCards || typeof game.persistent.storyCards !== 'object') game.persistent.storyCards = {};
     if (!game.persistent.npcEncounters || typeof game.persistent.npcEncounters !== 'object') game.persistent.npcEncounters = {};
     if (!Array.isArray(game.persistent.mural)) game.persistent.mural = [];
 }
@@ -902,7 +903,7 @@ async function descend() {
     const remainingNPCs = game.npcs.length;
     if (remainingNPCs > 0) {
         UI.addMessage(
-            `⚠ ${remainingNPCs} ${remainingNPCs === 1 ? 'ancestor awaits' : 'ancestors await'} you on this floor. Find them before going deeper.`,
+            `⚠ ${remainingNPCs} ${remainingNPCs === 1 ? 'ancestor awaits' : 'ancestors await'} you on this floor. Climb a ladder (↑) to backtrack — pink dots on the minimap show where.`,
             'special'
         );
         return;
@@ -910,7 +911,7 @@ async function descend() {
     const remainingZines = game.items.filter(i => i.type === 'zine').length;
     if (remainingZines > 0) {
         UI.addMessage(
-            `⚠ ${remainingZines} ${remainingZines === 1 ? 'zine remains' : 'zines remain'} uncollected here. Recover ${remainingZines === 1 ? 'it' : 'them'} before descending.`,
+            `⚠ ${remainingZines} ${remainingZines === 1 ? 'zine remains' : 'zines remain'} uncollected here. Climb a ladder (↑) to go back — white dots on the minimap mark ${remainingZines === 1 ? 'it' : 'them'}.`,
             'special'
         );
         return;
@@ -963,6 +964,9 @@ async function descend() {
     UI.updateStatus(game);
     UI.addMessage(`📍 Checkpoint reached: Depth ${game.depth}`, 'special');
     if (enteringNewZone) UI.addMessage(`— ${nextZone.name} — ${nextZone.flavour}`, 'special');
+    // Reaching a new zone reveals its story card; deeper floors in the same
+    // zone unlock silently so the card pop is reserved for fresh discoveries.
+    unlockZoneCards(game.depth, !enteringNewZone);
 
     // Fade out
     overlay.style.opacity = '0';
@@ -1048,7 +1052,10 @@ function startDungeon() {
     const startZone = depthZone(game.depth);
     UI.addMessage(`🏳️‍⚧️ ${startZone.name}. ${startZone.flavour}`, "special");
     UI.addMessage("👁 Enemies show '!' when they've spotted you, '?' when searching. Stay behind them and don't make noise to slip past.", "special");
+    UI.addMessage("🪜 Climb ladders with ↑/↓ to backtrack — go up for any zine or ancestor you missed before the stairs unlock.", "special");
+    UI.addMessage("📜 Press C for the Codex — story cards you collect by talking to ancestors and descending deeper.", "special");
     if (p.classObj) UI.addMessage(`Class: ${p.classObj.name}. Press R for ${p.classObj.power}.`, "special");
+    unlockZoneCards(game.depth, true);
     // Mark the game as live ONLY after generateMap has populated game.map.
     // Until this flips, the rAF loop short-circuits — preventing the player
     // from free-falling through an undefined map while the camp modal is open.
@@ -1400,6 +1407,8 @@ function interact() {
             game.historicalFigures++;
         }
         // No level-up for conversations — perks are earned by completing floors.
+        // Talking to anyone adds them to the Codex as a collectible story card.
+        unlockStoryCardForFigure(npc.figureKey);
         DialogueUI.start(game, npc.figureKey, null);
         // In dungeon: NPC disappears after conversation (they move on).
         // In hub village: NPCs persist so you can talk to them again.
@@ -1747,7 +1756,7 @@ function checkPickups() {
             const parts = [];
             if (nLeft > 0) parts.push(`${nLeft} ancestor${nLeft > 1 ? 's' : ''} unmet`);
             if (zLeft > 0) parts.push(`${zLeft} zine${zLeft > 1 ? 's' : ''} uncollected`);
-            UI.addMessage(`⚠ Stairs locked — ${parts.join(', ')} on this floor.`);
+            UI.addMessage(`⚠ Stairs locked — ${parts.join(', ')} on this floor. Climb a ladder (↑) to backtrack for what you missed — check the minimap.`);
         } else {
             UI.addMessage(`Stairs down. Press USE/F to descend.`);
         }
@@ -1893,6 +1902,7 @@ const ACCEL = 0.65;          // Horizontal acceleration
 const FRICTION_GROUND = 0.72; // Ground friction
 const FRICTION_AIR = 0.86;    // Air resistance
 const MAX_VX = 3.5;          // Speed limit
+const CLIMB_SPEED = 4.2;     // Ladder climb velocity (tiles/sec-ish)
 
 // Returns true if (px, py) lies inside any solid wall.
 // One-way platforms are NOT considered solid by this — use isOneWayBlocking
@@ -1913,8 +1923,11 @@ function isOneWayBlocking(px, feetY, prevFeetY) {
     const x = Math.floor(px), y = Math.floor(feetY);
     if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return false;
     const t = game.map[`${x},${y}`];
-    // '=' = standard one-way; 'C' = crumbling one-way (until it breaks).
-    if (t !== '=' && t !== 'C') return false;
+    // '=' = standard one-way; 'C' = crumbling one-way; 'H' = ladder top.
+    if (t !== '=' && t !== 'C' && t !== 'H') return false;
+    // Ladders catch feet from above (stand/walk on a ladder top) but turn
+    // intangible while actively climbing so vertical travel is smooth.
+    if (t === 'H' && game.player.climbing) return false;
     if (t === 'C' && game.crumbleState && game.crumbleState[`${x},${y}`] && game.crumbleState[`${x},${y}`].broken) return false;
     // Drop-through grace period: ignore the platform briefly after Down+Jump.
     if (game.player.dropThrough > 0) return false;
@@ -1990,7 +2003,12 @@ function moveEnemyY(e, dy, w, h) {
     const target = e.y + dy;
     if (dy > 0) {
         const feet = target + h;
-        if (pointSolid(e.x + 0.05, feet) || pointSolid(e.x + w - 0.05, feet)) {
+        // Enemies don't climb — but they shouldn't fall through ladder columns
+        // either, so a ladder tile under their feet acts as solid ground.
+        const fy = Math.floor(feet);
+        const ladderUnder = game.map[`${Math.floor(e.x + 0.05)},${fy}`] === 'H' ||
+                            game.map[`${Math.floor(e.x + w - 0.05)},${fy}`] === 'H';
+        if (pointSolid(e.x + 0.05, feet) || pointSolid(e.x + w - 0.05, feet) || ladderUnder) {
             e.y = Math.floor(feet) - h - 0.0001;
             e.vy = 0;
             e.onGround = true;
@@ -2188,6 +2206,57 @@ function update(dt) {
         p.vy *= 0.5;
     }
 
+    // --- Ladder climbing (backtracking) -------------------------------------
+    // Grab a ladder ('H') with Up/Down to climb shafts and return for any zine
+    // or ancestor you missed. Space hops off; walking sideways steps off.
+    {
+        // Keyboard arrows/WASD or the on-screen joystick pushed up/down (set in
+        // moveJoy) both drive the climb, so it works on mobile and desktop.
+        const climbUp = keys['ArrowUp'] || keys['KeyW'] || game.touchUp;
+        const climbDown = keys['ArrowDown'] || keys['KeyS'] || game.touchDown;
+        const horizPress = keys['ArrowLeft'] || keys['KeyA'] || keys['ArrowRight'] || keys['KeyD'] || Math.abs(game.touchX || 0) > 0.4;
+        const cCol = Math.floor(p.x + PLAYER_W / 2);
+        const cMid = Math.floor(p.y + PLAYER_H / 2);
+        const cFeet = Math.floor(p.y + PLAYER_H - 0.05);
+        const cBelow = Math.floor(p.y + PLAYER_H + 0.12);
+        const onLadder = game.map[`${cCol},${cMid}`] === 'H' || game.map[`${cCol},${cFeet}`] === 'H';
+        const ladderBelow = game.map[`${cCol},${cBelow}`] === 'H';
+        // Grab the ladder only on a deliberate vertical press.
+        if ((onLadder && climbUp) || ((onLadder || ladderBelow) && climbDown)) p.climbing = true;
+        // Release when we leave the ladder, or when the player clearly wants to
+        // walk/jump off (horizontal press) so it never feels sticky.
+        if (p.climbing && (!onLadder && !(ladderBelow && climbDown))) p.climbing = false;
+        if (p.climbing && horizPress && !climbUp && !climbDown) p.climbing = false;
+
+        if (p.climbing) {
+            if (keys['Space']) {
+                // Hop off the ladder with a normal jump.
+                p.climbing = false;
+                p.vy = JUMP_SPEED;
+                p.jumpsLeft = 0;
+                p.jumpBuffer = 0;
+                Audio.playJump && Audio.playJump();
+            } else {
+                // Gently center on the ladder only while moving vertically; when
+                // the player nudges sideways we let them drift off the column.
+                if (!horizPress) {
+                    const ladderX = cCol + (1 - PLAYER_W) / 2;
+                    p.x += (ladderX - p.x) * 0.35;
+                }
+                p.vy = climbUp ? -CLIMB_SPEED : (climbDown ? CLIMB_SPEED : 0);
+                p.vx *= 0.6;
+                p.onGround = false;
+                p.coyoteTimer = 0;
+                p.jumpsLeft = 1;            // allow a hop after letting go
+                p.jumpBuffer = 0;           // up-key climbs, never auto-jumps
+                if (game.animFrame % 6 === 0 && (climbUp || climbDown)) {
+                    spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H / 2, 1, '#39FF14');
+                }
+            }
+        }
+    }
+    // (end ladder climbing)
+
     // Resolve buffered jump (only if it succeeds, consume it)
     if (p.jumpBuffer > 0 && (p.coyoteTimer > 0 || (p.jumpsLeft > 0 && !p.onGround))) {
         if (tryJump()) p.jumpBuffer = 0;
@@ -2207,8 +2276,8 @@ function update(dt) {
         spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, ['#FF71CE','#01CDFE','#FFD700','#39FF14'][game.animFrame % 4]);
     }
 
-    // Gravity (apply only when airborne)
-    if (!p.onGround) p.vy += GRAVITY;
+    // Gravity (apply only when airborne and not gripping a ladder)
+    if (!p.onGround && !p.climbing) p.vy += GRAVITY;
     if (p.vy > TERMINAL_VY) p.vy = TERMINAL_VY;
 
     // Dash overrides horizontal velocity
@@ -2623,19 +2692,57 @@ function draw() {
                     }
                     ctx.shadowBlur = 0;
                 } else if (r.tile === '^') {
-                    // Spikes — pointed teeth glowing red along the top of the tile.
+                    // Spikes — unmissable danger: a glowing red warning base, bright
+                    // metallic teeth with white tips, and a slow hazard pulse.
                     ctx.globalAlpha = 1.0;
-                    ctx.fillStyle = '#C0C0C0';
+                    const pulse = 0.5 + 0.5 * Math.sin(game.animFrame * 0.15);
+                    // Warning glow under the teeth.
+                    ctx.fillStyle = `rgba(255,0,64,${0.25 + pulse * 0.35})`;
+                    ctx.fillRect(sx, sy + T - 6, T, 6);
+                    // Teeth.
                     const teeth = 4;
                     const tw = (T - 4) / teeth;
                     for (let s = 0; s < teeth; s++) {
+                        const baseL = sx + 2 + s * tw;
+                        const tip   = sx + 2 + s * tw + tw / 2;
+                        ctx.fillStyle = '#E8E8F0';
                         ctx.beginPath();
-                        ctx.moveTo(sx + 2 + s * tw,        sy + T);
-                        ctx.lineTo(sx + 2 + s * tw + tw/2, sy + 4);
-                        ctx.lineTo(sx + 2 + (s + 1) * tw,  sy + T);
+                        ctx.moveTo(baseL,            sy + T);
+                        ctx.lineTo(tip,              sy + 3);
+                        ctx.lineTo(sx + 2 + (s + 1) * tw, sy + T);
                         ctx.closePath();
                         ctx.fill();
+                        // White-hot tip highlight.
+                        ctx.fillStyle = `rgba(255,255,255,${0.7 + pulse * 0.3})`;
+                        ctx.fillRect(tip - 1, sy + 3, 2, 4);
                     }
+                    // Red outline so the whole hazard reads at a glance.
+                    ctx.strokeStyle = `rgba(255,40,80,${0.6 + pulse * 0.4})`;
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(sx + 0.5, sy + 0.5, T - 1, T - 1);
+                } else if (r.tile === 'H') {
+                    // Ladder — two bright rails with rungs, clearly climbable.
+                    ctx.globalAlpha = 1.0;
+                    const railL = sx + 6, railR = sx + T - 6;
+                    ctx.strokeStyle = '#C8A24B';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(railL, sy); ctx.lineTo(railL, sy + T);
+                    ctx.moveTo(railR, sy); ctx.lineTo(railR, sy + T);
+                    ctx.stroke();
+                    // Rungs (animated glint so it reads as interactive).
+                    ctx.strokeStyle = '#FFE08A';
+                    ctx.lineWidth = 2.5;
+                    for (let ry2 = 4; ry2 < T; ry2 += 8) {
+                        ctx.beginPath();
+                        ctx.moveTo(railL, sy + ry2); ctx.lineTo(railR, sy + ry2);
+                        ctx.stroke();
+                    }
+                    // Soft glow.
+                    ctx.globalAlpha = 0.18 + 0.12 * Math.sin(game.animFrame * 0.1 + r.y);
+                    ctx.fillStyle = '#FFD700';
+                    ctx.fillRect(railL - 2, sy, railR - railL + 4, T);
+                    ctx.globalAlpha = 1.0;
                 }
             }
         } else {
@@ -3496,11 +3603,31 @@ function draw() {
         for (let x = 0; x < game.mapWidth; x++) {
             if (!game.seen[`${x},${y}`]) continue;
             const t = game.map[`${x},${y}`];
-            ctx.fillStyle = t === '#' ? '#444' : t === '>' ? '#01CDFE' : '#1a1a1a';
+            // Ladders show gold so the routes back up are obvious; stairs cyan.
+            ctx.fillStyle = t === '#' ? '#444'
+                : t === '>' ? '#01CDFE'
+                : t === 'H' ? '#C8A24B'
+                : t === '^' ? '#5a1020'
+                : '#1a1a1a';
             ctx.fillRect(mmX + x*MM, mmY + y*MM, MM, MM);
         }
     }
-    ctx.fillStyle = '#FF71CE';
+    // Objective markers — uncollected zines (white) and unmet ancestors (pink)
+    // so the player can see exactly where to backtrack to. Echoes show purple.
+    for (const it of game.items) {
+        if (!game.seen[`${it.x},${it.y}`]) continue;
+        if (it.type === 'zine') ctx.fillStyle = '#FFFFFF';
+        else if (it.type === 'gender-reveal') ctx.fillStyle = '#FFD700';
+        else continue;
+        ctx.fillRect(mmX + it.x*MM - 1, mmY + it.y*MM - 1, MM + 1, MM + 1);
+    }
+    for (const n of game.npcs) {
+        if (!game.seen[`${n.x},${n.y}`]) continue;
+        ctx.fillStyle = n.type === 'echo' ? '#B967DB' : '#FF71CE';
+        ctx.fillRect(mmX + n.x*MM - 1, mmY + n.y*MM - 1, MM + 1, MM + 1);
+    }
+    // Player marker (green) drawn last so it sits on top of objective dots.
+    ctx.fillStyle = '#39FF14';
     ctx.fillRect(mmX + tileX()*MM - 1, mmY + tileY()*MM - 1, MM + 2, MM + 2);
 
     // Dash cooldown ring under player position on map
@@ -3925,6 +4052,8 @@ function setupControls() {
             interact();
         } else if (e.code === 'KeyJ') {
             questLogVisible = !questLogVisible;
+        } else if (e.code === 'KeyC') {
+            UI.showCodex(game);
         } else if (e.code === 'F1') {
             showFps = !showFps;
             e.preventDefault();
@@ -4055,6 +4184,11 @@ function setupControls() {
             const ny = uy / max;
             touchAxis.x = Math.abs(nx) > JOY_DEAD ? nx : 0;
             touchAxis.y = Math.abs(ny) > JOY_DEAD ? ny : 0;
+            // Mirror onto the game object so the climb logic in update() (which
+            // can't see this closure) can read joystick direction too.
+            game.touchX = touchAxis.x;
+            game.touchUp = touchAxis.y < -0.45;   // push up to climb ladders
+            game.touchDown = touchAxis.y > 0.45;  // push down to climb / drop
         };
 
         const beginJoy = (e) => {
@@ -4102,6 +4236,9 @@ function setupControls() {
             tjStick.style.transform = 'translate(0, 0)';
             touchAxis.x = 0;
             touchAxis.y = 0;
+            game.touchX = 0;
+            game.touchUp = false;
+            game.touchDown = false;
             try { tjZone.releasePointerCapture(e.pointerId); } catch (_) {}
         };
         tjZone.addEventListener('pointerdown', beginJoy);
@@ -4317,3 +4454,73 @@ function soulDegradation() {
 
 // Ensure setupControls is called once on load, even though initGame does startCamp
 setupControls();
+
+// ───────────────────────────────────────────────────────────────────────────
+// STORY CARDS / CODEX (new feature)
+// A collectible lore deck — a Lichcraft-style codex of this world, its
+// corporate captors (PRIME), and the lineage resisting them. Cards unlock by
+// talking to ancestors and by descending into new depth zones. Browse with C
+// or the floating 📜 button. Function declarations are hoisted, so the hooks
+// above (interact / descend / startDungeon) can call these.
+function unlockStoryCard(cardId, opts = {}) {
+    if (!STORY_CARDS[cardId]) return;
+    if (!game.persistent.storyCards) game.persistent.storyCards = {};
+    if (game.persistent.storyCards[cardId]) return;            // already known
+    game.persistent.storyCards[cardId] = true;
+    saveGame();
+    const c = STORY_CARDS[cardId];
+    UI.addMessage(`📜 STORY CARD UNLOCKED — ${c.name}. Press C to read the Codex.`, 'special');
+    if (!opts.silent && UI.anyModalOpen && !UI.anyModalOpen()) UI.showStoryCard(c);
+}
+
+function unlockStoryCardForFigure(figureKey) {
+    if (!game.persistent.storyCards) game.persistent.storyCards = {};
+    const tag = 'fig_' + figureKey;
+    if (game.persistent.storyCards[tag]) return;
+    game.persistent.storyCards[tag] = true;
+    const fig = HISTORICAL_FIGURES[figureKey];
+    if (fig) UI.addMessage(`📜 Story card added to your Codex: ${fig.name}. (Press C)`, 'special');
+    saveGame();
+}
+
+const ZONE_CARDS = {
+    'THE SURFACE RUINS':       ['prime_corp', 'the_archive', 'the_ladders'],
+    'THE BUREAUCRACY LEVELS':  ['the_waitlist'],
+    'THE ARCHIVE DEPTHS':      ['the_lineage', 'the_echoes'],
+    'THE DEEP-GRID':           ['prime_enforcement'],
+    'THE CORE':                ['the_long_defiance']
+};
+function unlockZoneCards(depth, silent) {
+    const z = depthZone(depth);
+    const ids = ZONE_CARDS[z.name] || [];
+    ids.forEach((id, i) => unlockStoryCard(id, { silent: silent || i > 0 }));
+    // Hub-adjacent cards everyone should eventually have.
+    unlockStoryCard('the_safehouse', { silent: true });
+}
+
+window.__openCodex = () => UI.showCodex(game);
+
+// Floating Codex button + modal close wiring (works in dungeon and hub).
+(function wireCodexUI() {
+    if (typeof document === 'undefined') return;
+    const btn = document.createElement('button');
+    btn.id = 'codex-fab';
+    btn.textContent = '📜';
+    btn.title = 'Codex / Story Cards (C)';
+    btn.setAttribute('aria-label', 'Open Codex');
+    // Top-right corner — clear of the bottom-left joystick and bottom-right
+    // action buttons. Sits just below the canvas power bar.
+    btn.style.cssText = 'position:fixed;right:8px;top:44px;z-index:600;width:40px;height:40px;border-radius:50%;border:2px solid #FFD700;background:rgba(20,10,30,0.85);color:#FFD700;font-size:20px;cursor:pointer;box-shadow:0 0 12px rgba(255,215,0,0.5);touch-action:manipulation;';
+    btn.onclick = () => UI.showCodex(game);
+    document.body.appendChild(btn);
+
+    const wireClose = (closeId, modalId) => {
+        const c = document.getElementById(closeId);
+        const m = document.getElementById(modalId);
+        if (c && m) c.onclick = () => { m.style.display = 'none'; };
+        // Click on the dim backdrop closes too.
+        if (m) m.addEventListener('click', (e) => { if (e.target === m) m.style.display = 'none'; });
+    };
+    wireClose('codex-close', 'codex-modal');
+    wireClose('story-card-close', 'story-card-modal');
+})();

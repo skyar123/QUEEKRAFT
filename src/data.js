@@ -1117,6 +1117,57 @@ export const QUESTS = {
 };
 
 export const QUEST_KEYS = Object.keys(QUESTS);
+
+// ---------------------------------------------------------------------------
+// STORY CARDS — a collectible codex of the world. Authored "world" cards
+// unlock as you reach new depth zones (and a few key moments); ancestor and
+// echo cards are generated live from the figures you meet (see UI.showCodex).
+// Tone is drawn from the Lichcraft brief: a future where one megacorp ("PRIME")
+// privatized everything and buried trans care under a 300-year waitlist — and
+// the lineage that refuses to wait quietly to die.
+export const STORY_CARDS = {
+    prime_corp: {
+        name: 'PRIME', type: 'Faction', icon: '🏢', color: '#01CDFE',
+        entry: 'The megacorp that swallowed the state. Once a humble everything-store, PRIME now runs fire, ambulance, housing, food and "health." Your tier is your worth — Basic, Plus, Premium, Black. It never outright refuses you care; that would imply inefficiency. It simply adds you to a list and waits. The Archive remembers when these were public goods, freely given.'
+    },
+    the_waitlist: {
+        name: 'THE 300-YEAR WAITLIST', type: 'Concept', icon: '⏳', color: '#9ACD32',
+        entry: 'PRIME\'s masterpiece of cruelty: a queue for gender-affirming care so long that no living person reaches its end. To admit it is broken would imply the system fails — so instead they wait for you to die and call it efficiency. Down here, some people chose a different way to outlast the list. The lineage was born from that refusal.'
+    },
+    the_archive: {
+        name: 'THE ARCHIVE', type: 'Place', icon: '📚', color: '#FFD700',
+        entry: 'A living library buried beneath the ruins, holding every zine they tried to burn and every name they struck from the record. It keeps more than paper — it keeps whole stories, and some of them leak. You are its keeper now. Data is resistance; remembering is rebellion.'
+    },
+    the_lineage: {
+        name: 'THE LINEAGE', type: 'Concept', icon: '🕯️', color: '#F5A9B8',
+        entry: 'Chosen family across centuries — ancestors who mothered the abandoned, held doors against the police, walked the ballroom floor, and refused to vanish quietly. Meet them in the depths and they move into the Safehouse. Their courage is your inheritance; your job is to carry it deeper.'
+    },
+    prime_enforcement: {
+        name: 'PRIME ENFORCEMENT', type: 'Faction', icon: '🚨', color: '#FF0040',
+        entry: 'The hands of the corporation: gatekeepers who deny you at the desk, concern-trolls who whisper doubt, gentrifiers who price you out, and the police who do the rest. They patrol by sight and by sound. Stay behind them, stay quiet, and the system never sees you coming — that is the whole art of stealth down here.'
+    },
+    the_long_defiance: {
+        name: 'THE LONG DEFIANCE', type: 'Concept', icon: '♾️', color: '#FFFFFF',
+        entry: 'If they will wait for you to die, then refuse to die. The deepest secret of the Core is not a spell but a stance: outlast them. Survive long enough, gather enough of the lineage, and the queue itself becomes the thing that breaks. Immortality, it turns out, is just stubbornness with better lighting.'
+    },
+    the_safehouse: {
+        name: 'THE SAFEHOUSE SANCTUARY', type: 'Place', icon: '🏛️', color: '#5BCEFA',
+        entry: 'Between descents you rest here — a tower the ancestors built where no PRIME drone flies. The Hearth holds your upgrades, the Atrium your quests, and each floor fills with the people you met below. Blood does not make family. Love does. And here there is plenty.'
+    },
+    the_echoes: {
+        name: 'THE ECHOES', type: 'Concept', icon: '📼', color: '#B967DB',
+        entry: 'The Archive holds whole stories, not just zines — and some did not survive intact. They flicker. When you find a room that is glitching, someone is still inside it, real to themselves. Say hello. A story that did not survive whole is still a story. Hold it anyway.'
+    },
+    the_ballroom: {
+        name: 'THE BALLROOM', type: 'Place', icon: '👑', color: '#FF1493',
+        entry: 'Locked out of every other stage, the Houses built their own — and crowned each other. A gold-shimmer room where enemies cannot follow and the floor is always yours. Crystal, Angie, Paris, Dorian: mothers who made glory out of refusal, and a family out of strangers.'
+    },
+    the_ladders: {
+        name: 'FIELD NOTE — THE WAY BACK', type: 'Concept', icon: '🪜', color: '#39FF14',
+        entry: 'The stairs down stay locked until a floor gives up every zine and every ancestor. But the shafts run both ways: grab a ladder and climb with ↑/↓ to go back up for whatever you missed. No one is left behind in the Archive — not a zine, not a person, not you.'
+    }
+};
+export const STORY_CARD_KEYS = Object.keys(STORY_CARDS);
 // Quest givers that should always be offered if the quest is available.
 // Used by map.js to spawn the giver in the hub town if not already present.
 export const QUEST_GIVERS = QUEST_KEYS.map(k => QUESTS[k].giver);
