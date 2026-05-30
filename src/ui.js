@@ -1,4 +1,4 @@
-import { ZINES, HISTORICAL_FIGURES, DIFFICULTIES, GEMINI_GUIDE } from './data.js';
+import { ZINES, HISTORICAL_FIGURES, DIFFICULTIES, GEMINI_GUIDE, STORY_CARDS, STORY_CARD_KEYS } from './data.js';
 import { Audio } from './audio.js';
 
 export const UI = {
@@ -478,6 +478,83 @@ export const UI = {
             this.modals.camp.style.display = 'none';
             onEnterDungeon();
         };
+    },
+
+    // ── Codex / Story Cards ────────────────────────────────────────────────
+    anyModalOpen() {
+        const ids = ['zine-modal', 'conversation-modal', 'victory-screen', 'game-over-screen',
+                     'heir-select-screen', 'camp-screen', 'level-up-screen', 'mural-screen',
+                     'codex-modal', 'story-card-modal'];
+        return ids.some(id => {
+            const el = document.getElementById(id);
+            return el && getComputedStyle(el).display !== 'none';
+        });
+    },
+
+    showStoryCard(card) {
+        if (!card) return;
+        const modal = document.getElementById('story-card-modal');
+        if (!modal) return;
+        const accent = card.color || '#FFD700';
+        document.getElementById('story-card-icon').textContent = card.icon || '📜';
+        const title = document.getElementById('story-card-title');
+        title.textContent = card.name || 'Story Card';
+        title.style.color = accent;
+        title.style.textShadow = `0 0 12px ${accent}`;
+        document.getElementById('story-card-type').textContent =
+            (card.type || 'Story') + (card.era ? ` · ${card.era}` : '');
+        const box = modal.querySelector('.zine-box');
+        if (box) box.style.borderColor = accent;
+        document.getElementById('story-card-entry').innerHTML = card.entry || card.fact || '';
+        modal.style.display = 'flex';
+    },
+
+    showCodex(game) {
+        const modal = document.getElementById('codex-modal');
+        if (!modal) return;
+        const grid = document.getElementById('codex-grid');
+        grid.innerHTML = '';
+        const cards = [];
+        const sc = (game.persistent && game.persistent.storyCards) || {};
+        // Authored world cards (unlocked by zones / events).
+        STORY_CARD_KEYS.forEach(id => { if (sc[id]) cards.push({ ...STORY_CARDS[id] }); });
+        // Ancestor cards — generated from everyone you've spoken to.
+        const seenF = (game.persistent && game.persistent.seenFigures) || {};
+        Object.keys(seenF).forEach(key => {
+            const f = HISTORICAL_FIGURES[key];
+            if (!f || f.echo) return;
+            cards.push({ name: f.name, type: 'Ancestor', era: f.era, icon: '🕯️',
+                         color: '#F5A9B8', entry: f.fact || '' });
+        });
+        // Echo cards — the leaking stories you've held.
+        const seenE = (game.persistent && game.persistent.seenEchoes) || {};
+        Object.keys(seenE).forEach(key => {
+            const f = HISTORICAL_FIGURES[key];
+            if (!f) return;
+            cards.push({ name: f.name, type: 'Echo', era: f.era, icon: '📼',
+                         color: '#B967DB', entry: f.fact || '' });
+        });
+
+        const totalWorld = STORY_CARD_KEYS.length;
+        const haveWorld = STORY_CARD_KEYS.filter(id => sc[id]).length;
+        document.getElementById('codex-count').textContent =
+            `${cards.length} cards collected · ${haveWorld}/${totalWorld} world lore`;
+
+        if (cards.length === 0) {
+            grid.innerHTML = '<div style="grid-column:1/-1;color:#888;padding:24px;text-align:center;">No cards yet. Talk to ancestors and descend into new zones to uncover the story.</div>';
+        }
+        cards.forEach(card => {
+            const el = document.createElement('div');
+            el.className = 'codex-card';
+            el.style.borderColor = card.color || '#FFD700';
+            el.innerHTML =
+                `<div class="codex-card-icon" style="color:${card.color || '#FFD700'}">${card.icon || '📜'}</div>` +
+                `<div class="codex-card-name" style="color:${card.color || '#FFD700'}">${card.name}</div>` +
+                `<div class="codex-card-type">${card.type}${card.era ? ' · ' + card.era : ''}</div>`;
+            el.onclick = () => this.showStoryCard(card);
+            grid.appendChild(el);
+        });
+        modal.style.display = 'flex';
     }
 };
 

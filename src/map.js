@@ -45,11 +45,29 @@ export function pick(arr) {
 //   '~' ice                 (solid floor; very low friction on top)
 //   'T' trampoline          (solid floor; landing on it bounces sky-high)
 //   'C' crumbling platform  (one-way; collapses ~0.5s after first contact)
+//   'H' ladder              (climb up/down with ↑/↓; one-way top when not climbing)
 
 const ROOMS_X = 4;
 const ROOMS_Y = 3;
 const ROOM_W = 10;
 const ROOM_H = 10;
+
+// ── Layout archetypes ── Each descent rolls a different grid silhouette so no
+// two floors feel the same. Deeper floors unlock the larger, more vertical
+// shapes. `motifs` is the pool of interior styles rooms on this floor draw from.
+const LAYOUTS = [
+    { name: 'classic',  cols: 4, rows: 3, motifs: ['scatter', 'islands'] },
+    { name: 'wide',     cols: 5, rows: 3, motifs: ['scatter', 'staircase', 'islands'] },
+    { name: 'tall',     cols: 3, rows: 4, motifs: ['ledges', 'staircase', 'scatter'] },
+    { name: 'sprawl',   cols: 4, rows: 4, motifs: ['scatter', 'islands', 'ledges'] },
+    { name: 'gauntlet', cols: 5, rows: 2, motifs: ['staircase', 'islands'] },
+    { name: 'warren',   cols: 3, rows: 3, motifs: ['scatter', 'staircase', 'ledges'] }
+];
+function pickLayout(depth) {
+    // Keep early floors compact; open up the big vertical sprawls deeper down.
+    const pool = (depth >= 5) ? LAYOUTS : LAYOUTS.filter(l => l.cols * l.rows <= 16);
+    return pick(pool.length ? pool : LAYOUTS);
+}
 
 function fillRect(map, x, y, w, h, ch) {
     for (let j = y; j < y + h; j++)
@@ -80,21 +98,51 @@ function placePlatform(map, x, y, w) {
     }
 }
 
-function populateRoomInterior(map, rx, ry) {
+function populateRoomInterior(map, rx, ry, motif = 'scatter', depth = 1) {
     const x = rx * ROOM_W + 1;
     const y = ry * ROOM_H + 1;
     const w = ROOM_W - 2;
     const h = ROOM_H - 2;
+    const floorTop = ry * ROOM_H + ROOM_H - 2;
 
-    const numPlats = 1 + Math.floor(Math.random() * 3);
-    const placedRows = new Set();
-    for (let p = 0; p < numPlats; p++) {
-        const row = y + 2 + Math.floor(Math.random() * Math.max(1, h - 4));
-        if (placedRows.has(row)) continue;
-        placedRows.add(row);
-        const pw = 2 + Math.floor(Math.random() * 4);
-        const px = x + 1 + Math.floor(Math.random() * Math.max(1, w - pw - 2));
-        placePlatform(map, px, row, pw);
+    if (motif === 'staircase') {
+        // Diagonal run of short ledges — rhythmic, jump-friendly.
+        const dir = Math.random() < 0.5 ? 1 : -1;
+        let px = dir > 0 ? x + 1 : x + w - 3;
+        let py = floorTop - 2;
+        for (let s = 0; s < 4 && py > y + 1; s++) {
+            placePlatform(map, px, py, 2);
+            px += dir * 2; py -= 2;
+            if (px < x + 1 || px > x + w - 2) break;
+        }
+    } else if (motif === 'islands') {
+        // Scattered floating one-way islands at varied heights.
+        const n = 2 + Math.floor(Math.random() * 2);
+        for (let p = 0; p < n; p++) {
+            const pw = 2 + Math.floor(Math.random() * 3);
+            const pxv = x + 1 + Math.floor(Math.random() * Math.max(1, w - pw - 1));
+            const pyv = y + 1 + Math.floor(Math.random() * Math.max(1, h - 3));
+            placePlatform(map, pxv, pyv, pw);
+        }
+    } else if (motif === 'ledges') {
+        // Alternating wall ledges climbing upward — wall-to-wall hops.
+        for (let s = 0, py = floorTop - 2; py > y + 1; s++, py -= 2) {
+            const pw = 3;
+            const pxv = (s % 2 === 0) ? x + 1 : x + w - pw - 1;
+            placePlatform(map, pxv, py, pw);
+        }
+    } else {
+        // 'scatter' — the original random platforms.
+        const numPlats = 1 + Math.floor(Math.random() * 3);
+        const placedRows = new Set();
+        for (let p = 0; p < numPlats; p++) {
+            const row = y + 2 + Math.floor(Math.random() * Math.max(1, h - 4));
+            if (placedRows.has(row)) continue;
+            placedRows.add(row);
+            const pw = 2 + Math.floor(Math.random() * 4);
+            const px = x + 1 + Math.floor(Math.random() * Math.max(1, w - pw - 2));
+            placePlatform(map, px, row, pw);
+        }
     }
 }
 
@@ -166,6 +214,14 @@ export function generateMap(game) {
     game.echoRooms = new Set();
     game.muralTiles = {};
 
+    // Roll this floor's layout archetype. Shadow the module defaults so every
+    // reference below (loops, shafts, connections) uses the per-floor grid.
+    const layout = pickLayout(game.depth);
+    const ROOMS_X = layout.cols;
+    const ROOMS_Y = layout.rows;
+    game.layoutName = layout.name;
+    const motifPool = layout.motifs || ['scatter'];
+
     game.mapWidth = ROOMS_X * ROOM_W;
     game.mapHeight = ROOMS_Y * ROOM_H;
 
@@ -175,7 +231,7 @@ export function generateMap(game) {
     for (let ry = 0; ry < ROOMS_Y; ry++) {
         for (let rx = 0; rx < ROOMS_X; rx++) {
             carveRoomShell(game.map, rx, ry);
-            populateRoomInterior(game.map, rx, ry);
+            populateRoomInterior(game.map, rx, ry, pick(motifPool), game.depth);
             roomList.push({ rx, ry });
         }
     }
@@ -214,6 +270,24 @@ export function generateMap(game) {
         }
     }
 
+    // ── Ladders ── Climbable columns linking every vertically-stacked room.
+    // Rooms are too tall to jump back up, so without these you could never
+    // return for a zine/ancestor you skipped. Offset from the central drop-shaft
+    // so the funnest thing (map-jumping the shafts) stays fully intact.
+    for (let rx = 0; rx < ROOMS_X; rx++) {
+        for (let ry = 0; ry < ROOMS_Y - 1; ry++) {
+            const lx = rx * ROOM_W + 3;            // left-of-center, clear of the shaft
+            const top = roomFloorY(ry);            // upper room floor → ladder top
+            const bottom = roomFloorY(ry + 1) - 1; // lower room standing row → ladder base
+            for (let yy = top; yy <= bottom; yy++) {
+                const k = `${lx},${yy}`;
+                const cur = game.map[k];
+                if (cur === '>' || cur === 'D' || cur === 'F') continue;
+                game.map[k] = 'H';
+            }
+        }
+    }
+
     // Spawn the player on the top-left room's floor.
     const spawnRoom = roomList[0];
     game.player.x = roomCenterX(spawnRoom.rx) + 0.15;
@@ -221,6 +295,7 @@ export function generateMap(game) {
     game.player.vx = 0;
     game.player.vy = 0;
     game.player.onGround = true;
+    game.player.climbing = false;
 
     const exitRoom = roomList[roomList.length - 1];
     const exitX = roomCenterX(exitRoom.rx);
