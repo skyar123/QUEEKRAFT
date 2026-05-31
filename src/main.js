@@ -1215,13 +1215,51 @@ function processTurn() {
             }
         };
 
-        // CONCERN TROLL: drains HP when adjacent, moves slowly toward player
+        // Ground enemies don't fly: they only step HORIZONTALLY (gravity in the
+        // physics loop keeps their feet on the floor). They give up vertical
+        // pursuit, so a guard on a lower floor can't levitate up to you.
+        const occupiedAt = (cx, cy) => game.trolls.find(t => t !== troll && trollTileX(t) === cx && trollTileY(t) === cy);
+        const hasFooting = (cx, cy) => {
+            const below = game.map[`${cx},${cy + 1}`];
+            return below === '#' || below === '=' || below === '~' || below === 'C' || below === 'H';
+        };
+        const stepH = (dir) => {
+            if (dir === 0) return false;
+            troll.facing = dir;
+            const nx = tx + dir;
+            if (isPassable(nx, ty) && !isProtectedRoom(nx, ty) && !occupiedAt(nx, ty)) {
+                troll.x = nx;
+                return true;
+            }
+            return false;
+        };
+        // Chase the player only along this enemy's own row (no vertical hops).
+        const chaseH = () => stepH(px > tx ? 1 : px < tx ? -1 : 0);
+        // Guard patrol: walk a line, turning around at walls or ledges so the
+        // enemy paces back and forth instead of wandering randomly or flying.
+        const patrolLine = () => {
+            if (!troll.patrolDir) troll.patrolDir = Math.random() < 0.5 ? 1 : -1;
+            const nx = tx + troll.patrolDir;
+            const blocked = !isPassable(nx, ty) || isProtectedRoom(nx, ty) || occupiedAt(nx, ty);
+            const ledge = !hasFooting(nx, ty);   // don't march off into a pit
+            if (blocked || ledge) {
+                troll.patrolDir *= -1;            // about-face
+                troll.facing = troll.patrolDir;
+            } else {
+                stepH(troll.patrolDir);
+            }
+        };
+
+        // CONCERN TROLL: grounded. Drains HP when adjacent; otherwise walks the
+        // floor toward you, or paces a guard line when it hasn't noticed you.
         if (troll.enemyType === 'concern') {
             if (dist <= 1) {
                 takeDamage(game, 1);
                 UI.addMessage("Concern Troll whispers 'Are you SURE about this?'", 'death');
             } else if (hunting) {
-                stepToward();
+                chaseH();
+            } else {
+                patrolLine();
             }
             return;
         }
@@ -1276,21 +1314,23 @@ function processTurn() {
             return;
         }
 
-        // POLICE: fast, aggressive, 2 damage
+        // POLICE: grounded, fast, aggressive, 2 damage. Chases along the floor,
+        // paces a guard line otherwise. Same row only — no flying.
         if (troll.enemyType === 'police') {
             if (dist <= 1) { takeDamage(game, 2); return; }
-            if (hunting) stepToward();
+            if (hunting) { chaseH(); }
+            else { patrolLine(); }
             return;
         }
 
-        // SWARM (new): tiny, fast, 1 dmg, can stack
+        // SWARM: tiny, fast, FLYING (one of the few that can). 1 dmg, can stack.
         if (troll.enemyType === 'swarm') {
             if (dist <= 1) { takeDamage(game, 1); return; }
             if (hunting) { stepToward(); stepToward(); }
             return;
         }
 
-        // BIGOT (new): far-range projectile thrower (logical adjacency = 2)
+        // BIGOT: grounded far-range projectile thrower (logical adjacency = 2).
         if (troll.enemyType === 'bigot') {
             if (hunting && dist <= 4 && Math.random() < 0.3) {
                 takeDamage(game, 1);
@@ -1299,29 +1339,23 @@ function processTurn() {
                 return;
             }
             if (dist <= 1) { takeDamage(game, 1); return; }
-            if (hunting) stepToward();
+            if (hunting) { chaseH(); }
+            else { patrolLine(); }
             return;
         }
 
-        // DEFAULT TROLL: chase relentlessly once it's noticed you, 1 damage on contact
+        // DEFAULT TROLL: grounded guard. Chases along the floor once it's noticed
+        // you; otherwise paces a patrol line. 1 damage on contact.
         if (dist <= 1) { takeDamage(game, 1); return; }
         if (hunting) {
             troll.chasingTurns = 99;
-            stepToward();
+            chaseH();
             return;
         }
 
-        // Idle wander — also nudges its facing so it isn't always staring right.
-        if (Math.random() < 0.4) {
-            const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
-            const [rx, ry] = dirs[Math.floor(Math.random() * dirs.length)];
-            if (rx !== 0) troll.facing = rx;
-            const nx = tx + rx, ny = ty + ry;
-            if (isPassable(nx, ny) && !game.trolls.find(t => trollTileX(t) === nx && trollTileY(t) === ny)) {
-                troll.x = nx;
-                troll.y = ny;
-            }
-        }
+        // Not hunting → pace a guard line back and forth (replaces the old
+        // random 4-directional wander, which read as floating/flying).
+        patrolLine();
     });
 
     // Body-check: if any troll occupies the player's tile (compare on
@@ -1902,7 +1936,8 @@ const ACCEL = 0.65;          // Horizontal acceleration
 const FRICTION_GROUND = 0.72; // Ground friction
 const FRICTION_AIR = 0.86;    // Air resistance
 const MAX_VX = 3.5;          // Speed limit
-const CLIMB_SPEED = 4.2;     // Ladder climb velocity (tiles/sec-ish)
+const CLIMB_SPEED = 2.0;     // Ladder climb velocity — deliberately slow so the
+                            // climb feels like effort, not a free elevator.
 
 // Returns true if (px, py) lies inside any solid wall.
 // One-way platforms are NOT considered solid by this — use isOneWayBlocking
@@ -2543,7 +2578,34 @@ function draw() {
             } else if (r.tile === 'T') {
                 drawTile(ctx, sx, sy, '#1a0a14', true, null, r.isVisible ? patterns.trampoline : null);
             } else if (r.tile === '^') {
-                drawTile(ctx, sx, sy, '#1a0a14', false, null, r.isVisible ? patterns.spikes : null);
+                // Spikes — drawn procedurally (the texture was nearly invisible).
+                // Dark base, a pulsing red warning strip, bright metal teeth with
+                // white-hot tips, and a red outline so the hazard always reads.
+                drawTile(ctx, sx, sy, '#140510', false, null, null);
+                if (r.isVisible) {
+                    const pulse = 0.5 + 0.5 * Math.sin(game.animFrame * 0.15);
+                    ctx.globalAlpha = 1.0;
+                    ctx.fillStyle = `rgba(255,0,64,${0.30 + pulse * 0.35})`;
+                    ctx.fillRect(sx, sy + T - 6, T, 6);
+                    const teeth = 4;
+                    const tw = (T - 4) / teeth;
+                    for (let s = 0; s < teeth; s++) {
+                        const baseL = sx + 2 + s * tw;
+                        const tip = sx + 2 + s * tw + tw / 2;
+                        ctx.fillStyle = '#E8E8F0';
+                        ctx.beginPath();
+                        ctx.moveTo(baseL, sy + T);
+                        ctx.lineTo(tip, sy + 3);
+                        ctx.lineTo(sx + 2 + (s + 1) * tw, sy + T);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.fillStyle = `rgba(255,255,255,${0.7 + pulse * 0.3})`;
+                        ctx.fillRect(tip - 1, sy + 3, 2, 4);
+                    }
+                    ctx.strokeStyle = `rgba(255,40,80,${0.6 + pulse * 0.4})`;
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(sx + 0.5, sy + 0.5, T - 1, T - 1);
+                }
             } else if (r.tile === '=') {
                 drawTile(ctx, sx, sy, '#1a0a14', false, null, r.isVisible ? patterns.platform : null);
             } else if (r.tile === 'C') {
@@ -2691,35 +2753,6 @@ function draw() {
                         ctx.stroke();
                     }
                     ctx.shadowBlur = 0;
-                } else if (r.tile === '^') {
-                    // Spikes — unmissable danger: a glowing red warning base, bright
-                    // metallic teeth with white tips, and a slow hazard pulse.
-                    ctx.globalAlpha = 1.0;
-                    const pulse = 0.5 + 0.5 * Math.sin(game.animFrame * 0.15);
-                    // Warning glow under the teeth.
-                    ctx.fillStyle = `rgba(255,0,64,${0.25 + pulse * 0.35})`;
-                    ctx.fillRect(sx, sy + T - 6, T, 6);
-                    // Teeth.
-                    const teeth = 4;
-                    const tw = (T - 4) / teeth;
-                    for (let s = 0; s < teeth; s++) {
-                        const baseL = sx + 2 + s * tw;
-                        const tip   = sx + 2 + s * tw + tw / 2;
-                        ctx.fillStyle = '#E8E8F0';
-                        ctx.beginPath();
-                        ctx.moveTo(baseL,            sy + T);
-                        ctx.lineTo(tip,              sy + 3);
-                        ctx.lineTo(sx + 2 + (s + 1) * tw, sy + T);
-                        ctx.closePath();
-                        ctx.fill();
-                        // White-hot tip highlight.
-                        ctx.fillStyle = `rgba(255,255,255,${0.7 + pulse * 0.3})`;
-                        ctx.fillRect(tip - 1, sy + 3, 2, 4);
-                    }
-                    // Red outline so the whole hazard reads at a glance.
-                    ctx.strokeStyle = `rgba(255,40,80,${0.6 + pulse * 0.4})`;
-                    ctx.lineWidth = 1.5;
-                    ctx.strokeRect(sx + 0.5, sy + 0.5, T - 1, T - 1);
                 } else if (r.tile === 'H') {
                     // Ladder — two bright rails with rungs, clearly climbable.
                     ctx.globalAlpha = 1.0;

@@ -601,12 +601,42 @@ export const DialogueUI = {
         this.renderNode();
     },
 
+    // Split a dialogue line into spoken vs. narration so the character reads as
+    // *speaking*, not narrating the world. Quoted runs ("...") and the common
+    // no-quotes ancestor lines render as speech; scene text and *stage actions*
+    // render dimmed. Returns { html, spoken } (spoken feeds the TTS).
+    formatDialogue(text) {
+        const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const segs = [];
+        const re = /"([^"]*)"|“([^”]*)”|\*([^*]+)\*/g;
+        let last = 0, m;
+        while ((m = re.exec(text)) !== null) {
+            if (m.index > last) segs.push({ t: 'narr', s: text.slice(last, m.index) });
+            if (m[3] !== undefined) segs.push({ t: 'stage', s: m[3] });
+            else segs.push({ t: 'speech', s: (m[1] !== undefined ? m[1] : m[2]) });
+            last = re.lastIndex;
+        }
+        if (last < text.length) segs.push({ t: 'narr', s: text.slice(last) });
+        // No quoted speech anywhere → the whole line is the character talking.
+        const anySpeech = segs.some(g => g.t === 'speech');
+        const spokenParts = [];
+        const html = segs.map(g => {
+            const e = esc(g.s);
+            if (g.t === 'stage') return `<span class="dlg-stage">(${e.trim()})</span>`;
+            if (g.t === 'speech') { spokenParts.push(g.s); return `<span class="dlg-speech">“${e}”</span>`; }
+            if (!anySpeech) { spokenParts.push(g.s); return `<span class="dlg-speech">${e}</span>`; }
+            return `<span class="dlg-narr">${e}</span>`;
+        }).join('');
+        return { html, spoken: spokenParts.join(' ').trim() || text };
+    },
+
     renderNode() {
         const node = this.currentNPC.dialogue[this.currentNode];
-        document.getElementById('conversation-text').textContent = node.text;
-        
-        // AI TTS - Speak the NPC text
-        Audio.speak(node.text);
+        const fmt = this.formatDialogue(node.text);
+        document.getElementById('conversation-text').innerHTML = fmt.html;
+
+        // AI TTS - speak only the character's actual words, not stage directions.
+        Audio.speak(fmt.spoken);
         
         const choicesContainer = document.getElementById('conversation-choices');
         choicesContainer.innerHTML = '';

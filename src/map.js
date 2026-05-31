@@ -270,13 +270,18 @@ export function generateMap(game) {
         }
     }
 
-    // ── Ladders ── Climbable columns linking every vertically-stacked room.
-    // Rooms are too tall to jump back up, so without these you could never
-    // return for a zine/ancestor you skipped. Offset from the central drop-shaft
-    // so the funnest thing (map-jumping the shafts) stays fully intact.
+    // ── Ladders ── Climbable columns linking vertically-stacked rooms so you
+    // can backtrack up for a zine/ancestor you skipped. Staggered per floor:
+    // each segment links exactly ONE pair of rooms and the next floor's ladder
+    // sits in a different column, so you climb one floor at a time and have to
+    // walk to the next ladder — never ride a single column through the whole
+    // map. The central drop-shaft (the fun part) is untouched.
+    game.ladderTiles = new Set();
     for (let rx = 0; rx < ROOMS_X; rx++) {
         for (let ry = 0; ry < ROOMS_Y - 1; ry++) {
-            const lx = rx * ROOM_W + 3;            // left-of-center, clear of the shaft
+            // Alternate the column by floor + room so segments don't line up
+            // vertically into one continuous ladder.
+            const lx = rx * ROOM_W + ((rx + ry) % 2 === 0 ? 3 : 7);
             const top = roomFloorY(ry);            // upper room floor → ladder top
             const bottom = roomFloorY(ry + 1) - 1; // lower room standing row → ladder base
             for (let yy = top; yy <= bottom; yy++) {
@@ -284,6 +289,7 @@ export function generateMap(game) {
                 const cur = game.map[k];
                 if (cur === '>' || cur === 'D' || cur === 'F') continue;
                 game.map[k] = 'H';
+                game.ladderTiles.add(k);
             }
         }
     }
@@ -593,6 +599,24 @@ export function generateMap(game) {
             });
         }
     }
+
+    // ── Keep ladder entrances clear ──────────────────────────────────────────
+    // Items/enemies placed on a ladder column would block its top/bottom rung.
+    // Nudge anything sitting on a ladder tile sideways onto a clear floor tile.
+    const onLadder = (x, y) => game.ladderTiles && game.ladderTiles.has(`${x},${y}`);
+    const standable = (x, y) => {
+        const t = game.map[`${x},${y}`];
+        const below = game.map[`${x},${y + 1}`];
+        return (t === '.' || t === '>') && (below === '#' || below === '=' || below === '~');
+    };
+    const shoveOff = (e) => {
+        if (!onLadder(e.x, e.y)) return;
+        for (const dx of [1, -1, 2, -2, 3, -3]) {
+            if (!onLadder(e.x + dx, e.y) && standable(e.x + dx, e.y)) { e.x += dx; return; }
+        }
+    };
+    game.items.forEach(shoveOff);
+    game.trolls.forEach(shoveOff);
 }
 
 // ---------------------------------------------------------------------------
