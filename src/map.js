@@ -29,7 +29,33 @@ const MURAL_MESSAGES = [
     "If you find a room that's flickering — someone's still inside it. Say hello.",
     "Fin is the part of Lu that lived. Every echo has one of those. Find it.",
     "The signal doesn't stop just because the broadcast does.",
-    "A story that didn't survive intact is still a story. Hold it anyway."
+    "A story that didn't survive intact is still a story. Hold it anyway.",
+    // DSM mnemonics and clinical wisdom
+    "SIG E CAPS: Sleep, Interest, Guilt, Energy, Concentration, Appetite, Psychomotor, Suicidality",
+    "DIG FAST: Distractibility, Indiscretion, Grandiosity, Flight of ideas, Activity, Sleep, Talkativeness",
+    "The Anxious Distress specifier: 5 symptoms, severity matters, always document",
+    "Mixed features = opposite polarity symptoms bleeding through — highest suicide risk",
+    "Mood reactivity is the cardinal feature of atypical depression — can they feel better at all?",
+    "Peripartum onset: during pregnancy OR within 4 weeks — 50% begin before delivery",
+    "Rapid cycling: 4+ episodes in 12 months — check thyroid, check substances",
+    "Melancholic depression: early morning awakening, worse in AM, non-reactive mood",
+    "Seasonal pattern: 2 years, 2 episodes, temporal relationship — light therapy first",
+    "Catatonia emergency: lorazepam first. NOT antipsychotics. ECT if refractory.",
+    "Rule out medical causes first. Always. Hypothyroid mimics depression.",
+    "BPD vs Bipolar II: chronic instability vs episodic mood. Identity disturbance = BPD.",
+    "PTSD vs Adjustment: was it traumatic? actual/threatened death, injury, sexual violence?",
+    "GAD worry = ego-syntonic, real-life topics. OCD obsessions = ego-dystonic, feel alien.",
+    "Biopsychosocial-spiritual: never reduce a human to a single dimension",
+    "V-codes are not lesser concerns — they are the social determinants. Treat them.",
+    "Cultural humility is not a technique. It is a lifetime orientation.",
+    "The CFI is the tool. Cultural formulation is the stance.",
+    "DMDD is chronic irritability. Bipolar is episodic mood change. Duration is the key.",
+    "Mixed features in MDE = possible bipolar spectrum. Antidepressants alone may destabilize.",
+    "Minority stress is a social determinant of mental health — not a character flaw.",
+    "CPTSD (ICD-11): prolonged inescapable trauma + affect dysregulation + negative self-concept + relationship difficulties",
+    "The diagnosis is a map. The person is the territory. Hold both.",
+    "Differential diagnosis is clinical reasoning, not labeling. Rule out, rule in, hold uncertainty.",
+    "Every zine here is a clinical case. Every case is a life. Treat them that way."
 ];
 
 export function pick(arr) {
@@ -528,7 +554,7 @@ export function generateMap(game) {
     }
 
     const baseTypes = ['troll', 'wraith', 'concern', 'police'];
-    const advancedTypes = ['swarm', 'bigot'];
+    const advancedTypes = ['swarm', 'bigot', 'ruminator', 'avoidance', 'compulsion'];
     const enemyPool = game.depth >= 3 ? baseTypes.concat(advancedTypes) : baseTypes;
 
     for (const room of usable) {
@@ -548,6 +574,9 @@ export function generateMap(game) {
             if (eType === 'police')  { hp = 3; mDelay = 1; alertRad = 9; }
             if (eType === 'swarm')   { hp = 1; mDelay = 1; alertRad = 7; }
             if (eType === 'bigot')   { hp = 2; mDelay = 4; alertRad = 6; }
+            if (eType === 'ruminator') { hp = 3; mDelay = 4; alertRad = 5; }
+            if (eType === 'avoidance') { hp = 2; mDelay = 2; alertRad = 6; }
+            if (eType === 'compulsion'){ hp = 4; mDelay = 3; alertRad = 3; }
             hp = Math.max(1, hp + Math.floor(game.depth / 3));
 
             game.trolls.push({
