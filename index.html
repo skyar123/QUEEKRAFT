@@ -8,6 +8,8 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#050505">
     <title>QUEEKRAFT</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style.css">
 </head>
@@ -642,24 +644,24 @@
         </div>
     </div>
 
+    <!-- Zine Ritual Overlay -->
+    <div id="zine-ritual-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:4000;display:none;flex-direction:column;align-items:center;justify-content:center;gap:32px;opacity:0;transition:opacity 0.5s;cursor:pointer;">
+        <div id="zine-ritual-quote" style="color:#FF71CE;font-family:'VT323',monospace;font-size:32px;text-align:center;max-width:80%;text-shadow:0 0 15px #FF71CE;"></div>
+        <div style="color:#aaa;font-family:'VT323',monospace;font-size:20px;letter-spacing:2px;">[ TAP TO CONTINUE ]</div>
+    </div>
+
+    <!-- Mural Screen -->
+    <div id="mural-screen" class="modal">
+        <div class="heir-box" style="max-height: 80vh; overflow-y: auto;">
+            <div style="color: #01CDFE; font-size: 24px; margin-bottom: 15px; text-align: center;">THE MURAL OF SURVIVORS</div>
+            <div style="text-align: center; margin-bottom: 20px; color: #aaa;">Those who came before you. We remember their names.</div>
+            <div id="mural-list" style="display: flex; flex-direction: column; gap: 10px;">
+                <!-- Populated dynamically -->
+            </div>
+            <button class="restart-btn" id="close-mural-btn" style="margin-top: 20px;">Back to Camp</button>
+        </div>
+    </div>
+
     <script type="module" src="/src/main.js"></script>
 </body>
 </html>
-
-<!-- Zine Ritual Overlay -->
-<div id="zine-ritual-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:4000;display:none;flex-direction:column;align-items:center;justify-content:center;gap:32px;opacity:0;transition:opacity 0.5s;cursor:pointer;">
-    <div id="zine-ritual-quote" style="color:#FF71CE;font-family:'VT323',monospace;font-size:32px;text-align:center;max-width:80%;text-shadow:0 0 15px #FF71CE;"></div>
-    <div style="color:#aaa;font-family:'VT323',monospace;font-size:20px;letter-spacing:2px;">[ TAP TO CONTINUE ]</div>
-</div>
-
-<!-- Mural Screen -->
-<div id="mural-screen" class="modal">
-    <div class="heir-box" style="max-height: 80vh; overflow-y: auto;">
-        <div style="color: #01CDFE; font-size: 24px; margin-bottom: 15px; text-align: center;">THE MURAL OF SURVIVORS</div>
-        <div style="text-align: center; margin-bottom: 20px; color: #aaa;">Those who came before you. We remember their names.</div>
-        <div id="mural-list" style="display: flex; flex-direction: column; gap: 10px;">
-            <!-- Populated dynamically -->
-        </div>
-        <button class="restart-btn" id="close-mural-btn" style="margin-top: 20px;">Back to Camp</button>
-    </div>
-</div>

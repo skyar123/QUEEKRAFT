@@ -33,25 +33,56 @@ export function applyStatus(enemy, kind, duration, magnitude = 1) {
 export function tickStatus(game) {
     for (let i = game.trolls.length - 1; i >= 0; i--) {
         const e = game.trolls[i];
-        if (!e.status) continue;
-        for (const k of Object.keys(e.status)) {
-            const s = e.status[k];
-            s.duration -= 1;
-            if (k === 'burn') {
-                if (game.animFrame % 30 === 0) {
-                    e.health -= s.magnitude;
-                    game.floatingText.push({ x: e.x, y: e.y, text: `🔥${s.magnitude}`, life: 24, color: '#FF8C00' });
-                    game.particles.push({ x: e.x, y: e.y, vx: 0, vy: -0.3, life: 0.8, color: '#FF8C00' });
+        if (e.status) {
+            for (const k of Object.keys(e.status)) {
+                const s = e.status[k];
+                s.duration -= 1;
+                if (k === 'burn') {
+                    if (game.animFrame % 30 === 0) {
+                        e.health -= s.magnitude;
+                        game.floatingText.push({ x: e.x, y: e.y, text: `🔥${s.magnitude}`, life: 24, color: '#FF8C00' });
+                        game.particles.push({ x: e.x, y: e.y, vx: 0, vy: -0.3, life: 0.8, color: '#FF8C00' });
+                    }
                 }
+                if (s.duration <= 0) delete e.status[k];
             }
-            if (s.duration <= 0) delete e.status[k];
         }
+        // Cull anything dead — covers burn DOT, finisher splash, and shock-chain
+        // damage, which subtract health without going through attackEnemy's own
+        // death handling. Without this, a splash-killed enemy with no status
+        // lingered at ≤0 HP, unkillable and still dealing contact damage.
         if (e.health <= 0) {
-            UI.addMessage(`${e.enemyType} burned out!`, 'victory');
-            dropLoot(game, e);
+            UI.addMessage(`${e.enemyType} ${e.status ? 'burned out!' : 'collapses!'}`, 'victory');
             game.trolls.splice(i, 1);
-            game.player.kills = (game.player.kills || 0) + 1;
+            grantKillRewards(game, e);
         }
+    }
+}
+
+// Shared kill bookkeeping for every death path (direct hits, DOT, splash):
+// kill counter, XP, quest credit, loot — plus the boss's jackpot rewards.
+export function grantKillRewards(game, enemy) {
+    game.player.kills = (game.player.kills || 0) + 1;
+    if (typeof window.addXP === 'function') window.addXP(5);
+    if (typeof window.__onEnemyKilledForQuests === 'function') {
+        window.__onEnemyKilledForQuests(enemy.enemyType);
+    }
+    if (enemy.enemyType === 'boss') {
+        UI.addMessage("🎉 BOSS DEFEATED! MASSIVE SCRAP REWARD! 🎉", "special");
+        game.treasures += 15;
+        game.persistent.treasures += 15;
+        game.player.scrapEarned = (game.player.scrapEarned || 0) + 15;
+        game.player.health = game.player.maxHealth;
+        Audio.playLoot();
+        if (typeof window.addXP === 'function') window.addXP(30);
+        // Boss drops a guaranteed Legendary plus some secondaries.
+        dropLoot(game, enemy);
+        const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
+        dirs.forEach(d => {
+            game.items.push({ x: enemy.x + d[0], y: enemy.y + d[1], type: 'treasure', name: 'Boss Scrap' });
+        });
+    } else {
+        dropLoot(game, enemy);
     }
 }
 
@@ -499,16 +530,6 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
         const fall = FALL_LINES[enemy.enemyType];
         UI.addMessage(fall || `${enemy.enemyType === 'boss' ? 'THE BOSS' : 'Enemy'} defeated!`, 'victory');
         game.trolls = game.trolls.filter(t => t !== enemy);
-        game.player.kills = (game.player.kills || 0) + 1;
-        if (typeof window.addXP === 'function') window.addXP(5);
-        if (typeof window.__onEnemyKilledForQuests === 'function') {
-            window.__onEnemyKilledForQuests(enemy.enemyType);
-        }
-
-        // Tiered loot drop replaces the old flat 30% scrap drop.
-        if (enemy.enemyType !== 'boss') {
-            dropLoot(game, enemy);
-        }
 
         // Death explosion — gatekeepers spray "paper" white squares; others
         // burst in pride colours.
@@ -526,21 +547,7 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
             });
         }
 
-        if (enemy.enemyType === 'boss') {
-            UI.addMessage("🎉 BOSS DEFEATED! MASSIVE SCRAP REWARD! 🎉", "special");
-            game.treasures += 15;
-            game.persistent.treasures += 15;
-            game.player.scrapEarned = (game.player.scrapEarned || 0) + 15;
-            game.player.health = game.player.maxHealth;
-            Audio.playLoot();
-            if (typeof window.addXP === 'function') window.addXP(30);
-            // Boss drops a guaranteed Legendary plus some secondaries.
-            dropLoot(game, enemy);
-            const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
-            dirs.forEach(d => {
-                game.items.push({ x: enemy.x + d[0], y: enemy.y + d[1], type: 'treasure', name: 'Boss Scrap' });
-            });
-        }
+        grantKillRewards(game, enemy);
     }
 
     if (type !== 'blast') {

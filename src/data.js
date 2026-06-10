@@ -1,3 +1,7 @@
+// Win-condition targets. The pools below hold MORE content than this (so runs
+// vary), but victory, HUD "x/N" displays, and quest-log bars all read from here.
+export const GOALS = { zines: 19, figures: 9 };
+
 export const ZINES = {
     'tucking': { title: 'Safe Tucking Guide', image: '/images/zine_diy.png', content: '<h3>Safe Tucking</h3><p>Medical tape only, never duct tape! Take breaks every 8 hours. Your safety comes first.</p>' },
     'binding': { title: 'Chest Binding Safety', image: '/images/zine_punk.png', content: '<h3>Binding Safety</h3><p>Use proper binders, never ace bandages. Listen to your body. Take breaks.</p>' },
@@ -1028,9 +1032,6 @@ export const NAMED_ITEM_EFFECTS = {
     'STAR House Key':             'star_key'
 };
 
-// Probability table compiled from weights, used by combat.dropLoot.
-export const LOOT_TIER_KEYS = Object.keys(LOOT_TIERS);
-
 // ---------------------------------------------------------------------------
 // Cozy quests. Each quest is given by an NPC ('giver'), tracked across runs
 // in game.persistent.quests, and turned in via a dialogue branch on the same
@@ -1168,6 +1169,3 @@ export const STORY_CARDS = {
     }
 };
 export const STORY_CARD_KEYS = Object.keys(STORY_CARDS);
-// Quest givers that should always be offered if the quest is available.
-// Used by map.js to spawn the giver in the hub town if not already present.
-export const QUEST_GIVERS = QUEST_KEYS.map(k => QUESTS[k].giver);
