@@ -91,6 +91,48 @@ export const Audio = {
         playTone(110, 'square',   0.6, 0.10);
         setTimeout(() => playTone(58, 'sawtooth', 0.4, 0.18), 200);
     },
+
+    // RPG layer SFX — keys/vaults, shop, potions, fishing, companions.
+    playUnlock: () => {
+        // Chunky lock turn → bright open chime.
+        playTone(200, 'square', 0.08, 0.14);
+        setTimeout(() => playTone(300, 'square', 0.08, 0.12), 90);
+        setTimeout(() => playTone(800, 'sine',   0.25, 0.10), 200);
+        setTimeout(() => playTone(1200,'sine',   0.30, 0.08), 280);
+    },
+    playBuy: () => {
+        // Cash-register coin chirp.
+        playTone(900, 'square', 0.06, 0.10);
+        setTimeout(() => playTone(1400, 'square', 0.10, 0.08), 70);
+    },
+    playPotion: () => {
+        // Glug-glug + sparkle.
+        playTone(300, 'sine', 0.08, 0.12);
+        setTimeout(() => playTone(240, 'sine', 0.08, 0.12), 110);
+        setTimeout(() => playTone(1000, 'triangle', 0.18, 0.07), 240);
+    },
+    playSplash: () => {
+        // Bobber hits the pond.
+        playTone(400, 'sine', 0.05, 0.10);
+        setTimeout(() => playTone(180, 'triangle', 0.18, 0.10), 40);
+    },
+    playCatch: () => {
+        // Reel-in jingle.
+        playTone(600, 'triangle', 0.08, 0.10);
+        setTimeout(() => playTone(800, 'triangle', 0.08, 0.10), 90);
+        setTimeout(() => playTone(1100,'triangle', 0.16, 0.10), 180);
+    },
+    playChirp: () => {
+        // Companion happy noise.
+        playTone(1200, 'sine', 0.06, 0.07);
+        setTimeout(() => playTone(1600, 'sine', 0.09, 0.06), 70);
+    },
+    playCrack: () => {
+        // Cracked wall giving way — rubble thud + dust hiss.
+        playTone(90, 'sawtooth', 0.20, 0.20);
+        setTimeout(() => playTone(60, 'square', 0.25, 0.16), 80);
+        setTimeout(() => playTone(1500, 'sine', 0.05, 0.04), 60);
+    },
     
     // AI INTEGRATIONS
     speak: (text) => {

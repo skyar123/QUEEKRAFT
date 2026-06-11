@@ -1,8 +1,11 @@
 import { UI, DialogueUI, GeminiUI } from './ui.js';
 import { generateMap, generateHubMap } from './map.js';
 import { attackEnemy, takeDamage, tickStatus, tickCombo, applyStatus } from './combat.js';
-import { HEALING_ITEMS, HISTORICAL_FIGURES, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS, ECHO_KEYS, ZINES, STORY_CARDS, GOALS } from './data.js';
+import { HEALING_ITEMS, HISTORICAL_FIGURES, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS, ECHO_KEYS, ZINES, STORY_CARDS, GOALS, WEAPONS, POTIONS, COMPANIONS } from './data.js';
 import { Audio } from './audio.js';
+import { initCompanionForRun, updateCompanion, drawCompanion, drawCritter, rescueCompanion } from './companions.js';
+import { handleFishingUse, updateFishing, drawFishing, isFishing, nearWater } from './fishing.js';
+import { initInventory, addWeapon, addPotion, usePotion, addHeartPiece, toggleInventory, openShop } from './inventory.js';
 
 // Expose UI globally so map.js village generator can show status messages.
 window.UI = UI;
@@ -186,6 +189,11 @@ function loadGame() {
     if (!game.persistent.storyCards || typeof game.persistent.storyCards !== 'object') game.persistent.storyCards = {};
     if (!game.persistent.npcEncounters || typeof game.persistent.npcEncounters !== 'object') game.persistent.npcEncounters = {};
     if (!Array.isArray(game.persistent.mural)) game.persistent.mural = [];
+    // RPG layer (companions / fish-dex / heart pieces) — defaults for old saves.
+    if (!game.persistent.companions || typeof game.persistent.companions !== 'object') game.persistent.companions = {};
+    if (typeof game.persistent.activeCompanion !== 'string') game.persistent.activeCompanion = null;
+    if (!game.persistent.fishDex || typeof game.persistent.fishDex !== 'object') game.persistent.fishDex = {};
+    if (typeof game.persistent.heartPieces !== 'number') game.persistent.heartPieces = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -899,8 +907,9 @@ function startCamp() {
 
 async function descend() {
     // Lock descent until the player has spoken to every ancestor and collected
-    // every zine on this floor — prevents missing content.
-    const remainingNPCs = game.npcs.length;
+    // every zine on this floor — prevents missing content. Merchants and
+    // companions are optional company and never block the stairs.
+    const remainingNPCs = game.npcs.filter(n => n.type === 'historical' || n.type === 'echo').length;
     if (remainingNPCs > 0) {
         UI.addMessage(
             `⚠ ${remainingNPCs} ${remainingNPCs === 1 ? 'ancestor awaits' : 'ancestors await'} you on this floor. Climb a ladder (↑) to backtrack — pink dots on the minimap show where.`,
@@ -961,6 +970,8 @@ async function descend() {
     generateMap(game);
     // generateMap already positions the player on the new floor's spawn tile.
     game.camInitialized = false;
+    game.companionTrail = [];
+    game.companionPos = null;
     UI.updateStatus(game);
     UI.addMessage(`📍 Checkpoint reached: Depth ${game.depth}`, 'special');
     if (enteringNewZone) UI.addMessage(`— ${nextZone.name} — ${nextZone.flavour}`, 'special');
@@ -997,6 +1008,10 @@ function enterHub() {
     p.coyoteTimer = 0;
     p.percent = 0; p.hitstun = 0;
     p.damageImmune = 0;
+    // First visit needs a bag; later visits keep whatever the run is carrying.
+    if (!p.weapons) initInventory(game);
+    initCompanionForRun(game);
+    game.fishing = null;
 
     generateHubMap(game);
     game.camInitialized = false;
@@ -1035,6 +1050,13 @@ function startDungeon() {
     p.percent = 0; p.hitstun = 0;
     p.extraJumps = 0; p.critBonus = 0; p.hasRegen = false; p.hasSpeedPerk = false;
     p.damageImmune = 0; p.bloomRegen = 0; p.bloomRate = 0; p.defenseBuff = 0;
+    // Fresh bag each run — but pond snacks fished at the Safehouse ride along.
+    const pocketFish = p.fish || [];
+    initInventory(game);
+    p.fish = pocketFish.slice(0, 6);
+    initCompanionForRun(game);
+    game.fishing = null;
+    game.victoryShown = false;
 
     // Checkpoint resume: next heir starts at the highest depth previously
     // reached (mediated by `checkpointDepth`). First-ever run is depth 1.
@@ -1068,6 +1090,8 @@ function updateFOV() {
     let fovRadius = 9;
     if (game.player.trait && game.player.trait.id === 'dysphoria') fovRadius = 5;
     if (game.player.traits && game.player.traits.some(t => t.id === 'autism')) fovRadius += 2;
+    // Lantern Moth companion carries her own little lamp.
+    if (game.companionPerks && game.companionPerks.light) fovRadius += game.companionPerks.light;
 
     const px = tileX(), py = tileY();
     for (let dy = -fovRadius; dy <= fovRadius; dy++) {
@@ -1089,7 +1113,7 @@ function isPassable(x, y) {
     // (enemies don't avoid spikes — they're a *player* hazard).
     // Hub-only special tiles ('D' portal, 'F' campfire) are passable too so the
     // player can stand on them to interact.
-    return tile === '.' || tile === '>' || tile === '=' || tile === '^' || tile === 'C' || tile === 'D' || tile === 'F' || tile === 'Z';
+    return tile === '.' || tile === '>' || tile === '=' || tile === '^' || tile === 'C' || tile === 'D' || tile === 'F' || tile === 'Z' || tile === 'V';
 }
 
 // Legacy turn-based movement kept as a no-op shim — platformer physics handles motion now.
@@ -1249,6 +1273,17 @@ function processTurn() {
             const contactDmg = enraged ? 3 : 2;
             const spawnChance = enraged ? 0.45 : 0.25;
             const spawnCap = enraged ? 18 : 12;
+            // THE LANDLORD KING (depth 10) lobs arcing eviction notices.
+            if (game.depth >= 10 && dist <= 12 && Math.random() < (enraged ? 0.45 : 0.25)) {
+                const dirX = Math.sign(px - tx) || 1;
+                game.projectiles.push({
+                    x: tx + 0.5, y: ty - 0.5,
+                    vx: dirX * (1.4 + Math.random() * 1.2),
+                    vy: -2.4 - Math.random() * 1.6,
+                    life: 240, color: '#FFD700'
+                });
+                if (Math.random() < 0.3) UI.addMessage('👑 "EVICTION NOTICE!"', 'death');
+            }
             if (dist <= 1) { takeDamage(game, contactDmg); return; }
             if (troll.health < troll.maxHealth / 2 && Math.random() < spawnChance && game.trolls.length < spawnCap) {
                 const tdx = (Math.random() < 0.5 ? -1 : 1);
@@ -1363,8 +1398,40 @@ function interact() {
     const px = tileX();
     const py = tileY();
 
+    // Mid-cast fishing presses (reel in / land the catch) eat the input.
+    if (isFishing(game) && handleFishingUse(game)) return;
+
     if (game.map[`${px},${py}`] === '>') {
         descend();
+        return;
+    }
+
+    // Castle vault doors — golden, locked, worth it. The outer door costs a
+    // Small Key once; the inner door is always the way back out.
+    if (game.vault && game.map[`${px},${py}`] === 'V') {
+        const v = game.vault;
+        const atOuter = px === v.doorX && py === v.doorY;
+        if (atOuter && !v.unlocked && (game.player.keysHeld || 0) <= 0) {
+            UI.addMessage('🔒 The golden door holds fast. It wants a Small Key.', 'special');
+            return;
+        }
+        if (atOuter && !v.unlocked) {
+            game.player.keysHeld--;
+            v.unlocked = true;
+            UI.addMessage('🗝 The Small Key turns. The vault breathes open.', 'special');
+        }
+        Audio.playUnlock && Audio.playUnlock();
+        const dest = atOuter ? { x: v.innerX, y: v.innerY } : { x: v.doorX, y: v.doorY };
+        game.player.x = dest.x + 0.15;
+        game.player.y = dest.y;
+        game.player.vx = 0; game.player.vy = 0;
+        game.camInitialized = false;
+        game.companionTrail = [];
+        game.companionPos = null;
+        lastPromptTile = null;
+        for (let i = 0; i < 16; i++) spawnDust(dest.x + 0.5, dest.y + 0.5, 1, '#FFD700');
+        updateFOV();
+        draw();
         return;
     }
 
@@ -1390,6 +1457,24 @@ function interact() {
     }
 
     const npc = game.npcs.find(n => entityNear(n));
+
+    if (npc && npc.type === 'merchant') {
+        openShop(game, npc);
+        return;
+    }
+    if (npc && npc.type === 'companion') {
+        // Petting the pond critters is free and mandatory.
+        const comp = COMPANIONS[npc.companionKey];
+        if (comp) {
+            UI.addMessage(`${comp.icon} You pet the ${comp.name}. ${pickPetLine()}`, 'healing');
+            Audio.playChirp && Audio.playChirp();
+            for (let i = 0; i < 8; i++) game.particles.push({
+                x: npc.x + 0.5, y: npc.y, vx: (Math.random() - 0.5) * 0.3, vy: -Math.random() * 0.4,
+                life: 1.0, color: '#FF71CE', size: 2
+            });
+        }
+        return;
+    }
 
     if (npc) {
         const figData = HISTORICAL_FIGURES[npc.figureKey];
@@ -1458,243 +1543,15 @@ function interact() {
             UI.addMessage(`Used ${item.name}. Healed ${healAmount} HP.`, "healing");
             Audio.playLoot();
             onItemCollectedForQuests(item.healingKey);
-        } else if (item.type === 'treasure') {
-            if (item.decorative) {
-                // Village dressing — no scrap, just a warm beat.
-                UI.addMessage(`You admire the ${item.name}. The village feels a little more like home.`, 'special');
-                Audio.playLoot && Audio.playLoot();
-            } else {
-                game.treasures++;
-                game.persistent.treasures++;
-                game.player.scrapEarned = (game.player.scrapEarned || 0) + 1;
-                UI.addMessage(`Picked up ${item.name}!`, 'treasure');
-                Audio.playLoot();
-            }
-        } else if (item.type === 'loot') {
-            // Tiered loot: scrap + tier-specific effect (heal, buff, perma-heart).
-            const scrap = item.scrap || 1;
-            game.treasures += scrap;
-            game.persistent.treasures += scrap;
-            game.player.scrapEarned = (game.player.scrapEarned || 0) + scrap;
-            const tierKey = item.tier || 'common';
-            const label = tierKey.toUpperCase();
-            UI.addMessage(`[${label}] ${item.name}  +${scrap} scrap!`, tierKey === 'legendary' ? 'special' : (tierKey === 'epic' ? 'special' : 'treasure'));
-            Audio.playLoot();
-            // Visual sparkle
-            for (let i = 0; i < 18; i++) {
-                game.particles.push({
-                    x: tileX(), y: tileY(),
-                    vx: (Math.random() - 0.5) * 0.5,
-                    vy: -Math.random() * 0.6,
-                    life: 1.0,
-                    color: item.glow || '#FFD700',
-                    size: 2 + Math.random() * 2
-                });
-            }
-            // Named item effect override — check NAMED_ITEM_EFFECTS first
-            const resolvedEffect = (item.name && NAMED_ITEM_EFFECTS[item.name]) ? NAMED_ITEM_EFFECTS[item.name] : item.effect;
-            if (resolvedEffect === 'hearth_stone') {
-                game.player.health = game.player.maxHealth;
-                game.player.defenseBuff = Math.max(game.player.defenseBuff || 0, 200);
-                UI.addMessage('The Hearth Stone warms you. Full heal + defense for 200 frames!', 'healing');
-                for (let i = 0; i < 30; i++) game.particles.push({
-                    x: tileX(), y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.7,
-                    life: 1.2, color: i % 2 ? '#FFD700' : '#FF8C00', size: 3
-                });
-            } else if (resolvedEffect === 'mothers_light') {
-                UI.addMessage("Mother's Fierce Light erupts! AOE damage burst!", 'special');
-                for (const troll of [...game.trolls]) {
-                    const dx = troll.x - tileX(), dy = troll.y - tileY();
-                    if (Math.sqrt(dx*dx + dy*dy) <= 3) {
-                        troll.health -= 4;
-                        game.floatingText.push({ x: troll.x, y: troll.y, text: '-4 🔥', life: 30, color: '#FFD700' });
-                        if (troll.health <= 0) {
-                            game.trolls = game.trolls.filter(t => t !== troll);
-                            game.player.kills = (game.player.kills || 0) + 1;
-                            addXP(20);
-                            onEnemyKilledForQuests(troll.enemyType);
-                        }
-                    }
-                }
-                for (let i = 0; i < 60; i++) game.particles.push({
-                    x: tileX()+0.5, y: tileY(), vx: (Math.random()-0.5)*1.2, vy: (Math.random()-0.5)*1.2,
-                    life: 1.0, color: ['#FFD700','#F5A9B8','#5BCEFA','#FFFFFF'][i%4], size: 3
-                });
-                game.screenShake = Math.max(game.screenShake || 0, 0.9);
-            } else if (resolvedEffect === 'youth_badge') {
-                addXP(50);
-                UI.addMessage('Youth OUTright Badge! +50 XP bonus!', 'special');
-            } else if (resolvedEffect === 'safe_key') {
-                // Reveal a safe shelter room on the current level
-                if (game.safeShelterRooms && game.safeShelterRooms.size === 0) {
-                    game.safeShelterRooms.add(randomRoomKey());
-                }
-                UI.addMessage('Safe Shelter Key glows. A refuge reveals itself!', 'special');
-            } else if (resolvedEffect === 'homegrown_blessing') {
-                game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 300);
-                game.player.bloomRate = 0.01;
-                UI.addMessage('Homegrown Families Blessing: gentle regen for 300 frames.', 'healing');
-            } else if (resolvedEffect === 'archival_fragment') {
-                addXP(30);
-                const fragments = [
-                    "Fragment: 'We were here before. We will be here after.'",
-                    "Fragment: 'The archive holds what they tried to burn.'",
-                    "Fragment: 'Every name erased becomes a star in our sky.'",
-                    "Fragment: 'Trans mothers built this community. Remember them.'"
-                ];
-                UI.addMessage(fragments[Math.floor(Math.random() * fragments.length)], 'special');
-            } else if (resolvedEffect === 'labeija_trophy') {
-                // Ballroom crown: stun all nearby enemies + full heal + 6s dmg buff
-                game.player.health = game.player.maxHealth;
-                game.player.lootBuff = Math.max(game.player.lootBuff || 0, 360);
-                let stunned = 0;
-                for (const troll of game.trolls) {
-                    const dx = troll.x - tileX(), dy = troll.y - tileY();
-                    if (Math.sqrt(dx*dx + dy*dy) <= 5) {
-                        if (!troll.status) troll.status = {};
-                        troll.status.shock = { duration: 180 };
-                        stunned++;
-                    }
-                }
-                UI.addMessage(`LaBeija's Trophy crowns you! Full heal + dmg boost + ${stunned} enemies stunned! THE FLOOR IS YOURS!`, 'special');
-                for (let i = 0; i < 50; i++) game.particles.push({
-                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*1.0, vy: (Math.random()-0.5)*1.0,
-                    life: 1.4, color: i % 2 ? '#FFD700' : '#FF1493', size: 3
-                });
-                game.screenShake = Math.max(game.screenShake || 0, 0.6);
-            } else if (resolvedEffect === 'mausoleum_flower') {
-                // Kenya's memorial: +3 HP + long regen + flower particles
-                game.player.health = Math.min(game.player.maxHealth, game.player.health + 3);
-                game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 400);
-                game.player.bloomRate = 0.015;
-                UI.addMessage('The Mausoleum Flower heals the living in honor of the dead. +3 HP + regen.', 'healing');
-                const flowerColors = ['#FF69B4','#FFB6C1','#FF1493','#FFD700','#FFFFFF'];
-                for (let i = 0; i < 30; i++) game.particles.push({
-                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.7, vy: -Math.random()*0.8,
-                    life: 1.3, color: flowerColors[i % flowerColors.length], size: 2.5
-                });
-            } else if (resolvedEffect === 'house_mother_sash') {
-                // Defense sash: 400-frame defense + +1 HP
-                game.player.defenseBuff = Math.max(game.player.defenseBuff || 0, 400);
-                game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
-                UI.addMessage("House Mother's Sash bestows leadership: +1 HP + defense 400 frames.", 'special');
-                for (let i = 0; i < 20; i++) game.particles.push({
-                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.6,
-                    life: 1.0, color: i % 2 ? '#FF69B4' : '#FFD700', size: 2
-                });
-            } else if (resolvedEffect === 'riveras_megaphone') {
-                // AOE knockback + stun 120 frames
-                let hit = 0;
-                for (const troll of game.trolls) {
-                    const dx = troll.x - tileX(), dy = troll.y - tileY();
-                    const dist = Math.sqrt(dx*dx + dy*dy);
-                    if (dist <= 4) {
-                        if (!troll.status) troll.status = {};
-                        troll.status.shock = { duration: 120 };
-                        troll.x += Math.sign(dx) * 2; troll.y += Math.sign(dy);
-                        hit++;
-                    }
-                }
-                UI.addMessage(`Rivera's Megaphone ROARS! ${hit} enemies knocked back + stunned!`, 'special');
-                game.screenShake = Math.max(game.screenShake || 0, 0.8);
-                for (let i = 0; i < 30; i++) game.particles.push({
-                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*1.2, vy: (Math.random()-0.5)*1.2,
-                    life: 1.0, color: i % 2 ? '#FF4500' : '#FF8C00', size: 2.5
-                });
-            } else if (resolvedEffect === 'charm_book') {
-                // Mama Gloria's Charm Book: full heal + permanent +1 HP
-                game.player.health = game.player.maxHealth + 1;
-                game.player.maxHealth += 1;
-                game.persistent.permanentHearts = (game.persistent.permanentHearts || 0) + 1;
-                saveGame();
-                UI.addMessage("Mama Gloria's Charm Book: full heal + PERMANENT +1 HEART. Head up. Shoulders back.", 'special');
-                for (let i = 0; i < 25; i++) game.particles.push({
-                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.7,
-                    life: 1.2, color: i % 2 ? '#20B2AA' : '#98FB98', size: 2
-                });
-            } else if (resolvedEffect === 'tarot_deck') {
-                // Mariela's Tarot: fortune — random good or bad + XP
-                addXP(40);
-                const fortunes = [
-                    { good: true,  msg: "The Star: hope restored. +3 HP!", hp: 3 },
-                    { good: true,  msg: "The Empress: nurturing power. +2 HP + regen.", hp: 2, regen: true },
-                    { good: false, msg: "The Tower: disruption. -1 HP, but clarity follows.", hp: -1 },
-                    { good: true,  msg: "The World: completion. +2 HP + dmg boost.", hp: 2, buff: true },
-                    { good: false, msg: "The Moon: illusion. Lose 1 HP in confusion.", hp: -1 },
-                ];
-                const fortune = fortunes[Math.floor(Math.random() * fortunes.length)];
-                game.player.health = Math.max(0.5, Math.min(game.player.maxHealth, game.player.health + fortune.hp));
-                if (fortune.regen) { game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 300); game.player.bloomRate = 0.01; }
-                if (fortune.buff) { game.player.lootBuff = Math.max(game.player.lootBuff || 0, 240); }
-                UI.addMessage(`Mariela's Tarot: ${fortune.msg}`, fortune.good ? 'healing' : 'death');
-                for (let i = 0; i < 20; i++) game.particles.push({
-                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.6, vy: -Math.random()*0.7,
-                    life: 1.0, color: ['#9370DB','#FFD700','#FF69B4'][i % 3], size: 2
-                });
-            } else if (resolvedEffect === 'boylan_memoir') {
-                // Jennifer Boylan's memoir: +200 XP + reveal all mural tiles
-                addXP(200);
-                if (game.muralTiles) {
-                    Object.keys(game.muralTiles).forEach(k => { if (game.seen) game.seen[k] = true; });
-                }
-                UI.addMessage("Boylan's Memoir: +200 XP. The archive illuminates — every story on every wall revealed.", 'special');
-            } else if (resolvedEffect === 'vicks_care') {
-                // Vicks Touch of Care: +2 HP + regen 200 frames
-                game.player.health = Math.min(game.player.maxHealth, game.player.health + 2);
-                game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 200);
-                game.player.bloomRate = 0.01;
-                UI.addMessage("Vicks Touch of Care: +2 HP + gentle regen. A mother's love has no gender.", 'healing');
-            } else if (resolvedEffect === 'sawant_petition') {
-                // Sawant's Petition: +20 XP + creates a safe shelter room
-                addXP(20);
-                if (game.safeShelterRooms && game.safeShelterRooms.size === 0) {
-                    game.safeShelterRooms.add(randomRoomKey());
-                }
-                UI.addMessage("Sawant's Petition: +20 XP. Legal momentum — a shelter opens somewhere in the archive.", 'special');
-            } else if (resolvedEffect === 'star_key') {
-                // STAR House Key: creates a new shelter room + defense buff
-                game.player.defenseBuff = Math.max(game.player.defenseBuff || 0, 250);
-                if (game.safeShelterRooms) {
-                    game.safeShelterRooms.add(randomRoomKey());
-                }
-                UI.addMessage('STAR House Key glows red. A shelter opens. Marsha and Sylvia built this for you.', 'special');
-                for (let i = 0; i < 20; i++) game.particles.push({
-                    x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.6,
-                    life: 1.0, color: i % 2 ? '#FF4500' : '#FF8C00', size: 2
-                });
-            } else if (resolvedEffect === 'small_heal') {
-                game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
-            } else if (resolvedEffect === 'big_heal') {
-                game.player.health = Math.min(game.player.maxHealth, game.player.health + 2);
-                game.player.lootBuff = Math.max(game.player.lootBuff || 0, 240);
-                UI.addMessage('Solidarity surges through you (+1 dmg / 4s)', 'healing');
-            } else if (resolvedEffect === 'rage_vial') {
-                game.player.health = Math.min(game.player.maxHealth, game.player.health + 3);
-                game.player.lootBuff = Math.max(game.player.lootBuff || 0, 360);
-                UI.addMessage('Ancestor rage in your veins (+1 dmg / 6s)', 'healing');
-            } else if (resolvedEffect === 'permanent_heart') {
-                game.persistent.permanentHearts = (game.persistent.permanentHearts || 0) + 1;
-                game.player.maxHealth += 1;
-                game.player.health = game.player.maxHealth;
-                saveGame();
-                UI.addMessage('PERMANENT +1 HEART. The lineage grows stronger.', 'special');
-            } else if (item.effect === 'small_heal') {
-                game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
-            } else if (item.effect === 'big_heal') {
-                game.player.health = Math.min(game.player.maxHealth, game.player.health + 2);
-                game.player.lootBuff = Math.max(game.player.lootBuff || 0, 240);
-                UI.addMessage('Solidarity surges through you (+1 dmg / 4s)', 'healing');
-            } else if (item.effect === 'rage_vial') {
-                game.player.health = Math.min(game.player.maxHealth, game.player.health + 3);
-                game.player.lootBuff = Math.max(game.player.lootBuff || 0, 360);
-                UI.addMessage('Ancestor rage in your veins (+1 dmg / 6s)', 'healing');
-            } else if (item.effect === 'permanent_heart') {
-                game.persistent.permanentHearts = (game.persistent.permanentHearts || 0) + 1;
-                game.player.maxHealth += 1;
-                game.player.health = game.player.maxHealth;
-                saveGame();
-                UI.addMessage('PERMANENT +1 HEART. The lineage grows stronger.', 'special');
-            }
+        } else if (item.type === 'cage') {
+            rescueCompanion(game, item.companionKey);
+            for (let i = 0; i < 20; i++) game.particles.push({
+                x: item.x + 0.5, y: item.y, vx: (Math.random() - 0.5) * 0.6, vy: -Math.random() * 0.7,
+                life: 1.1, color: i % 2 ? '#FFD700' : '#FF71CE', size: 2.5
+            });
+        } else if (collectWorldItem(game, item)) {
+            // treasure / loot / heart / key / weapon / potion / heart piece —
+            // shared with the contact auto-collect pass in update().
         } else if (item.type === 'gender-reveal') {
             // Pop the open-chest sprite where the closed chest was so the
             // player gets a brief "it opened!" beat before it disappears.
@@ -1726,6 +1583,288 @@ function interact() {
         checkVictory();
         return;
     }
+
+    // Nothing else nearby — standing at the pond's edge casts a line.
+    if (handleFishingUse(game)) return;
+}
+
+const PET_LINES = [
+    'They lean into your hand.', 'A small approving noise.', 'Instant loaf formation.',
+    'They blink slowly. That means love.', 'You feel 8% more healed emotionally.',
+    'They demand nothing and offer everything.'
+];
+function pickPetLine() { return PET_LINES[Math.floor(Math.random() * PET_LINES.length)]; }
+
+// Breakable crates ('X'): smash with any attack swing or a dash. They cough
+// up hearts, scrap, sometimes a potion — Zelda pots, QUEEKRAFT flavor.
+function tryBreakCrate(tx, ty) {
+    if (game.map[`${tx},${ty}`] !== 'X') return false;
+    game.map[`${tx},${ty}`] = '.';
+    Audio.playCrack && Audio.playCrack();
+    for (let i = 0; i < 14; i++) spawnDust(tx + 0.5, ty + 0.5, 1, i % 2 ? '#C8A24B' : '#888');
+    game.screenShake = Math.max(game.screenShake || 0, 0.3);
+    const roll = Math.random();
+    if (roll < 0.35) {
+        game.items.push({ x: tx, y: ty, type: 'heart', name: 'Heart' });
+    } else if (roll < 0.65) {
+        game.items.push({ x: tx, y: ty, type: 'treasure', name: 'Crate Scrap' });
+    } else if (roll < 0.78) {
+        game.items.push({ x: tx, y: ty, type: 'potion', potionKey: 'tonic', name: 'Herbal Tonic' });
+    }
+    return true;
+}
+
+// Applies a tiered-loot pickup's effect (named overrides first). Shared by
+// USE pickups and the Zelda-style contact auto-collect pass in update().
+function applyLootEffect(game, item) {
+    // Named item effect override — check NAMED_ITEM_EFFECTS first
+    const resolvedEffect = (item.name && NAMED_ITEM_EFFECTS[item.name]) ? NAMED_ITEM_EFFECTS[item.name] : item.effect;
+    if (resolvedEffect === 'hearth_stone') {
+        game.player.health = game.player.maxHealth;
+        game.player.defenseBuff = Math.max(game.player.defenseBuff || 0, 200);
+        UI.addMessage('The Hearth Stone warms you. Full heal + defense for 200 frames!', 'healing');
+        for (let i = 0; i < 30; i++) game.particles.push({
+            x: tileX(), y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.7,
+            life: 1.2, color: i % 2 ? '#FFD700' : '#FF8C00', size: 3
+        });
+    } else if (resolvedEffect === 'mothers_light') {
+        UI.addMessage("Mother's Fierce Light erupts! AOE damage burst!", 'special');
+        for (const troll of [...game.trolls]) {
+            const dx = troll.x - tileX(), dy = troll.y - tileY();
+            if (Math.sqrt(dx*dx + dy*dy) <= 3) {
+                troll.health -= 4;
+                game.floatingText.push({ x: troll.x, y: troll.y, text: '-4 🔥', life: 30, color: '#FFD700' });
+                if (troll.health <= 0) {
+                    game.trolls = game.trolls.filter(t => t !== troll);
+                    game.player.kills = (game.player.kills || 0) + 1;
+                    addXP(20);
+                    onEnemyKilledForQuests(troll.enemyType);
+                }
+            }
+        }
+        for (let i = 0; i < 60; i++) game.particles.push({
+            x: tileX()+0.5, y: tileY(), vx: (Math.random()-0.5)*1.2, vy: (Math.random()-0.5)*1.2,
+            life: 1.0, color: ['#FFD700','#F5A9B8','#5BCEFA','#FFFFFF'][i%4], size: 3
+        });
+        game.screenShake = Math.max(game.screenShake || 0, 0.9);
+    } else if (resolvedEffect === 'youth_badge') {
+        addXP(50);
+        UI.addMessage('Youth OUTright Badge! +50 XP bonus!', 'special');
+    } else if (resolvedEffect === 'safe_key') {
+        // Reveal a safe shelter room on the current level
+        if (game.safeShelterRooms && game.safeShelterRooms.size === 0) {
+            game.safeShelterRooms.add(randomRoomKey());
+        }
+        UI.addMessage('Safe Shelter Key glows. A refuge reveals itself!', 'special');
+    } else if (resolvedEffect === 'homegrown_blessing') {
+        game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 300);
+        game.player.bloomRate = 0.01;
+        UI.addMessage('Homegrown Families Blessing: gentle regen for 300 frames.', 'healing');
+    } else if (resolvedEffect === 'archival_fragment') {
+        addXP(30);
+        const fragments = [
+            "Fragment: 'We were here before. We will be here after.'",
+            "Fragment: 'The archive holds what they tried to burn.'",
+            "Fragment: 'Every name erased becomes a star in our sky.'",
+            "Fragment: 'Trans mothers built this community. Remember them.'"
+        ];
+        UI.addMessage(fragments[Math.floor(Math.random() * fragments.length)], 'special');
+    } else if (resolvedEffect === 'labeija_trophy') {
+        // Ballroom crown: stun all nearby enemies + full heal + 6s dmg buff
+        game.player.health = game.player.maxHealth;
+        game.player.lootBuff = Math.max(game.player.lootBuff || 0, 360);
+        let stunned = 0;
+        for (const troll of game.trolls) {
+            const dx = troll.x - tileX(), dy = troll.y - tileY();
+            if (Math.sqrt(dx*dx + dy*dy) <= 5) {
+                if (!troll.status) troll.status = {};
+                troll.status.shock = { duration: 180 };
+                stunned++;
+            }
+        }
+        UI.addMessage(`LaBeija's Trophy crowns you! Full heal + dmg boost + ${stunned} enemies stunned! THE FLOOR IS YOURS!`, 'special');
+        for (let i = 0; i < 50; i++) game.particles.push({
+            x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*1.0, vy: (Math.random()-0.5)*1.0,
+            life: 1.4, color: i % 2 ? '#FFD700' : '#FF1493', size: 3
+        });
+        game.screenShake = Math.max(game.screenShake || 0, 0.6);
+    } else if (resolvedEffect === 'mausoleum_flower') {
+        // Kenya's memorial: +3 HP + long regen + flower particles
+        game.player.health = Math.min(game.player.maxHealth, game.player.health + 3);
+        game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 400);
+        game.player.bloomRate = 0.015;
+        UI.addMessage('The Mausoleum Flower heals the living in honor of the dead. +3 HP + regen.', 'healing');
+        const flowerColors = ['#FF69B4','#FFB6C1','#FF1493','#FFD700','#FFFFFF'];
+        for (let i = 0; i < 30; i++) game.particles.push({
+            x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.7, vy: -Math.random()*0.8,
+            life: 1.3, color: flowerColors[i % flowerColors.length], size: 2.5
+        });
+    } else if (resolvedEffect === 'house_mother_sash') {
+        // Defense sash: 400-frame defense + +1 HP
+        game.player.defenseBuff = Math.max(game.player.defenseBuff || 0, 400);
+        game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
+        UI.addMessage("House Mother's Sash bestows leadership: +1 HP + defense 400 frames.", 'special');
+        for (let i = 0; i < 20; i++) game.particles.push({
+            x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.6,
+            life: 1.0, color: i % 2 ? '#FF69B4' : '#FFD700', size: 2
+        });
+    } else if (resolvedEffect === 'riveras_megaphone') {
+        // AOE knockback + stun 120 frames
+        let hit = 0;
+        for (const troll of game.trolls) {
+            const dx = troll.x - tileX(), dy = troll.y - tileY();
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist <= 4) {
+                if (!troll.status) troll.status = {};
+                troll.status.shock = { duration: 120 };
+                troll.x += Math.sign(dx) * 2; troll.y += Math.sign(dy);
+                hit++;
+            }
+        }
+        UI.addMessage(`Rivera's Megaphone ROARS! ${hit} enemies knocked back + stunned!`, 'special');
+        game.screenShake = Math.max(game.screenShake || 0, 0.8);
+        for (let i = 0; i < 30; i++) game.particles.push({
+            x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*1.2, vy: (Math.random()-0.5)*1.2,
+            life: 1.0, color: i % 2 ? '#FF4500' : '#FF8C00', size: 2.5
+        });
+    } else if (resolvedEffect === 'charm_book') {
+        // Mama Gloria's Charm Book: full heal + permanent +1 HP
+        game.player.health = game.player.maxHealth + 1;
+        game.player.maxHealth += 1;
+        game.persistent.permanentHearts = (game.persistent.permanentHearts || 0) + 1;
+        saveGame();
+        UI.addMessage("Mama Gloria's Charm Book: full heal + PERMANENT +1 HEART. Head up. Shoulders back.", 'special');
+        for (let i = 0; i < 25; i++) game.particles.push({
+            x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.7,
+            life: 1.2, color: i % 2 ? '#20B2AA' : '#98FB98', size: 2
+        });
+    } else if (resolvedEffect === 'tarot_deck') {
+        // Mariela's Tarot: fortune — random good or bad + XP
+        addXP(40);
+        const fortunes = [
+            { good: true,  msg: "The Star: hope restored. +3 HP!", hp: 3 },
+            { good: true,  msg: "The Empress: nurturing power. +2 HP + regen.", hp: 2, regen: true },
+            { good: false, msg: "The Tower: disruption. -1 HP, but clarity follows.", hp: -1 },
+            { good: true,  msg: "The World: completion. +2 HP + dmg boost.", hp: 2, buff: true },
+            { good: false, msg: "The Moon: illusion. Lose 1 HP in confusion.", hp: -1 },
+        ];
+        const fortune = fortunes[Math.floor(Math.random() * fortunes.length)];
+        game.player.health = Math.max(0.5, Math.min(game.player.maxHealth, game.player.health + fortune.hp));
+        if (fortune.regen) { game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 300); game.player.bloomRate = 0.01; }
+        if (fortune.buff) { game.player.lootBuff = Math.max(game.player.lootBuff || 0, 240); }
+        UI.addMessage(`Mariela's Tarot: ${fortune.msg}`, fortune.good ? 'healing' : 'death');
+        for (let i = 0; i < 20; i++) game.particles.push({
+            x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.6, vy: -Math.random()*0.7,
+            life: 1.0, color: ['#9370DB','#FFD700','#FF69B4'][i % 3], size: 2
+        });
+    } else if (resolvedEffect === 'boylan_memoir') {
+        // Jennifer Boylan's memoir: +200 XP + reveal all mural tiles
+        addXP(200);
+        if (game.muralTiles) {
+            Object.keys(game.muralTiles).forEach(k => { if (game.seen) game.seen[k] = true; });
+        }
+        UI.addMessage("Boylan's Memoir: +200 XP. The archive illuminates — every story on every wall revealed.", 'special');
+    } else if (resolvedEffect === 'vicks_care') {
+        // Vicks Touch of Care: +2 HP + regen 200 frames
+        game.player.health = Math.min(game.player.maxHealth, game.player.health + 2);
+        game.player.bloomRegen = Math.max(game.player.bloomRegen || 0, 200);
+        game.player.bloomRate = 0.01;
+        UI.addMessage("Vicks Touch of Care: +2 HP + gentle regen. A mother's love has no gender.", 'healing');
+    } else if (resolvedEffect === 'sawant_petition') {
+        // Sawant's Petition: +20 XP + creates a safe shelter room
+        addXP(20);
+        if (game.safeShelterRooms && game.safeShelterRooms.size === 0) {
+            game.safeShelterRooms.add(randomRoomKey());
+        }
+        UI.addMessage("Sawant's Petition: +20 XP. Legal momentum — a shelter opens somewhere in the archive.", 'special');
+    } else if (resolvedEffect === 'star_key') {
+        // STAR House Key: creates a new shelter room + defense buff
+        game.player.defenseBuff = Math.max(game.player.defenseBuff || 0, 250);
+        if (game.safeShelterRooms) {
+            game.safeShelterRooms.add(randomRoomKey());
+        }
+        UI.addMessage('STAR House Key glows red. A shelter opens. Marsha and Sylvia built this for you.', 'special');
+        for (let i = 0; i < 20; i++) game.particles.push({
+            x: tileX() + 0.5, y: tileY(), vx: (Math.random()-0.5)*0.5, vy: -Math.random()*0.6,
+            life: 1.0, color: i % 2 ? '#FF4500' : '#FF8C00', size: 2
+        });
+    } else if (resolvedEffect === 'small_heal') {
+        game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
+    } else if (resolvedEffect === 'big_heal') {
+        game.player.health = Math.min(game.player.maxHealth, game.player.health + 2);
+        game.player.lootBuff = Math.max(game.player.lootBuff || 0, 240);
+        UI.addMessage('Solidarity surges through you (+1 dmg / 4s)', 'healing');
+    } else if (resolvedEffect === 'rage_vial') {
+        game.player.health = Math.min(game.player.maxHealth, game.player.health + 3);
+        game.player.lootBuff = Math.max(game.player.lootBuff || 0, 360);
+        UI.addMessage('Ancestor rage in your veins (+1 dmg / 6s)', 'healing');
+    } else if (resolvedEffect === 'permanent_heart') {
+        game.persistent.permanentHearts = (game.persistent.permanentHearts || 0) + 1;
+        game.player.maxHealth += 1;
+        game.player.health = game.player.maxHealth;
+        saveGame();
+        UI.addMessage('PERMANENT +1 HEART. The lineage grows stronger.', 'special');
+    }
+}
+
+// Contact pickups: hearts, scrap, tiered loot, keys, weapons, potions, heart
+// pieces. Returns true when the item type is handled here, so interact() and
+// the auto-collect pass share one implementation.
+function collectWorldItem(game, item) {
+    if (item.type === 'heart') {
+        game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
+        game.floatingText.push({ x: item.x, y: item.y, text: '+♥', life: 26, color: '#FF71CE' });
+        Audio.playLoot();
+        UI.updateStatus(game);
+        return true;
+    }
+    if (item.type === 'key') {
+        game.player.keysHeld = (game.player.keysHeld || 0) + 1;
+        UI.addMessage(`🗝 Small Key (×${game.player.keysHeld}). Somewhere a golden door waits.`, 'special');
+        Audio.playUnlock && Audio.playUnlock();
+        return true;
+    }
+    if (item.type === 'weapon') { addWeapon(game, item.weaponKey); return true; }
+    if (item.type === 'potion') { addPotion(game, item.potionKey || 'tonic'); return true; }
+    if (item.type === 'heart_piece') { addHeartPiece(game); Audio.playLoot(); return true; }
+    if (item.type === 'treasure') {
+        if (item.decorative) {
+            // Village dressing — no scrap, just a warm beat.
+            UI.addMessage(`You admire the ${item.name}. The village feels a little more like home.`, 'special');
+            Audio.playLoot && Audio.playLoot();
+        } else {
+            game.treasures++;
+            game.persistent.treasures++;
+            game.player.scrapEarned = (game.player.scrapEarned || 0) + 1;
+            UI.addMessage(`Picked up ${item.name}!`, 'treasure');
+            Audio.playLoot();
+        }
+        return true;
+    }
+    if (item.type === 'loot') {
+        // Tiered loot: scrap + tier-specific effect (heal, buff, perma-heart).
+        const scrap = item.scrap || 1;
+        game.treasures += scrap;
+        game.persistent.treasures += scrap;
+        game.player.scrapEarned = (game.player.scrapEarned || 0) + scrap;
+        const tierKey = item.tier || 'common';
+        UI.addMessage(`[${tierKey.toUpperCase()}] ${item.name}  +${scrap} scrap!`, (tierKey === 'legendary' || tierKey === 'epic') ? 'special' : 'treasure');
+        Audio.playLoot();
+        // Visual sparkle
+        for (let i = 0; i < 18; i++) {
+            game.particles.push({
+                x: item.x + 0.5, y: item.y,
+                vx: (Math.random() - 0.5) * 0.5,
+                vy: -Math.random() * 0.6,
+                life: 1.0,
+                color: item.glow || '#FFD700',
+                size: 2 + Math.random() * 2
+            });
+        }
+        applyLootEffect(game, item);
+        return true;
+    }
+    return false;
 }
 
 // Fires the victory screen exactly once per session when the collection goals
@@ -1760,11 +1899,27 @@ function checkPickups() {
         UI.addMessage(`You see: ${item.name}. Press USE/F to interact.`);
         lastPromptTile = key;
     } else if (npc) {
-        const fig = HISTORICAL_FIGURES[npc.figureKey];
-        UI.addMessage(`You see ${fig ? fig.name : 'a historical figure'}. Press USE/F to speak.`);
+        if (npc.type === 'merchant') {
+            UI.addMessage(`🛒 Mercy's Mutual Aid Cart. Press USE/F to browse.`);
+        } else if (npc.type === 'companion') {
+            const comp = COMPANIONS[npc.companionKey];
+            UI.addMessage(`${comp ? comp.icon + ' ' + comp.name : 'A critter'} is lazing here. Press USE/F to pet.`);
+        } else {
+            const fig = HISTORICAL_FIGURES[npc.figureKey];
+            UI.addMessage(`You see ${fig ? fig.name : 'a historical figure'}. Press USE/F to speak.`);
+        }
+        lastPromptTile = key;
+    } else if (game.map[key] === 'V') {
+        const locked = game.vault && !game.vault.unlocked;
+        UI.addMessage(locked
+            ? `🔒 A golden vault door. ${game.player.keysHeld > 0 ? 'Press USE/F to unlock it.' : 'It wants a Small Key.'}`
+            : `🚪 The vault stands open. Press USE/F to step through.`);
+        lastPromptTile = key;
+    } else if (!isFishing(game) && nearWater(game)) {
+        UI.addMessage('🎣 The pond glitters. Press USE/F to cast a line.');
         lastPromptTile = key;
     } else if (game.map[key] === '>') {
-        const nLeft = game.npcs.length;
+        const nLeft = game.npcs.filter(n => n.type === 'historical' || n.type === 'echo').length;
         const zLeft = game.items.filter(i => i.type === 'zine').length;
         if (nLeft > 0 || zLeft > 0) {
             const parts = [];
@@ -1925,8 +2080,8 @@ function pointSolid(px, py) {
     const x = Math.floor(px), y = Math.floor(py);
     if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return true;
     const t = game.map[`${x},${y}`];
-    // Walls + ice + trampolines are full-height solids.
-    return t === '#' || t === '~' || t === 'T';
+    // Walls + ice + trampolines + crates + water are full-height solids.
+    return t === '#' || t === '~' || t === 'T' || t === 'X' || t === 'W';
 }
 
 // True when feet at `feetY` should land on a one-way platform — the platform
@@ -2205,6 +2360,26 @@ function update(dt) {
     // Combo timer — resets the chain after 1 second of inaction.
     tickCombo(game);
     if (p.hitstun > 0) p.hitstun--;
+    if (p.shockAuraTimer > 0) p.shockAuraTimer--;
+
+    // Companion follow + perks, and any line currently in the water.
+    updateCompanion(game);
+    updateFishing(game);
+
+    // Zelda-style contact pickups — hearts, scrap, loot, keys fly into you.
+    {
+        const AUTO_TYPES = ['heart', 'treasure', 'loot', 'key', 'weapon', 'potion', 'heart_piece'];
+        for (let i = game.items.length - 1; i >= 0; i--) {
+            const it = game.items[i];
+            if (!AUTO_TYPES.includes(it.type) || it.decorative) continue;
+            const d = Math.hypot((p.x + PLAYER_W / 2) - (it.x + 0.5), (p.y + PLAYER_H / 2) - (it.y + 0.5));
+            if (d < 0.9) {
+                game.items.splice(i, 1);
+                collectWorldItem(game, it);
+                UI.updateStatus(game);
+            }
+        }
+    }
 
     // Charge meter ticks while E is held (capped at 120).
     if (p.chargeAttack > 0 && p.chargeAttack < 120) p.chargeAttack++;
@@ -2299,6 +2474,9 @@ function update(dt) {
     if (p.dashTimer > 0) {
         effectiveVx = p.dashDir * 9;
         p.vy = Math.min(p.vy, 0.5); // float during dash
+        // Dashing shoulder-checks crates to splinters.
+        const aheadX = Math.floor(p.x + (p.dashDir > 0 ? PLAYER_W + 0.2 : -0.2));
+        tryBreakCrate(aheadX, tileY());
     }
 
     // Sub-step movement to avoid tunneling at high speeds
@@ -2390,6 +2568,31 @@ function update(dt) {
         const w = 0.8, h = 0.8;
         moveEntityX(troll, (troll.vx || 0) * 0.1, w, h);
         moveEnemyY(troll, (troll.vy || 0) * 0.1, w, h);
+    }
+
+    // Boss projectiles — lobbed paperwork with gravity. Pops on walls, the
+    // player, or timeout.
+    if (game.projectiles && game.projectiles.length) {
+        for (let i = game.projectiles.length - 1; i >= 0; i--) {
+            const pr = game.projectiles[i];
+            pr.vy += GRAVITY * 0.35;
+            pr.x += pr.vx * 0.1;
+            pr.y += pr.vy * 0.1;
+            pr.life--;
+            pr.spin = (pr.spin || 0) + 0.2;
+            const tile = game.map[`${Math.floor(pr.x)},${Math.floor(pr.y)}`];
+            const hitWall = tile === '#' || tile === '~' || tile === 'T' || tile === 'X';
+            const hitPlayer = Math.abs(pr.x - (p.x + PLAYER_W / 2)) < 0.55 &&
+                              Math.abs(pr.y - (p.y + PLAYER_H / 2)) < 0.65;
+            if (hitPlayer) takeDamage(game, 1);
+            if (pr.life <= 0 || hitWall || hitPlayer) {
+                for (let j = 0; j < 8; j++) game.particles.push({
+                    x: pr.x, y: pr.y, vx: (Math.random() - 0.5) * 0.5, vy: -Math.random() * 0.4,
+                    life: 0.7, color: pr.color || '#FFD700', size: 2
+                });
+                game.projectiles.splice(i, 1);
+            }
+        }
     }
 
     // Enemy AI / cooldown tick (turn-style every ~10 frames)
@@ -2522,8 +2725,10 @@ function draw() {
 
             ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
             if (r.tile === '#') {
-                // Hearth rooms use warm amber glow on walls
+                // Hearth rooms use warm amber glow on walls. Castle floors read
+                // as old gold stone; special rooms still override it.
                 let wallGlow = r.isVisible ? 'rgba(255,113,206,0.3)' : null;
+                if (game.castleFloor && r.isVisible) wallGlow = 'rgba(212,175,55,0.32)';
                 if (inHearth && r.isVisible) wallGlow = 'rgba(255,160,50,0.35)';
                 if (inShelter && r.isVisible) wallGlow = 'rgba(91,206,250,0.35)';
                 if (inBallroom && r.isVisible) wallGlow = 'rgba(255,215,0,0.40)';
@@ -2551,6 +2756,37 @@ function draw() {
                     ctx.fillText(mural, sx + T / 2, sy + T - 2);
                     ctx.textAlign = 'left';
                     ctx.restore();
+                    ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+                }
+            } else if (r.tile === 'W') {
+                // Pond water — animated surface shimmer over deep blue.
+                drawTile(ctx, sx, sy, '#0a2740', false, null, r.isVisible ? patterns.water : null);
+                if (r.isVisible) {
+                    ctx.globalAlpha = 0.8;
+                    ctx.fillStyle = 'rgba(91,206,250,0.5)';
+                    ctx.fillRect(sx, sy, T, 3);
+                    const glint = 0.25 + Math.sin(game.animFrame * 0.08 + r.x * 1.7) * 0.15;
+                    ctx.fillStyle = `rgba(255,255,255,${glint})`;
+                    ctx.fillRect(sx + 4 + ((game.animFrame / 3 + r.x * 7) % (T - 10)), sy + 7, 4, 1.5);
+                    ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
+                }
+            } else if (r.tile === 'X') {
+                // Breakable crate — banded box, visibly cracked.
+                drawTile(ctx, sx, sy, '#3a2a18', true, r.isVisible ? 'rgba(200,162,75,0.5)' : null, null);
+                if (r.isVisible) {
+                    ctx.globalAlpha = 1;
+                    ctx.strokeStyle = '#C8A24B';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(sx + 3, sy + 3, T - 6, T - 6);
+                    ctx.beginPath();
+                    ctx.moveTo(sx + 3, sy + 3); ctx.lineTo(sx + T - 3, sy + T - 3);
+                    ctx.moveTo(sx + T - 3, sy + 3); ctx.lineTo(sx + 3, sy + T - 3);
+                    ctx.stroke();
+                    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(sx + 8, sy + 6); ctx.lineTo(sx + 14, sy + 14); ctx.lineTo(sx + 10, sy + 22);
+                    ctx.stroke();
                     ctx.globalAlpha = r.isVisible ? 0.7 : 0.2;
                 }
             } else if (r.tile === '~') {
@@ -2674,6 +2910,26 @@ function draw() {
                     ctx.globalAlpha = 1.0;
                     ctx.beginPath(); ctx.arc(sx + T/2, sy + T/2, 8, 0, Math.PI*2); ctx.fill();
                     ctx.shadowBlur = 0;
+                } else if (r.tile === 'V') {
+                    // Vault door — gold, humming, keyhole front and center.
+                    ctx.globalAlpha = 1.0;
+                    ctx.fillStyle = '#1a1206';
+                    ctx.fillRect(sx + 6, sy + 2, T - 12, T - 2);
+                    ctx.strokeStyle = '#FFD700';
+                    ctx.shadowColor = '#FFD700';
+                    ctx.shadowBlur = 10 + Math.sin(game.animFrame * 0.1) * 4;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(sx + 6, sy + 2, T - 12, T - 2);
+                    ctx.fillStyle = '#FFD700';
+                    ctx.beginPath();
+                    ctx.arc(sx + T/2, sy + T/2 - 2, 3.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillRect(sx + T/2 - 1, sy + T/2 - 2, 2, 8);
+                    ctx.shadowBlur = 0;
+                    ctx.font = 'bold 11px VT323';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(game.vault && game.vault.unlocked ? 'VAULT' : '🔒 VAULT', sx + T/2, sy - 2);
+                    ctx.textAlign = 'left';
                 } else if (r.tile === '=') {
                     // One-way platform: a thin neon ledge along the top of the tile.
                     ctx.globalAlpha = 1.0;
@@ -2794,6 +3050,86 @@ function draw() {
                     // Draw a cross/plus — scaled up for visibility
                     ctx.fillRect(drawX - 4, drawY - 20 + bob, 8, 18);
                     ctx.fillRect(drawX - 10, drawY - 14 + bob, 20, 8);
+                } else if (r.entity.type === 'heart') {
+                    // Dropped heart — pulses, begs to be touched.
+                    const bob = Math.sin(game.animFrame * 0.3) * 2;
+                    const pulse = 1 + Math.sin(game.animFrame * 0.25) * 0.15;
+                    ctx.font = `${Math.round(17 * pulse)}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = '#FF71CE';
+                    ctx.shadowColor = '#FF71CE'; ctx.shadowBlur = 12;
+                    ctx.fillText('♥', drawX, drawY - 6 + bob);
+                    ctx.shadowBlur = 0; ctx.textAlign = 'left';
+                } else if (r.entity.type === 'heart_piece') {
+                    // Quarter of a permanent heart — gold and serious about it.
+                    const bob = Math.sin(game.animFrame * 0.22) * 2.5;
+                    ctx.font = '18px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = '#FFD700';
+                    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 14;
+                    ctx.fillText('♥', drawX, drawY - 8 + bob);
+                    ctx.shadowBlur = 0;
+                    ctx.font = 'bold 9px VT323';
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillText('¼', drawX + 7, drawY - 16 + bob);
+                    ctx.textAlign = 'left';
+                } else if (r.entity.type === 'key') {
+                    // Small key — ring, shaft, teeth.
+                    const bob = Math.sin(game.animFrame * 0.25) * 2;
+                    ctx.strokeStyle = '#FFE08A';
+                    ctx.fillStyle = '#FFE08A';
+                    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 10;
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath();
+                    ctx.arc(drawX - 4, drawY - 14 + bob, 4, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.fillRect(drawX, drawY - 15.5 + bob, 10, 3);
+                    ctx.fillRect(drawX + 6, drawY - 12.5 + bob, 2, 4);
+                    ctx.fillRect(drawX + 9, drawY - 12.5 + bob, 2, 3);
+                    ctx.shadowBlur = 0;
+                } else if (r.entity.type === 'weapon') {
+                    const w = WEAPONS[r.entity.weaponKey];
+                    const bob = Math.sin(game.animFrame * 0.2) * 2.5;
+                    const tierColor = w && w.tier === 'legendary' ? '#FFD700' : w && w.tier === 'rare' ? '#01CDFE' : '#39FF14';
+                    ctx.globalAlpha = 0.35;
+                    ctx.fillStyle = tierColor;
+                    ctx.shadowColor = tierColor; ctx.shadowBlur = 16;
+                    ctx.beginPath(); ctx.arc(drawX, drawY - 10 + bob, 10, 0, Math.PI * 2); ctx.fill();
+                    ctx.globalAlpha = 1;
+                    ctx.font = '20px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(w ? w.icon : '⚔', drawX, drawY - 4 + bob);
+                    ctx.shadowBlur = 0; ctx.textAlign = 'left';
+                } else if (r.entity.type === 'potion') {
+                    const pot = POTIONS[r.entity.potionKey] || POTIONS.tonic;
+                    const bob = Math.sin(game.animFrame * 0.3) * 2;
+                    ctx.font = '17px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.shadowColor = '#01CDFE'; ctx.shadowBlur = 8;
+                    ctx.fillText(pot.icon, drawX, drawY - 5 + bob);
+                    ctx.shadowBlur = 0; ctx.textAlign = 'left';
+                } else if (r.entity.type === 'cage') {
+                    // Rattling cage with a critter inside — shakes, hopes.
+                    const rattle = (game.animFrame % 40 < 6) ? (Math.random() - 0.5) * 2 : 0;
+                    drawCritter(ctx, r.entity.companionKey, drawX + rattle, drawY - 6, game.animFrame, 0.8);
+                    ctx.strokeStyle = '#9a9a9a';
+                    ctx.lineWidth = 2;
+                    ctx.shadowColor = '#B967DB'; ctx.shadowBlur = 6;
+                    ctx.strokeRect(drawX - 12 + rattle, drawY - 26, 24, 26);
+                    for (let bx = -8; bx <= 8; bx += 4) {
+                        ctx.beginPath();
+                        ctx.moveTo(drawX + bx + rattle, drawY - 26);
+                        ctx.lineTo(drawX + bx + rattle, drawY);
+                        ctx.stroke();
+                    }
+                    ctx.shadowBlur = 0;
+                    if (game.animFrame % 90 < 45) {
+                        ctx.font = 'bold 11px VT323';
+                        ctx.textAlign = 'center';
+                        ctx.fillStyle = '#FFD700';
+                        ctx.fillText('help!', drawX, drawY - 32);
+                        ctx.textAlign = 'left';
+                    }
                 } else if (r.entity.type === 'loot') {
                     // Tier-glowing pickup. Higher tiers pulse harder + emit upward sparkles.
                     const tier = r.entity.tier || 'common';
@@ -2858,6 +3194,40 @@ function draw() {
                         ctx.fillRect(drawX - 1, drawY - 8 + bob, 2, 6);
                     }
                 }
+            } else if (r.type === 'npc' && r.entity.type === 'merchant') {
+                // Mercy's Mutual Aid Cart — awning, wheels, warm lamp glow.
+                const sway = Math.sin(game.animFrame * 0.1) * 1;
+                ctx.save();
+                ctx.globalAlpha = 0.25;
+                ctx.fillStyle = '#FFD700';
+                ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 18;
+                ctx.beginPath(); ctx.ellipse(drawX, drawY - 8, 22, 10, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.shadowBlur = 0;
+                // Cart body + wheels
+                ctx.fillStyle = '#5a3a1a';
+                ctx.fillRect(drawX - 16, drawY - 16, 32, 12);
+                ctx.fillStyle = '#3a2510';
+                ctx.beginPath(); ctx.arc(drawX - 9, drawY - 2, 5, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(drawX + 9, drawY - 2, 5, 0, Math.PI * 2); ctx.fill();
+                // Striped awning
+                for (let a = 0; a < 4; a++) {
+                    ctx.fillStyle = a % 2 ? '#FF71CE' : '#FFFFFF';
+                    ctx.fillRect(drawX - 18 + a * 9, drawY - 24 + sway, 9, 6);
+                }
+                // Mercy herself
+                ctx.font = '16px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('👵🏾', drawX, drawY - 26 + sway);
+                ctx.font = 'bold 11px VT323';
+                ctx.fillStyle = '#FFD700';
+                ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 8;
+                ctx.fillText('SHOP', drawX, drawY - 40 + sway);
+                ctx.restore();
+                ctx.textAlign = 'left';
+            } else if (r.type === 'npc' && r.entity.type === 'companion') {
+                // Rescued critters lounging around the Safehouse pond.
+                drawCritter(ctx, r.entity.companionKey, drawX, drawY, game.animFrame, 1);
             } else if (r.type === 'npc' && r.entity.type === 'echo') {
                 // ECHO character — a figure from a half-lost story, rendered as
                 // an unstable, datamosh-flickering silhouette. Not the polished
@@ -3061,7 +3431,32 @@ function draw() {
                             ctx.fillRect(drawX - 12, drawY - h + 10 + bob, 8, 6);
                             ctx.fillRect(drawX + 4, drawY - h + 10 + bob, 8, 6);
                         }
+                        // THE LANDLORD KING wears the crown.
+                        if (game.depth >= 10) {
+                            if (imgReady(images.loot_crown)) {
+                                ctx.drawImage(images.loot_crown, drawX - 16, drawY - h - 22 + bob, 32, 26);
+                            } else {
+                                ctx.font = '20px sans-serif';
+                                ctx.textAlign = 'center';
+                                ctx.fillText('👑', drawX, drawY - h - 6 + bob);
+                                ctx.textAlign = 'left';
+                            }
+                        }
                     }
+                }
+
+                // Elite halo — the gold-ringed ones hit harder and drop better.
+                if (r.entity.elite) {
+                    ctx.save();
+                    ctx.strokeStyle = '#FFD700';
+                    ctx.globalAlpha = 0.5 + Math.sin(game.animFrame * 0.15) * 0.25;
+                    ctx.lineWidth = 2;
+                    ctx.shadowColor = '#FFD700';
+                    ctx.shadowBlur = 10;
+                    ctx.beginPath();
+                    ctx.ellipse(drawX, drawY, size * 0.8 + 6, 6, 0, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
                 }
                 
                 // Health Bar for all enemies — scaled to match new sprite widths
@@ -3247,6 +3642,26 @@ function draw() {
             ctx.shadowBlur = 0;
         }
     });
+
+    // Active companion trails the player; the fishing line sits over the pond.
+    drawCompanion(game, ctx, camX, camY, T);
+    drawFishing(game, ctx, camX, camY, T);
+
+    // Boss projectiles — spinning gold paperwork.
+    for (const pr of game.projectiles || []) {
+        const psx = pr.x * T + camX, psy = pr.y * T + camY;
+        ctx.save();
+        ctx.translate(psx, psy);
+        ctx.rotate(pr.spin || 0);
+        ctx.fillStyle = '#FFF8DC';
+        ctx.shadowColor = '#FFD700';
+        ctx.shadowBlur = 8;
+        ctx.fillRect(-5, -6, 10, 12);
+        ctx.fillStyle = '#B8860B';
+        ctx.fillRect(-3, -3, 6, 1.5);
+        ctx.fillRect(-3, 0, 6, 1.5);
+        ctx.restore();
+    }
 
     // Draw Ground Effects (Class Signatures)
     if (game.groundEffects) {
@@ -3623,22 +4038,33 @@ function draw() {
                 : t === '>' ? '#01CDFE'
                 : t === 'H' ? '#C8A24B'
                 : t === '^' ? '#5a1020'
+                : t === 'V' ? '#FFD700'
+                : t === 'X' ? '#7a5a2a'
+                : t === 'W' ? '#1a5a8a'
                 : '#1a1a1a';
             ctx.fillRect(mmX + x*MM, mmY + y*MM, MM, MM);
         }
     }
     // Objective markers — uncollected zines (white) and unmet ancestors (pink)
     // so the player can see exactly where to backtrack to. Echoes show purple.
+    // The Compass item reveals markers even on unexplored tiles.
+    const compass = !!game.player.hasCompass;
     for (const it of game.items) {
-        if (!game.seen[`${it.x},${it.y}`]) continue;
+        if (!game.seen[`${it.x},${it.y}`] && !compass) continue;
         if (it.type === 'zine') ctx.fillStyle = '#FFFFFF';
         else if (it.type === 'gender-reveal') ctx.fillStyle = '#FFD700';
+        else if (it.type === 'key') ctx.fillStyle = '#FFE08A';
+        else if (it.type === 'heart_piece') ctx.fillStyle = '#FF99BB';
+        else if (it.type === 'cage') ctx.fillStyle = '#39FF14';
         else continue;
         ctx.fillRect(mmX + it.x*MM - 1, mmY + it.y*MM - 1, MM + 1, MM + 1);
     }
     for (const n of game.npcs) {
-        if (!game.seen[`${n.x},${n.y}`]) continue;
-        ctx.fillStyle = n.type === 'echo' ? '#B967DB' : '#FF71CE';
+        if (!game.seen[`${n.x},${n.y}`] && !compass) continue;
+        ctx.fillStyle = n.type === 'echo' ? '#B967DB'
+            : n.type === 'merchant' ? '#FFD700'
+            : n.type === 'companion' ? '#39FF14'
+            : '#FF71CE';
         ctx.fillRect(mmX + n.x*MM - 1, mmY + n.y*MM - 1, MM + 1, MM + 1);
     }
     // Player marker (green) drawn last so it sits on top of objective dots.
@@ -4013,13 +4439,26 @@ function setupControls() {
             }
         }
 
+        // Bag toggle (I) opens over gameplay and closes over itself, but never
+        // fights another modal for the screen.
+        if (e.code === 'KeyI' && gameStarted) {
+            const others = [UI.modals.zine, UI.modals.conversation, UI.modals.levelUp,
+                UI.modals.victory, UI.modals.gameOver, UI.modals.heirSelect, UI.modals.camp];
+            if (!others.some(m => m.style.display === 'flex')) {
+                toggleInventory(game);
+                e.preventDefault();
+                return;
+            }
+        }
+
         if (UI.modals.zine.style.display === 'flex' ||
             UI.modals.conversation.style.display === 'flex' ||
             UI.modals.levelUp.style.display === 'flex' ||
             UI.modals.victory.style.display === 'flex' ||
             UI.modals.gameOver.style.display === 'flex' ||
             UI.modals.heirSelect.style.display === 'flex' ||
-            UI.modals.camp.style.display === 'flex') return;
+            UI.modals.camp.style.display === 'flex' ||
+            (UI.modals.inventory && UI.modals.inventory.style.display === 'flex')) return;
         if (paused || game.player.hitstun > 0) return;
 
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'ArrowDown' || e.code === 'KeyS') {
@@ -4058,7 +4497,9 @@ function setupControls() {
             let dirY = 0;
             if (upHeld) dirY = -1;
             else if (downHeld && !game.player.onGround) dirY = 1;
-            attackEnemy(game, game.player.facingX, 0, 'quick', dirY);
+            if (!attackEnemy(game, game.player.facingX, 0, 'quick', dirY)) {
+                tryBreakCrate(tileX() + game.player.facingX, tileY());
+            }
         } else if (e.code === 'KeyE') {
             // Begin charging — holding builds the meter; release in keyup.
             game.player.chargeAttack = 1;
@@ -4073,6 +4514,9 @@ function setupControls() {
             questLogVisible = !questLogVisible;
         } else if (e.code === 'KeyC') {
             UI.showCodex(game);
+        } else if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3' || e.code === 'Digit4') {
+            const potByKey = { Digit1: 'tonic', Digit2: 'brew', Digit3: 'warpaint', Digit4: 'ward' };
+            usePotion(game, potByKey[e.code]);
         } else if (e.code === 'F1') {
             showFps = !showFps;
             e.preventDefault();
@@ -4108,9 +4552,13 @@ function setupControls() {
                 attackEnemy(game, fx, -1, 'power');
                 attackEnemy(game, fx, 1, 'power');
             } else if (charged) {
-                attackEnemy(game, game.player.facingX || 1, 0, 'power');
+                if (!attackEnemy(game, game.player.facingX || 1, 0, 'power')) {
+                    tryBreakCrate(tileX() + (game.player.facingX || 1), tileY());
+                }
             } else {
-                attackEnemy(game, game.player.facingX || 1, 0, 'quick');
+                if (!attackEnemy(game, game.player.facingX || 1, 0, 'quick')) {
+                    tryBreakCrate(tileX() + (game.player.facingX || 1), tileY());
+                }
             }
             game.player.chargeAttack = 0;
             game.player.chargeReady = false;
@@ -4355,7 +4803,9 @@ function setupControls() {
                     showPowerFlash();
                 } else {
                     const dirY = touchAxis.y > 0.4 && !game.player.onGround ? 1 : 0;
-                    attackEnemy(game, fx, 0, 'quick', dirY);
+                    if (!attackEnemy(game, fx, 0, 'quick', dirY)) {
+                        tryBreakCrate(tileX() + fx, tileY());
+                    }
                     mobileCombo++;
                     clearTimeout(comboTimeout);
                     comboTimeout = setTimeout(clearCombo, COMBO_MS);
@@ -4540,6 +4990,16 @@ window.__openCodex = () => UI.showCodex(game);
     btn.style.cssText = 'position:fixed;right:8px;top:44px;z-index:600;width:40px;height:40px;border-radius:50%;border:2px solid #FFD700;background:rgba(20,10,30,0.85);color:#FFD700;font-size:20px;cursor:pointer;box-shadow:0 0 12px rgba(255,215,0,0.5);touch-action:manipulation;';
     btn.onclick = () => UI.showCodex(game);
     document.body.appendChild(btn);
+
+    // Bag FAB — the touch path to weapons/potions/snacks/companions (key I).
+    const bagBtn = document.createElement('button');
+    bagBtn.id = 'bag-fab';
+    bagBtn.textContent = '🎒';
+    bagBtn.title = 'Bag / Inventory (I)';
+    bagBtn.setAttribute('aria-label', 'Open Bag');
+    bagBtn.style.cssText = 'position:fixed;right:8px;top:140px;z-index:600;width:40px;height:40px;border-radius:50%;border:2px solid #39FF14;background:rgba(10,30,15,0.85);color:#39FF14;font-size:20px;cursor:pointer;box-shadow:0 0 12px rgba(57,255,20,0.5);touch-action:manipulation;';
+    bagBtn.onclick = () => toggleInventory(game);
+    document.body.appendChild(bagBtn);
 
     const wireClose = (closeId, modalId) => {
         const c = document.getElementById(closeId);

@@ -1,4 +1,4 @@
-import { ZINES, HISTORICAL_FIGURES, DIFFICULTIES, GEMINI_GUIDE, STORY_CARDS, STORY_CARD_KEYS, GOALS } from './data.js';
+import { ZINES, HISTORICAL_FIGURES, DIFFICULTIES, GEMINI_GUIDE, STORY_CARDS, STORY_CARD_KEYS, GOALS, FISH, COMPANIONS } from './data.js';
 import { Audio } from './audio.js';
 
 export const UI = {
@@ -11,7 +11,8 @@ export const UI = {
         echoes: document.getElementById('echoes'),
         treasures: document.getElementById('treasures'),
         level: document.getElementById('player-level'),
-        xpBar: document.getElementById('xp-bar-fill')
+        xpBar: document.getElementById('xp-bar-fill'),
+        keys: document.getElementById('keys')
     },
     modals: {
         zine: document.getElementById('zine-modal'),
@@ -44,6 +45,7 @@ export const UI = {
             this.status.echoes.textContent = e;
         }
         this.status.treasures.textContent = game.treasures;
+        if (this.status.keys) this.status.keys.textContent = game.player.keysHeld || 0;
         this.status.level.textContent = game.player.level || 1;
         
         const xpRatio = (game.player.xp || 0) / (game.player.xpToNext || 100);
@@ -462,7 +464,7 @@ export const UI = {
     anyModalOpen() {
         const ids = ['zine-modal', 'conversation-modal', 'victory-screen', 'game-over-screen',
                      'heir-select-screen', 'camp-screen', 'level-up-screen', 'mural-screen',
-                     'codex-modal', 'story-card-modal'];
+                     'codex-modal', 'story-card-modal', 'inventory-modal'];
         return ids.some(id => {
             const el = document.getElementById(id);
             return el && getComputedStyle(el).display !== 'none';
@@ -511,6 +513,22 @@ export const UI = {
             if (!f) return;
             cards.push({ name: f.name, type: 'Echo', era: f.era, icon: '📼',
                          color: '#B967DB', entry: f.fact || '' });
+        });
+        // Fish-dex — every species pulled from the Safehouse pond.
+        const dex = (game.persistent && game.persistent.fishDex) || {};
+        Object.keys(dex).forEach(key => {
+            const f = FISH[key];
+            if (!f) return;
+            cards.push({ name: f.name, type: 'Fish', era: `caught ×${dex[key]}`, icon: f.icon,
+                         color: '#5BCEFA', entry: f.desc });
+        });
+        // Companion roster — the rescued critters.
+        const comps = (game.persistent && game.persistent.companions) || {};
+        Object.keys(comps).forEach(key => {
+            const c = COMPANIONS[key];
+            if (!c) return;
+            cards.push({ name: c.name, type: 'Companion', icon: c.icon,
+                         color: c.color, entry: c.perkDesc });
         });
 
         const totalWorld = STORY_CARD_KEYS.length;
