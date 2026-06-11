@@ -1,4 +1,4 @@
-import { ZINES, HISTORICAL_FIGURES, TREASURES, HEALING_ITEMS, ECHO_KEYS } from './data.js';
+import { ZINES, HISTORICAL_FIGURES, HEALING_ITEMS, ECHO_KEYS } from './data.js';
 
 const MURAL_MESSAGES = [
     "You are powerful, you are loved",
@@ -300,7 +300,10 @@ export function generateMap(game) {
     const exitRoom = roomList[roomList.length - 1];
     const exitX = roomCenterX(exitRoom.rx);
     const exitY = roomFloorY(exitRoom.ry) - 1;
-    if (game.depth < 8) game.map[`${exitX},${exitY}`] = '>';
+    // Depth 10 is the floor of THE CORE (zone starts at 9) — the final boss
+    // floor, so no stairs beyond it. The old cap of 8 made THE CORE and its
+    // story card unreachable even though the intro and zone table promise it.
+    if (game.depth < 10) game.map[`${exitX},${exitY}`] = '>';
 
     // Content placement — pop random rooms (excluding spawn) for set pieces
     const usable = roomList.slice(1);
@@ -483,7 +486,6 @@ export function generateMap(game) {
     // ── Allison Scott near a mural room ──────────────────────────────────────
     if (usable.length > 0 && !game.persistent.seenFigures['allison_scott'] && game.depth >= 2 && Math.random() < 0.4) {
         const muralRoom = popRandomRoom();
-        const muralRoomKey = `${muralRoom.rx},${muralRoom.ry}`;
         // Mark a ceiling tile in this room as a mural
         const wallX = roomCenterX(muralRoom.rx);
         const wallY = muralRoom.ry * ROOM_H;
@@ -510,7 +512,7 @@ export function generateMap(game) {
         const wy = ry * ROOM_H; // ceiling row
         const key = `${wx},${wy}`;
         if (!game.muralTiles[key]) {
-            game.muralTiles[key] = MURAL_MESSAGES[i % MURAL_MESSAGES.length];
+            game.muralTiles[key] = pick(MURAL_MESSAGES);
         }
     }
 
@@ -748,10 +750,11 @@ export function generateHubMap(game) {
     game.map[`${HUB_W - 4},${lobbyIntY}`]  = 'D'; // portal to wasteland
 
     // Zine magazine rack — permanent interactive item, never removed
+    const zineTotal = Object.keys(ZINES).length;
     game.items.push({
         x: SHAFT_CX - 5, y: lobbyIntY,
         type: 'zinebook',
-        name: `📖 Zine Rack (${zinesCollected}/19)`
+        name: `📖 Zine Rack (${zinesCollected}/${zineTotal})`
     });
 
     // Reveal entire hub on entry
@@ -770,7 +773,7 @@ export function generateHubMap(game) {
     const totalFigures = Object.keys(HISTORICAL_FIGURES).length;
     if (typeof window !== 'undefined' && window.UI && window.UI.addMessage) {
         window.UI.addMessage(
-            `🏛 Safehouse Sanctuary — ${figuresMet}/${totalFigures} ancestors · ${zinesCollected}/19 zines. Drop through the shaft to visit each depth level.`,
+            `🏛 Safehouse Sanctuary — ${figuresMet}/${totalFigures} ancestors · ${zinesCollected}/${zineTotal} zines. Drop through the shaft to visit each depth level.`,
             'special'
         );
         window.UI.addMessage(

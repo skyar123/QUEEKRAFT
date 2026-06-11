@@ -1,7 +1,7 @@
 import { UI, DialogueUI, GeminiUI } from './ui.js';
 import { generateMap, generateHubMap } from './map.js';
-import { attackEnemy, takeDamage, tickStatus, tickCombo, resetCombo, applyStatus, isFrozen } from './combat.js';
-import { HEALING_ITEMS, TREASURES, HISTORICAL_FIGURES, LOOT_TIERS, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS, ECHO_KEYS, ZINES, STORY_CARDS } from './data.js';
+import { attackEnemy, takeDamage, tickStatus, tickCombo, applyStatus } from './combat.js';
+import { HEALING_ITEMS, HISTORICAL_FIGURES, DIFFICULTIES, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS, ECHO_KEYS, ZINES, STORY_CARDS, GOALS } from './data.js';
 import { Audio } from './audio.js';
 
 // Expose UI globally so map.js village generator can show status messages.
@@ -1418,9 +1418,7 @@ function interact() {
         saveGame();
         UI.updateStatus(game);
         draw();
-        if (game.zines >= 19 && game.historicalFigures >= 9) {
-            UI.showVictory();
-        }
+        checkVictory();
         return;
     }
 
@@ -1434,7 +1432,7 @@ function interact() {
             } else {
                 game._zineRackIdx = ((game._zineRackIdx || 0) + 1) % collected.length;
                 const zineKey = collected[game._zineRackIdx];
-                UI.addMessage(`📖 Rack (${collected.length}/19): "${ZINES[zineKey] ? ZINES[zineKey].title : zineKey}" — press USE to browse more.`, 'special');
+                UI.addMessage(`📖 Rack (${collected.length}/${Object.keys(ZINES).length}): "${ZINES[zineKey] ? ZINES[zineKey].title : zineKey}" — press USE to browse more.`, 'special');
                 UI.showZine(zineKey);
             }
             UI.updateStatus(game);
@@ -1514,6 +1512,7 @@ function interact() {
                             game.trolls = game.trolls.filter(t => t !== troll);
                             game.player.kills = (game.player.kills || 0) + 1;
                             addXP(20);
+                            onEnemyKilledForQuests(troll.enemyType);
                         }
                     }
                 }
@@ -1528,8 +1527,7 @@ function interact() {
             } else if (resolvedEffect === 'safe_key') {
                 // Reveal a safe shelter room on the current level
                 if (game.safeShelterRooms && game.safeShelterRooms.size === 0) {
-                    const rx = Math.floor(Math.random() * 4), ry = Math.floor(Math.random() * 3);
-                    game.safeShelterRooms.add(`${rx},${ry}`);
+                    game.safeShelterRooms.add(randomRoomKey());
                 }
                 UI.addMessage('Safe Shelter Key glows. A refuge reveals itself!', 'special');
             } else if (resolvedEffect === 'homegrown_blessing') {
@@ -1650,16 +1648,14 @@ function interact() {
                 // Sawant's Petition: +20 XP + creates a safe shelter room
                 addXP(20);
                 if (game.safeShelterRooms && game.safeShelterRooms.size === 0) {
-                    const rx = Math.floor(Math.random() * 4), ry = Math.floor(Math.random() * 3);
-                    game.safeShelterRooms.add(`${rx},${ry}`);
+                    game.safeShelterRooms.add(randomRoomKey());
                 }
                 UI.addMessage("Sawant's Petition: +20 XP. Legal momentum — a shelter opens somewhere in the archive.", 'special');
             } else if (resolvedEffect === 'star_key') {
                 // STAR House Key: creates a new shelter room + defense buff
                 game.player.defenseBuff = Math.max(game.player.defenseBuff || 0, 250);
                 if (game.safeShelterRooms) {
-                    const rx = Math.floor(Math.random() * 4), ry = Math.floor(Math.random() * 3);
-                    game.safeShelterRooms.add(`${rx},${ry}`);
+                    game.safeShelterRooms.add(randomRoomKey());
                 }
                 UI.addMessage('STAR House Key glows red. A shelter opens. Marsha and Sylvia built this for you.', 'special');
                 for (let i = 0; i < 20; i++) game.particles.push({
@@ -1727,13 +1723,31 @@ function interact() {
         game.items = game.items.filter(i => i !== item);
         UI.updateStatus(game);
         draw();
-        
-        if (game.zines >= 19 && game.historicalFigures >= 9) {
-            UI.showVictory();
-        }
+        checkVictory();
         return;
     }
 }
+
+// Fires the victory screen exactly once per session when the collection goals
+// (data.js GOALS) are met. The flag stops repeat interactions from re-opening
+// the modal over itself.
+function checkVictory() {
+    if (game.victoryShown) return;
+    if (game.zines >= GOALS.zines && game.historicalFigures >= GOALS.figures) {
+        game.victoryShown = true;
+        UI.showVictory();
+    }
+}
+
+// Random room key valid for the CURRENT floor's layout. Layouts vary from
+// 3×3 up to 5×3 / 4×4 rooms, so effects that "open a shelter somewhere" must
+// derive the grid from the live map size instead of assuming 4×3.
+function randomRoomKey() {
+    const cols = Math.max(1, Math.floor(game.mapWidth / 10));
+    const rows = Math.max(1, Math.floor(game.mapHeight / 10));
+    return `${Math.floor(Math.random() * cols)},${Math.floor(Math.random() * rows)}`;
+}
+window.__randomRoomKey = randomRoomKey;
 
 let lastPromptTile = null;
 function checkPickups() {
@@ -2329,6 +2343,7 @@ function update(dt) {
                     game.trolls = game.trolls.filter(t => t !== troll);
                     p.kills = (p.kills || 0) + 1;
                     addXP(20);
+                    onEnemyKilledForQuests(troll.enemyType);
                     if (Math.random() < 0.30) {
                         game.items.push({ x: troll.x, y: troll.y, type: 'treasure', name: 'Salvaged Scrap' });
                     }
@@ -3849,18 +3864,18 @@ function draw() {
         let yy = y0 + 50;
         const line = (label, color) => { ctx.fillStyle = color; ctx.fillText(label, x0 + 16, yy); yy += 18; };
         line('▸ Recover the lost zines:', '#FFFFFF');
-        const zRatio = seenZ / 19;
+        const zRatio = Math.min(1, seenZ / GOALS.zines);
         ctx.fillStyle = '#1a1a1a'; ctx.fillRect(x0 + 30, yy - 10, 280, 8);
         ctx.fillStyle = '#FF71CE'; ctx.fillRect(x0 + 30, yy - 10, 280 * zRatio, 8);
-        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenZ} / 19`, x0 + 320, yy - 2);
+        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenZ} / ${GOALS.zines}`, x0 + 320, yy - 2);
         yy += 14;
 
         ctx.font = '14px VT323';
         line('▸ Meet the historical figures:', '#FFFFFF');
-        const fRatio = seenF / 9;
+        const fRatio = Math.min(1, seenF / GOALS.figures);
         ctx.fillStyle = '#1a1a1a'; ctx.fillRect(x0 + 30, yy - 10, 280, 8);
         ctx.fillStyle = '#01CDFE'; ctx.fillRect(x0 + 30, yy - 10, 280 * fRatio, 8);
-        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenF} / 9`, x0 + 320, yy - 2);
+        ctx.fillStyle = '#FFFFFF'; ctx.font = '12px VT323'; ctx.fillText(`${seenF} / ${GOALS.figures}`, x0 + 320, yy - 2);
         yy += 14;
 
         ctx.font = '14px VT323';
@@ -3998,9 +4013,13 @@ function setupControls() {
             }
         }
 
-        if (UI.modals.zine.style.display === 'flex' || 
+        if (UI.modals.zine.style.display === 'flex' ||
             UI.modals.conversation.style.display === 'flex' ||
-            UI.modals.levelUp.style.display === 'flex') return;
+            UI.modals.levelUp.style.display === 'flex' ||
+            UI.modals.victory.style.display === 'flex' ||
+            UI.modals.gameOver.style.display === 'flex' ||
+            UI.modals.heirSelect.style.display === 'flex' ||
+            UI.modals.camp.style.display === 'flex') return;
         if (paused || game.player.hitstun > 0) return;
 
         if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'ArrowDown' || e.code === 'KeyS') {
@@ -4058,6 +4077,14 @@ function setupControls() {
             showFps = !showFps;
             e.preventDefault();
         }
+    });
+
+    // Releasing focus (alt-tab, app switch) never delivers the matching keyup,
+    // which left movement keys latched and the player running into a wall.
+    window.addEventListener('blur', () => {
+        for (const k of Object.keys(keys)) keys[k] = false;
+        game.player.chargeAttack = 0;
+        game.player.chargeReady = false;
     });
 
     document.addEventListener('keyup', e => {

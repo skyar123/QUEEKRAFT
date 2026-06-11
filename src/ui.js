@@ -1,4 +1,4 @@
-import { ZINES, HISTORICAL_FIGURES, DIFFICULTIES, GEMINI_GUIDE, STORY_CARDS, STORY_CARD_KEYS } from './data.js';
+import { ZINES, HISTORICAL_FIGURES, DIFFICULTIES, GEMINI_GUIDE, STORY_CARDS, STORY_CARD_KEYS, GOALS } from './data.js';
 import { Audio } from './audio.js';
 
 export const UI = {
@@ -238,28 +238,6 @@ export const UI = {
         });
         
         this.modals.levelUp.style.display = 'flex';
-    },
-
-    showItemReward(item) {
-        // Reuse zine modal for item rewards for now, or create a specific one
-        document.getElementById('zine-title').textContent = item.name || item.type;
-        document.getElementById('zine-content').innerHTML = `<p>${item.desc || 'A valuable piece of history.'}</p>`;
-        
-        const coverImg = document.getElementById('zine-cover');
-        if (item.image) {
-            coverImg.src = item.image;
-            coverImg.style.display = 'block';
-        } else {
-            // Fallback for scrap
-            if (item.name?.includes('Scrap')) coverImg.src = '/images/items/scrap.png';
-            else if (item.name?.includes('Brick')) coverImg.src = '/images/items/brick.png';
-            else if (item.name?.includes('Token')) coverImg.src = '/images/items/history_token.png';
-            else coverImg.style.display = 'none';
-            
-            if (coverImg.src.includes('items')) coverImg.style.display = 'block';
-        }
-        
-        this.modals.zine.style.display = 'flex';
     },
 
     renderLineage(lineage) {
@@ -734,6 +712,15 @@ export const DialogueUI = {
             if (node.reward === 'item_brick') {
                 this.currentGame.player.hasBrick = true;
                 UI.addMessage("Received: Stonewall Brick (+1 dmg)", "special");
+            } else if (node.reward === 'item_history') {
+                // Eleanor's token of shared history — scrap + a burst of XP.
+                const g = this.currentGame;
+                g.treasures += 2;
+                g.persistent.treasures += 2;
+                g.player.scrapEarned = (g.player.scrapEarned || 0) + 2;
+                if (typeof window.addXP === 'function') window.addXP(25);
+                UI.addMessage("Received: History Token (+2 scrap, +25 XP). Our history is ancient and unbreakable.", "special");
+                UI.updateStatus(g);
             } else if (node.reward === 'item_shield') {
                 // Shield of Civic Courage — 300-frame damage immunity
                 this.currentGame.player.damageImmune = Math.max(this.currentGame.player.damageImmune || 0, 300);
@@ -799,9 +786,8 @@ export const DialogueUI = {
                 const g = this.currentGame;
                 g.player.health = g.player.maxHealth;
                 g.player.defenseBuff = Math.max(g.player.defenseBuff || 0, 300);
-                if (g.safeShelterRooms && g.safeShelterRooms.size === 0) {
-                    const rx = Math.floor(Math.random() * 4), ry = Math.floor(Math.random() * 3);
-                    g.safeShelterRooms.add(`${rx},${ry}`);
+                if (g.safeShelterRooms && g.safeShelterRooms.size === 0 && typeof window.__randomRoomKey === 'function') {
+                    g.safeShelterRooms.add(window.__randomRoomKey());
                 }
                 UI.addMessage("Kenya's solidarity: full heal + defense 300 frames. A shelter opens.", "healing");
                 UI.updateStatus(g);
@@ -856,13 +842,13 @@ function geminiRespond(input) {
         return "Hello, keeper. The archive sees you. What story do you seek?";
     }
     if (has('zine', 'archive', 'pamphlet', 'paper')) {
-        return "Nineteen zines remain scattered through the depths. Each one you recover relights a fragment of our shared memory. Look behind crumbling tiles and beside fallen banners.";
+        return `${GOALS.zines} zines must be recovered from the depths. Each one relights a fragment of our shared memory. Look behind crumbling tiles and beside fallen banners.`;
     }
     if (has('ancestor', 'figure', 'historical', 'survivor', 'queer history', 'who is')) {
         const names = HISTORICAL_FIGURES
             ? Object.values(HISTORICAL_FIGURES).slice(0, 3).map(f => f.name).join(', ')
             : '';
-        return `Nine ancestors walk these halls — among them ${names}. Speak with them. Their courage is your inheritance.`;
+        return `Meet ${GOALS.figures} ancestors in these halls — among them ${names}. Speak with them. Their courage is your inheritance.`;
     }
     if (has('boss', 'enemy', 'mutant', 'fight', 'combat', 'attack', 'kill')) {
         return "The wasteland is hostile, but you are not alone. Three quick strikes chains a power move. Charge your weapon for a heavy hit. Dash through danger — the i-frames are real.";
