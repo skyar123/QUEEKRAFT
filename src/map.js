@@ -41,11 +41,9 @@ export function pick(arr) {
 //   '.' empty space         (passable)
 //   '=' one-way platform    (solid only when falling onto it from above)
 //   '>' stairs down         (passable; triggers descent on USE)
-//   '^' spikes              (passable; touching it damages the player)
 //   '~' ice                 (solid floor; very low friction on top)
 //   'T' trampoline          (solid floor; landing on it bounces sky-high)
 //   'C' crumbling platform  (one-way; collapses ~0.5s after first contact)
-//   'H' ladder              (climb up/down with ↑/↓; one-way top when not climbing)
 
 const ROOMS_X = 4;
 const ROOMS_Y = 3;
@@ -189,16 +187,6 @@ function decorateRoomWithHazards(map, rx, ry, depth) {
     const innerStart = rx * ROOM_W + 2;
     const innerEnd   = (rx + 1) * ROOM_W - 2;
 
-    // Spike pit (depth 2+): replace a stretch of the standing row with '^'.
-    if (depth >= 2 && Math.random() < 0.30) {
-        const span = 1 + Math.floor(Math.random() * 2);
-        const sx = innerStart + Math.floor(Math.random() * Math.max(1, innerEnd - innerStart - span));
-        for (let i = 0; i < span; i++) {
-            const k = `${sx + i},${standingY}`;
-            if (map[k] === '.') map[k] = '^';
-        }
-    }
-
     // Ice patch (depth 3+): swap a stretch of floor-top to '~'.
     if (depth >= 3 && Math.random() < 0.25) {
         const span = 2 + Math.floor(Math.random() * 3);
@@ -308,24 +296,6 @@ export function generateMap(game) {
                 game.map[`${cx + i},${upperFloor}`] = '='; // The floor you stand on
                 game.map[`${cx + i},${upperFloor + 1}`] = '.'; // The bottom half of the thick floor
                 game.map[`${cx + i},${upperFloor + 2}`] = '.'; // The ceiling of the room below!
-            }
-        }
-    }
-
-    // ── Ladders ── Climbable columns linking every vertically-stacked room.
-    // Rooms are too tall to jump back up, so without these you could never
-    // return for a zine/ancestor you skipped. Offset from the central drop-shaft
-    // so the funnest thing (map-jumping the shafts) stays fully intact.
-    for (let rx = 0; rx < ROOMS_X; rx++) {
-        for (let ry = 0; ry < ROOMS_Y - 1; ry++) {
-            const lx = rx * ROOM_W + 3;            // left-of-center, clear of the shaft
-            const top = roomFloorY(ry);            // upper room floor → ladder top
-            const bottom = roomFloorY(ry + 1) - 1; // lower room standing row → ladder base
-            for (let yy = top; yy <= bottom; yy++) {
-                const k = `${lx},${yy}`;
-                const cur = game.map[k];
-                if (cur === '>' || cur === 'D' || cur === 'F') continue;
-                game.map[k] = 'H';
             }
         }
     }
@@ -713,22 +683,20 @@ export function generateMap(game) {
     }
 
     if (game.depth % 5 === 0) {
-        // Spawn the boss two tiles left of center so the exit stairs at center
-        // remain reachable. Depth 10 is THE LANDLORD KING — the final fight.
         const finalBoss = game.depth >= 10;
         const bossHP = finalBoss ? 34 : 20;
-        const bossX = roomCenterX(exitRoom.rx) - 2;
         const bossY = roomFloorY(exitRoom.ry) - 1;
-        if (game.map[`${bossX},${bossY}`] !== '#') {
-            game.trolls.push({
-                x: bossX, y: bossY,
-                enemyType: 'boss', bossName: finalBoss ? 'THE LANDLORD KING' : 'THE ALGORITHM',
-                health: bossHP, maxHealth: bossHP,
-                patrolPath: [], patrolIndex: 0, direction: 1,
-                moveDelay: 0, maxMoveDelay: 2,
-                alertRadius: 10, chasingTurns: 0, bossPhase: 1
-            });
-        }
+        // Try several offsets from center so a hall-motif pillar never blocks spawn.
+        const center = roomCenterX(exitRoom.rx);
+        const bossX = [-2, -3, -1, 2, 3, 1].map(d => center + d).find(cx => game.map[`${cx},${bossY}`] === '.') ?? center - 2;
+        game.trolls.push({
+            x: bossX, y: bossY,
+            enemyType: 'boss', bossName: finalBoss ? 'THE LANDLORD KING' : 'THE ALGORITHM',
+            health: bossHP, maxHealth: bossHP,
+            patrolPath: [], patrolIndex: 0, direction: 1,
+            moveDelay: 0, maxMoveDelay: 2,
+            alertRadius: 10, chasingTurns: 0, bossPhase: 1
+        });
     }
 }
 

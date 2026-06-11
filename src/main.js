@@ -150,7 +150,7 @@ const NAMES = ['Ash', 'River', 'Rowan', 'Sage', 'Onyx', 'Quinn', 'Zephyr', 'Nova
 const lineage = [];
 
 // Save/load persistent state to localStorage so progress carries between sessions.
-const SAVE_KEY = 'queekraft-save-v1';
+const SAVE_KEY = 'queekraft-save-v2';
 function saveGame() {
     try {
         const payload = {
@@ -906,26 +906,6 @@ function startCamp() {
 }
 
 async function descend() {
-    // Lock descent until the player has spoken to every ancestor and collected
-    // every zine on this floor — prevents missing content. Merchants and
-    // companions are optional company and never block the stairs.
-    const remainingNPCs = game.npcs.filter(n => n.type === 'historical' || n.type === 'echo').length;
-    if (remainingNPCs > 0) {
-        UI.addMessage(
-            `⚠ ${remainingNPCs} ${remainingNPCs === 1 ? 'ancestor awaits' : 'ancestors await'} you on this floor. Climb a ladder (↑) to backtrack — pink dots on the minimap show where.`,
-            'special'
-        );
-        return;
-    }
-    const remainingZines = game.items.filter(i => i.type === 'zine').length;
-    if (remainingZines > 0) {
-        UI.addMessage(
-            `⚠ ${remainingZines} ${remainingZines === 1 ? 'zine remains' : 'zines remain'} uncollected here. Climb a ladder (↑) to go back — white dots on the minimap mark ${remainingZines === 1 ? 'it' : 'them'}.`,
-            'special'
-        );
-        return;
-    }
-
     UI.addMessage("Descending into the deeper archives...", "special");
 
     // Are we crossing into a new depth zone? If so the transition screen names it.
@@ -1074,7 +1054,6 @@ function startDungeon() {
     const startZone = depthZone(game.depth);
     UI.addMessage(`🏳️‍⚧️ ${startZone.name}. ${startZone.flavour}`, "special");
     UI.addMessage("👁 Enemies show '!' when they've spotted you, '?' when searching. Stay behind them and don't make noise to slip past.", "special");
-    UI.addMessage("🪜 Climb ladders with ↑/↓ to backtrack — go up for any zine or ancestor you missed before the stairs unlock.", "special");
     UI.addMessage("📜 Press C for the Codex — story cards you collect by talking to ancestors and descending deeper.", "special");
     if (p.classObj) UI.addMessage(`Class: ${p.classObj.name}. Press R for ${p.classObj.power}.`, "special");
     unlockZoneCards(game.depth, true);
@@ -1109,11 +1088,9 @@ function updateFOV() {
 function isPassable(x, y) {
     if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return false;
     const tile = game.map[`${x},${y}`];
-    // For AI, FOV, attack target lookups: one-way platforms + spikes are passable
-    // (enemies don't avoid spikes — they're a *player* hazard).
     // Hub-only special tiles ('D' portal, 'F' campfire) are passable too so the
     // player can stand on them to interact.
-    return tile === '.' || tile === '>' || tile === '=' || tile === '^' || tile === 'C' || tile === 'D' || tile === 'F' || tile === 'Z' || tile === 'V';
+    return tile === '.' || tile === '>' || tile === '=' || tile === 'C' || tile === 'D' || tile === 'F' || tile === 'Z' || tile === 'V';
 }
 
 // Legacy turn-based movement kept as a no-op shim — platformer physics handles motion now.
@@ -1919,16 +1896,7 @@ function checkPickups() {
         UI.addMessage('🎣 The pond glitters. Press USE/F to cast a line.');
         lastPromptTile = key;
     } else if (game.map[key] === '>') {
-        const nLeft = game.npcs.filter(n => n.type === 'historical' || n.type === 'echo').length;
-        const zLeft = game.items.filter(i => i.type === 'zine').length;
-        if (nLeft > 0 || zLeft > 0) {
-            const parts = [];
-            if (nLeft > 0) parts.push(`${nLeft} ancestor${nLeft > 1 ? 's' : ''} unmet`);
-            if (zLeft > 0) parts.push(`${zLeft} zine${zLeft > 1 ? 's' : ''} uncollected`);
-            UI.addMessage(`⚠ Stairs locked — ${parts.join(', ')} on this floor. Climb a ladder (↑) to backtrack for what you missed — check the minimap.`);
-        } else {
-            UI.addMessage(`Stairs down. Press USE/F to descend.`);
-        }
+        UI.addMessage(`Stairs down. Press USE/F to descend.`);
         lastPromptTile = key;
     } else if (game.map[key] === 'D') {
         UI.addMessage(`Wasteland portal. Press USE/F to enter the dungeon.`);
@@ -2092,11 +2060,7 @@ function isOneWayBlocking(px, feetY, prevFeetY) {
     const x = Math.floor(px), y = Math.floor(feetY);
     if (x < 0 || y < 0 || x >= game.mapWidth || y >= game.mapHeight) return false;
     const t = game.map[`${x},${y}`];
-    // '=' = standard one-way; 'C' = crumbling one-way; 'H' = ladder top.
-    if (t !== '=' && t !== 'C' && t !== 'H') return false;
-    // Ladders catch feet from above (stand/walk on a ladder top) but turn
-    // intangible while actively climbing so vertical travel is smooth.
-    if (t === 'H' && game.player.climbing) return false;
+    if (t !== '=' && t !== 'C') return false;
     if (t === 'C' && game.crumbleState && game.crumbleState[`${x},${y}`] && game.crumbleState[`${x},${y}`].broken) return false;
     // Drop-through grace period: ignore the platform briefly after Down+Jump.
     if (game.player.dropThrough > 0) return false;
@@ -2174,10 +2138,7 @@ function moveEnemyY(e, dy, w, h) {
         const feet = target + h;
         // Enemies don't climb — but they shouldn't fall through ladder columns
         // either, so a ladder tile under their feet acts as solid ground.
-        const fy = Math.floor(feet);
-        const ladderUnder = game.map[`${Math.floor(e.x + 0.05)},${fy}`] === 'H' ||
-                            game.map[`${Math.floor(e.x + w - 0.05)},${fy}`] === 'H';
-        if (pointSolid(e.x + 0.05, feet) || pointSolid(e.x + w - 0.05, feet) || ladderUnder) {
+        if (pointSolid(e.x + 0.05, feet) || pointSolid(e.x + w - 0.05, feet)) {
             e.y = Math.floor(feet) - h - 0.0001;
             e.vy = 0;
             e.onGround = true;
@@ -2218,7 +2179,6 @@ function tryJump() {
 }
 
 // Reads tile under feet + body and applies hazard side-effects each frame.
-//   '^' spikes      → 1 dmg + small knockback (gated by hurtCooldown)
 //   '~' ice         → flag p.onIceTile so friction stays high
 //   'T' trampoline  → big bounce on contact
 //   'C' crumbling   → start a timer; break the tile after 30 frames of contact
@@ -2270,22 +2230,6 @@ function applyHazards(p) {
         }
     }
 
-    // Spike overlap — sample three points on the player's footprint.
-    const spikeAt = (cx, cy) => game.map[`${Math.floor(cx)},${Math.floor(cy)}`] === '^';
-    const overlap =
-        spikeAt(p.x + 0.05,            p.y + PLAYER_H - 0.05) ||
-        spikeAt(p.x + PLAYER_W - 0.05, p.y + PLAYER_H - 0.05) ||
-        spikeAt(p.x + PLAYER_W * 0.5,  p.y + PLAYER_H - 0.05) ||
-        spikeAt(p.x + PLAYER_W * 0.5,  p.y + PLAYER_H * 0.5);
-    if (overlap && p.hurtCooldown <= 0) {
-        takeDamage(game, 1);
-        p.vy = -7;
-        p.vx = (p.vx >= 0 ? -1 : 1) * 5;
-        p.onGround = false;
-        Audio.playSpike && Audio.playSpike();
-        UI.addMessage('Ouch! Spikes!', 'death');
-        for (let i = 0; i < 8; i++) spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, '#FF0040');
-    }
 }
 
 function spawnDust(x, y, count, color) {
@@ -2395,57 +2339,6 @@ function update(dt) {
         p.vy *= 0.5;
     }
 
-    // --- Ladder climbing (backtracking) -------------------------------------
-    // Grab a ladder ('H') with Up/Down to climb shafts and return for any zine
-    // or ancestor you missed. Space hops off; walking sideways steps off.
-    {
-        // Keyboard arrows/WASD or the on-screen joystick pushed up/down (set in
-        // moveJoy) both drive the climb, so it works on mobile and desktop.
-        const climbUp = keys['ArrowUp'] || keys['KeyW'] || game.touchUp;
-        const climbDown = keys['ArrowDown'] || keys['KeyS'] || game.touchDown;
-        const horizPress = keys['ArrowLeft'] || keys['KeyA'] || keys['ArrowRight'] || keys['KeyD'] || Math.abs(game.touchX || 0) > 0.4;
-        const cCol = Math.floor(p.x + PLAYER_W / 2);
-        const cMid = Math.floor(p.y + PLAYER_H / 2);
-        const cFeet = Math.floor(p.y + PLAYER_H - 0.05);
-        const cBelow = Math.floor(p.y + PLAYER_H + 0.12);
-        const onLadder = game.map[`${cCol},${cMid}`] === 'H' || game.map[`${cCol},${cFeet}`] === 'H';
-        const ladderBelow = game.map[`${cCol},${cBelow}`] === 'H';
-        // Grab the ladder only on a deliberate vertical press.
-        if ((onLadder && climbUp) || ((onLadder || ladderBelow) && climbDown)) p.climbing = true;
-        // Release when we leave the ladder, or when the player clearly wants to
-        // walk/jump off (horizontal press) so it never feels sticky.
-        if (p.climbing && (!onLadder && !(ladderBelow && climbDown))) p.climbing = false;
-        if (p.climbing && horizPress && !climbUp && !climbDown) p.climbing = false;
-
-        if (p.climbing) {
-            if (keys['Space']) {
-                // Hop off the ladder with a normal jump.
-                p.climbing = false;
-                p.vy = JUMP_SPEED;
-                p.jumpsLeft = 0;
-                p.jumpBuffer = 0;
-                Audio.playJump && Audio.playJump();
-            } else {
-                // Gently center on the ladder only while moving vertically; when
-                // the player nudges sideways we let them drift off the column.
-                if (!horizPress) {
-                    const ladderX = cCol + (1 - PLAYER_W) / 2;
-                    p.x += (ladderX - p.x) * 0.35;
-                }
-                p.vy = climbUp ? -CLIMB_SPEED : (climbDown ? CLIMB_SPEED : 0);
-                p.vx *= 0.6;
-                p.onGround = false;
-                p.coyoteTimer = 0;
-                p.jumpsLeft = 1;            // allow a hop after letting go
-                p.jumpBuffer = 0;           // up-key climbs, never auto-jumps
-                if (game.animFrame % 6 === 0 && (climbUp || climbDown)) {
-                    spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H / 2, 1, '#39FF14');
-                }
-            }
-        }
-    }
-    // (end ladder climbing)
-
     // Resolve buffered jump (only if it succeeds, consume it)
     if (p.jumpBuffer > 0 && (p.coyoteTimer > 0 || (p.jumpsLeft > 0 && !p.onGround))) {
         if (tryJump()) p.jumpBuffer = 0;
@@ -2465,7 +2358,7 @@ function update(dt) {
         spawnDust(p.x + PLAYER_W / 2, p.y + PLAYER_H, 1, ['#FF71CE','#01CDFE','#FFD700','#39FF14'][game.animFrame % 4]);
     }
 
-    // Gravity (apply only when airborne and not gripping a ladder)
+    // Gravity (apply only when airborne)
     if (!p.onGround && !p.climbing) p.vy += GRAVITY;
     if (p.vy > TERMINAL_VY) p.vy = TERMINAL_VY;
 
@@ -2793,8 +2686,6 @@ function draw() {
                 drawTile(ctx, sx, sy, '#1a3a4a', true, r.isVisible ? 'rgba(91,206,250,0.45)' : null, r.isVisible ? patterns.ice : null);
             } else if (r.tile === 'T') {
                 drawTile(ctx, sx, sy, '#1a0a14', true, null, r.isVisible ? patterns.trampoline : null);
-            } else if (r.tile === '^') {
-                drawTile(ctx, sx, sy, '#1a0a14', false, null, r.isVisible ? patterns.spikes : null);
             } else if (r.tile === '=') {
                 drawTile(ctx, sx, sy, '#1a0a14', false, null, r.isVisible ? patterns.platform : null);
             } else if (r.tile === 'C') {
@@ -2962,58 +2853,6 @@ function draw() {
                         ctx.stroke();
                     }
                     ctx.shadowBlur = 0;
-                } else if (r.tile === '^') {
-                    // Spikes — unmissable danger: a glowing red warning base, bright
-                    // metallic teeth with white tips, and a slow hazard pulse.
-                    ctx.globalAlpha = 1.0;
-                    const pulse = 0.5 + 0.5 * Math.sin(game.animFrame * 0.15);
-                    // Warning glow under the teeth.
-                    ctx.fillStyle = `rgba(255,0,64,${0.25 + pulse * 0.35})`;
-                    ctx.fillRect(sx, sy + T - 6, T, 6);
-                    // Teeth.
-                    const teeth = 4;
-                    const tw = (T - 4) / teeth;
-                    for (let s = 0; s < teeth; s++) {
-                        const baseL = sx + 2 + s * tw;
-                        const tip   = sx + 2 + s * tw + tw / 2;
-                        ctx.fillStyle = '#E8E8F0';
-                        ctx.beginPath();
-                        ctx.moveTo(baseL,            sy + T);
-                        ctx.lineTo(tip,              sy + 3);
-                        ctx.lineTo(sx + 2 + (s + 1) * tw, sy + T);
-                        ctx.closePath();
-                        ctx.fill();
-                        // White-hot tip highlight.
-                        ctx.fillStyle = `rgba(255,255,255,${0.7 + pulse * 0.3})`;
-                        ctx.fillRect(tip - 1, sy + 3, 2, 4);
-                    }
-                    // Red outline so the whole hazard reads at a glance.
-                    ctx.strokeStyle = `rgba(255,40,80,${0.6 + pulse * 0.4})`;
-                    ctx.lineWidth = 1.5;
-                    ctx.strokeRect(sx + 0.5, sy + 0.5, T - 1, T - 1);
-                } else if (r.tile === 'H') {
-                    // Ladder — two bright rails with rungs, clearly climbable.
-                    ctx.globalAlpha = 1.0;
-                    const railL = sx + 6, railR = sx + T - 6;
-                    ctx.strokeStyle = '#C8A24B';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.moveTo(railL, sy); ctx.lineTo(railL, sy + T);
-                    ctx.moveTo(railR, sy); ctx.lineTo(railR, sy + T);
-                    ctx.stroke();
-                    // Rungs (animated glint so it reads as interactive).
-                    ctx.strokeStyle = '#FFE08A';
-                    ctx.lineWidth = 2.5;
-                    for (let ry2 = 4; ry2 < T; ry2 += 8) {
-                        ctx.beginPath();
-                        ctx.moveTo(railL, sy + ry2); ctx.lineTo(railR, sy + ry2);
-                        ctx.stroke();
-                    }
-                    // Soft glow.
-                    ctx.globalAlpha = 0.18 + 0.12 * Math.sin(game.animFrame * 0.1 + r.y);
-                    ctx.fillStyle = '#FFD700';
-                    ctx.fillRect(railL - 2, sy, railR - railL + 4, T);
-                    ctx.globalAlpha = 1.0;
                 }
             }
         } else {
@@ -4033,11 +3872,8 @@ function draw() {
         for (let x = 0; x < game.mapWidth; x++) {
             if (!game.seen[`${x},${y}`]) continue;
             const t = game.map[`${x},${y}`];
-            // Ladders show gold so the routes back up are obvious; stairs cyan.
             ctx.fillStyle = t === '#' ? '#444'
                 : t === '>' ? '#01CDFE'
-                : t === 'H' ? '#C8A24B'
-                : t === '^' ? '#5a1020'
                 : t === 'V' ? '#FFD700'
                 : t === 'X' ? '#7a5a2a'
                 : t === 'W' ? '#1a5a8a'

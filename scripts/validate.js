@@ -129,7 +129,7 @@ function freshGame(depth) {
         particles: [], spriteFX: [], seen: {}, floatingText: []
     };
 }
-const PASSABLE = new Set(['.', '>', '=', '^', 'C', 'H']);
+const PASSABLE = new Set(['.', '>', '=', 'C']);
 for (let depth = 1; depth <= 10; depth++) {
     for (let trial = 0; trial < 25; trial++) {
         const game = freshGame(depth);
