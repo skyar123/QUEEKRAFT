@@ -1,4 +1,4 @@
-import { ZINES, HISTORICAL_FIGURES, HEALING_ITEMS, ECHO_KEYS } from './data.js';
+import { ZINES, HISTORICAL_FIGURES, HEALING_ITEMS, ECHO_KEYS, COMPANION_KEYS } from './data.js';
 
 const MURAL_MESSAGES = [
     "You are powerful, you are loved",
@@ -41,11 +41,9 @@ export function pick(arr) {
 //   '.' empty space         (passable)
 //   '=' one-way platform    (solid only when falling onto it from above)
 //   '>' stairs down         (passable; triggers descent on USE)
-//   '^' spikes              (passable; touching it damages the player)
 //   '~' ice                 (solid floor; very low friction on top)
 //   'T' trampoline          (solid floor; landing on it bounces sky-high)
 //   'C' crumbling platform  (one-way; collapses ~0.5s after first contact)
-//   'H' ladder              (climb up/down with ↑/↓; one-way top when not climbing)
 
 const ROOMS_X = 4;
 const ROOMS_Y = 3;
@@ -61,12 +59,23 @@ const LAYOUTS = [
     { name: 'tall',     cols: 3, rows: 4, motifs: ['ledges', 'staircase', 'scatter'] },
     { name: 'sprawl',   cols: 4, rows: 4, motifs: ['scatter', 'islands', 'ledges'] },
     { name: 'gauntlet', cols: 5, rows: 2, motifs: ['staircase', 'islands'] },
-    { name: 'warren',   cols: 3, rows: 3, motifs: ['scatter', 'staircase', 'ledges'] }
+    { name: 'warren',   cols: 3, rows: 3, motifs: ['scatter', 'staircase', 'ledges'] },
+    // Castle architecture — PRIME's citadels. Great halls with pillars,
+    // climbable watchtowers, crenellated ramparts.
+    { name: 'keep',     cols: 4, rows: 3, motifs: ['hall', 'towers', 'ramparts'], castle: true },
+    { name: 'citadel',  cols: 5, rows: 4, motifs: ['towers', 'hall', 'ledges'],   castle: true }
 ];
 function pickLayout(depth) {
+    // Castle floors appear from depth 3 and get more common the deeper you go.
+    const castles = LAYOUTS.filter(l => l.castle);
+    if (depth >= 3 && Math.random() < Math.min(0.6, 0.2 + depth * 0.05)) {
+        const cPool = depth >= 5 ? castles : castles.filter(l => l.cols * l.rows <= 12);
+        if (cPool.length) return pick(cPool);
+    }
     // Keep early floors compact; open up the big vertical sprawls deeper down.
-    const pool = (depth >= 5) ? LAYOUTS : LAYOUTS.filter(l => l.cols * l.rows <= 16);
-    return pick(pool.length ? pool : LAYOUTS);
+    const open = LAYOUTS.filter(l => !l.castle);
+    const pool = (depth >= 5) ? open : open.filter(l => l.cols * l.rows <= 16);
+    return pick(pool.length ? pool : open);
 }
 
 function fillRect(map, x, y, w, h, ch) {
@@ -131,6 +140,30 @@ function populateRoomInterior(map, rx, ry, motif = 'scatter', depth = 1) {
             const pxv = (s % 2 === 0) ? x + 1 : x + w - pw - 1;
             placePlatform(map, pxv, py, pw);
         }
+    } else if (motif === 'hall') {
+        // Castle great-hall: a long mid-height gallery plus 2-tall floor
+        // pillars you hop over. Pillars stay off the room-edge door columns.
+        placePlatform(map, x + 1, y + Math.floor(h / 2), w - 2);
+        for (let px2 = x + 2; px2 <= x + w - 3; px2 += 3) {
+            if (map[`${px2},${floorTop - 1}`] !== '.') continue;
+            map[`${px2},${floorTop - 1}`] = '#';
+            map[`${px2},${floorTop - 2}`] = '#';
+        }
+    } else if (motif === 'towers') {
+        // Twin watchtowers: stacked one-way landings climbing both side walls.
+        for (const tx of [x + 1, x + w - 4]) {
+            for (let py2 = floorTop - 2; py2 > y + 1; py2 -= 2) placePlatform(map, tx, py2, 3);
+        }
+    } else if (motif === 'ramparts') {
+        // Battlements: a high crenellated walkway with a mid landing to reach it.
+        const wy = y + 2;
+        for (let i = x + 1; i < x + w - 1; i++) {
+            if ((i - x) % 3 !== 0) {
+                const k = `${i},${wy}`;
+                if (map[k] === '.') map[k] = '=';
+            }
+        }
+        placePlatform(map, x + Math.floor(w / 2) - 1, y + Math.floor(h / 2) + 1, 3);
     } else {
         // 'scatter' — the original random platforms.
         const numPlats = 1 + Math.floor(Math.random() * 3);
@@ -153,16 +186,6 @@ function decorateRoomWithHazards(map, rx, ry, depth) {
     const standingY  = floorTopY - 1;                   // row the player walks on
     const innerStart = rx * ROOM_W + 2;
     const innerEnd   = (rx + 1) * ROOM_W - 2;
-
-    // Spike pit (depth 2+): replace a stretch of the standing row with '^'.
-    if (depth >= 2 && Math.random() < 0.30) {
-        const span = 1 + Math.floor(Math.random() * 2);
-        const sx = innerStart + Math.floor(Math.random() * Math.max(1, innerEnd - innerStart - span));
-        for (let i = 0; i < span; i++) {
-            const k = `${sx + i},${standingY}`;
-            if (map[k] === '.') map[k] = '^';
-        }
-    }
 
     // Ice patch (depth 3+): swap a stretch of floor-top to '~'.
     if (depth >= 3 && Math.random() < 0.25) {
@@ -213,6 +236,12 @@ export function generateMap(game) {
     game.charmSchoolRooms = new Set();
     game.echoRooms = new Set();
     game.muralTiles = {};
+    game.projectiles = [];
+    game.vault = null;
+    // Per-floor Zelda-kit state: small keys and the map/compass reset each floor.
+    game.player.keysHeld = 0;
+    game.player.hasMap = false;
+    game.player.hasCompass = false;
 
     // Roll this floor's layout archetype. Shadow the module defaults so every
     // reference below (loops, shafts, connections) uses the per-floor grid.
@@ -220,6 +249,7 @@ export function generateMap(game) {
     const ROOMS_X = layout.cols;
     const ROOMS_Y = layout.rows;
     game.layoutName = layout.name;
+    game.castleFloor = !!layout.castle;
     const motifPool = layout.motifs || ['scatter'];
 
     game.mapWidth = ROOMS_X * ROOM_W;
@@ -270,24 +300,6 @@ export function generateMap(game) {
         }
     }
 
-    // ── Ladders ── Climbable columns linking every vertically-stacked room.
-    // Rooms are too tall to jump back up, so without these you could never
-    // return for a zine/ancestor you skipped. Offset from the central drop-shaft
-    // so the funnest thing (map-jumping the shafts) stays fully intact.
-    for (let rx = 0; rx < ROOMS_X; rx++) {
-        for (let ry = 0; ry < ROOMS_Y - 1; ry++) {
-            const lx = rx * ROOM_W + 3;            // left-of-center, clear of the shaft
-            const top = roomFloorY(ry);            // upper room floor → ladder top
-            const bottom = roomFloorY(ry + 1) - 1; // lower room standing row → ladder base
-            for (let yy = top; yy <= bottom; yy++) {
-                const k = `${lx},${yy}`;
-                const cur = game.map[k];
-                if (cur === '>' || cur === 'D' || cur === 'F') continue;
-                game.map[k] = 'H';
-            }
-        }
-    }
-
     // Spawn the player on the top-left room's floor.
     const spawnRoom = roomList[0];
     game.player.x = roomCenterX(spawnRoom.rx) + 0.15;
@@ -313,9 +325,14 @@ export function generateMap(game) {
         return usable.splice(idx, 1)[0];
     }
     function inRoomFloorTile(room) {
-        const cx = roomCenterX(room.rx) + Math.floor(Math.random() * 5) - 2;
+        // Retry a few offsets so set-pieces never embed in pillars or crates.
         const cy = roomFloorY(room.ry) - 1;
-        return { x: cx, y: cy };
+        for (let t = 0; t < 8; t++) {
+            const cx = roomCenterX(room.rx) + Math.floor(Math.random() * 5) - 2;
+            const tile = game.map[`${cx},${cy}`];
+            if (tile === '.' || tile === '>') return { x: cx, y: cy };
+        }
+        return { x: roomCenterX(room.rx), y: cy };
     }
 
     const zineKeys = Object.keys(ZINES);
@@ -459,6 +476,87 @@ export function generateMap(game) {
         });
     }
 
+    // ── Castle Vault (depth ≥ 2, ~45%) ───────────────────────────────────────
+    // A key-locked treasure chamber. The golden door teleports you into a
+    // sealed room appended below the floor grid (Zelda house-interior style),
+    // so generation can never wall off the critical path. The Small Key is
+    // hidden elsewhere on the floor, under guard.
+    if (game.depth >= 2 && usable.length > 0 && Math.random() < 0.45) {
+        const vRoom = popRandomRoom();
+        const doorX = roomCenterX(vRoom.rx) - 3;
+        const doorY = roomFloorY(vRoom.ry) - 1;
+        if (game.map[`${doorX},${doorY}`] === '.') {
+            game.map[`${doorX},${doorY}`] = 'V';
+            // Sealed chamber below the grid.
+            const CW = 11, CH = 6;
+            const cx0 = 2, cy0 = game.mapHeight + 2;
+            fillRect(game.map, cx0 - 1, cy0 - 1, CW + 2, CH + 2, '#');
+            fillRect(game.map, cx0, cy0, CW, CH, '.');
+            const innerY = cy0 + CH - 1;
+            game.map[`${cx0 + 1},${innerY}`] = 'V'; // way back out
+            game.vault = { doorX, doorY, innerX: cx0 + 1, innerY };
+            game.mapHeight = cy0 + CH + 2;
+
+            // Vault treasure: a weapon, a heart piece, a rich loot gem, scrap.
+            const vaultWeapons = ['stiletto', 'tattoo_gun', 'bike_lock', 'banjo'];
+            const wKey = Math.random() < 0.06 ? 'glitter_blade' : pick(vaultWeapons);
+            game.items.push({ x: cx0 + 4, y: innerY, type: 'weapon', weaponKey: wKey, name: 'Weapon Cache' });
+            game.items.push({ x: cx0 + 6, y: innerY, type: 'heart_piece', name: 'Heart Piece' });
+            game.items.push({
+                x: cx0 + 8, y: innerY, type: 'loot',
+                tier: game.depth >= 6 ? 'legendary' : 'epic',
+                name: game.depth >= 6 ? 'Stonewall Brick' : "Hirschfeld's Notes",
+                scrap: game.depth >= 6 ? 20 : 8,
+                effect: game.depth >= 6 ? 'permanent_heart' : 'rage_vial',
+                color: '#FFD700', glow: '#FFD700'
+            });
+
+            // The key, guarded, somewhere else on the floor.
+            const keyRoom = popRandomRoom() || vRoom;
+            const kp = inRoomFloorTile(keyRoom);
+            game.items.push({ x: kp.x, y: kp.y, type: 'key', name: 'Small Key' });
+            game.trolls.push({
+                x: kp.x + 1, y: kp.y,
+                enemyType: 'gatekeeper', health: 4 + Math.floor(game.depth / 3), maxHealth: 4 + Math.floor(game.depth / 3),
+                patrolPath: [], patrolIndex: 0, direction: 1,
+                moveDelay: 0, maxMoveDelay: 99, alertRadius: 0, chasingTurns: 0
+            });
+        }
+    }
+
+    // ── Mercy's Mutual Aid Cart (~35%) ───────────────────────────────────────
+    // A traveling merchant. Her room is marked safe so the shop stays cozy.
+    if (usable.length > 0 && Math.random() < 0.35) {
+        const mRoom = popRandomRoom();
+        const pos = inRoomFloorTile(mRoom);
+        game.npcs.push({ x: pos.x, y: pos.y, type: 'merchant', name: 'Mercy' });
+        game.safeShelterRooms.add(`${mRoom.rx},${mRoom.ry}`);
+    }
+
+    // ── Caged companion (depth ≥ 2, ~40% while any remain) ───────────────────
+    // Rescue them and they join the Safehouse roster permanently.
+    const ownedComps = (game.persistent && game.persistent.companions) || {};
+    const unownedComps = COMPANION_KEYS.filter(k => !ownedComps[k]);
+    if (usable.length > 0 && unownedComps.length > 0 && game.depth >= 2 && Math.random() < 0.40) {
+        const cRoom = popRandomRoom();
+        const pos = inRoomFloorTile(cRoom);
+        game.items.push({ x: pos.x, y: pos.y, type: 'cage', companionKey: pick(unownedComps), name: 'Rattling Cage' });
+    }
+
+    // ── Breakable crates (Zelda pots) ────────────────────────────────────────
+    // Smash with any attack or a dash; they cough up hearts, scrap, potions.
+    {
+        const crateCount = 2 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < crateCount; i++) {
+            const rx = Math.floor(Math.random() * ROOMS_X);
+            const ry = Math.floor(Math.random() * ROOMS_Y);
+            if (rx === 0 && ry === 0) continue; // keep the spawn room clear
+            const cx = roomCenterX(rx) + (Math.random() < 0.5 ? -3 : 3);
+            const cy = roomFloorY(ry) - 1;
+            if (game.map[`${cx},${cy}`] === '.') game.map[`${cx},${cy}`] = 'X';
+        }
+    }
+
     // ── Echo Chamber (depth ≥ 3, ~22% per floor) ─────────────────────────────
     // A story the Archive couldn't quite hold — it's leaking, and someone from
     // it is still in there. Datamosh-tinted; enemies don't path in. Spawns one
@@ -552,9 +650,13 @@ export function generateMap(game) {
             if (eType === 'bigot')   { hp = 2; mDelay = 4; alertRad = 6; }
             hp = Math.max(1, hp + Math.floor(game.depth / 3));
 
+            // Elite variants: tougher, gold-ringed, guaranteed rich drops.
+            const elite = game.depth >= 2 && Math.random() < Math.min(0.22, 0.04 + game.depth * 0.02);
+            if (elite) hp = hp * 2 + 1;
+
             game.trolls.push({
                 x: cx, y: cy,
-                enemyType: eType, health: hp, maxHealth: hp,
+                enemyType: eType, health: hp, maxHealth: hp, elite,
                 patrolPath: [], patrolIndex: 0, direction: 1,
                 moveDelay: 0, maxMoveDelay: mDelay,
                 alertRadius: alertRad, chasingTurns: 0
@@ -581,19 +683,20 @@ export function generateMap(game) {
     }
 
     if (game.depth % 5 === 0) {
-        // Spawn the boss two tiles left of center so the exit stairs at center remain reachable.
-        const bossX = roomCenterX(exitRoom.rx) - 2;
+        const finalBoss = game.depth >= 10;
+        const bossHP = finalBoss ? 34 : 20;
         const bossY = roomFloorY(exitRoom.ry) - 1;
-        if (game.map[`${bossX},${bossY}`] !== '#') {
-            game.trolls.push({
-                x: bossX, y: bossY,
-                enemyType: 'boss',
-                health: 20, maxHealth: 20,
-                patrolPath: [], patrolIndex: 0, direction: 1,
-                moveDelay: 0, maxMoveDelay: 2,
-                alertRadius: 10, chasingTurns: 0, bossPhase: 1
-            });
-        }
+        // Try several offsets from center so a hall-motif pillar never blocks spawn.
+        const center = roomCenterX(exitRoom.rx);
+        const bossX = [-2, -3, -1, 2, 3, 1].map(d => center + d).find(cx => game.map[`${cx},${bossY}`] === '.') ?? center - 2;
+        game.trolls.push({
+            x: bossX, y: bossY,
+            enemyType: 'boss', bossName: finalBoss ? 'THE LANDLORD KING' : 'THE ALGORITHM',
+            health: bossHP, maxHealth: bossHP,
+            patrolPath: [], patrolIndex: 0, direction: 1,
+            moveDelay: 0, maxMoveDelay: 2,
+            alertRadius: 10, chasingTurns: 0, bossPhase: 1
+        });
     }
 }
 
@@ -634,6 +737,9 @@ export function generateHubMap(game) {
     game.trolls = [];
     game.particles = [];
     game.spriteFX = [];
+    game.projectiles = [];
+    game.vault = null;
+    game.castleFloor = false;
     game.crumbleState = {};
     game.muralTiles = {};
     game.hearthRooms = new Set();
@@ -748,6 +854,19 @@ export function generateHubMap(game) {
     const lobbyIntY = FLOOR_H - 3;
     game.map[`3,${lobbyIntY}`]             = 'F'; // campfire (upgrades)
     game.map[`${HUB_W - 4},${lobbyIntY}`]  = 'D'; // portal to wasteland
+
+    // The pond — stand at the edge and USE to fish. Water caps the platform
+    // row so you walk along its bank, never into it.
+    for (let wx2 = 20; wx2 <= 23; wx2++) game.map[`${wx2},${FLOOR_H - 2}`] = 'W';
+    game.muralTiles[`21,0`] = 'gone fishin\' — back never';
+
+    // Mercy keeps a permanent stall by the campfire.
+    game.npcs.push({ x: 6, y: lobbyIntY, type: 'merchant', name: 'Mercy' });
+
+    // Rescued companions laze around the pond.
+    Object.keys(game.persistent.companions || {}).forEach((ck, i) => {
+        game.npcs.push({ x: 17 + (i % 3), y: lobbyIntY, type: 'companion', companionKey: ck });
+    });
 
     // Zine magazine rack — permanent interactive item, never removed
     const zineTotal = Object.keys(ZINES).length;

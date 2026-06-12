@@ -1,6 +1,10 @@
 import { UI } from './ui.js';
 import { Audio } from './audio.js';
-import { LOOT_TIERS, DIFFICULTIES } from './data.js';
+import { LOOT_TIERS, DIFFICULTIES, WEAPONS } from './data.js';
+
+function equippedWeapon(game) {
+    return WEAPONS[game.player.weapon] || WEAPONS.spoon;
+}
 
 const PLAYER_W = 0.7;
 const PLAYER_H = 0.9;
@@ -83,6 +87,16 @@ export function grantKillRewards(game, enemy) {
         });
     } else {
         dropLoot(game, enemy);
+        // Zelda-style heart drops keep the hack-and-slash loop self-sustaining.
+        if (Math.random() < (enemy.elite ? 0.9 : 0.18)) {
+            game.items.push({ x: enemy.x, y: enemy.y, type: 'heart', name: 'Heart' });
+        }
+        // Elites sometimes drop their weapon.
+        if (enemy.elite && Math.random() < 0.20) {
+            const pool = ['stiletto', 'tattoo_gun', 'bike_lock', 'banjo'];
+            const wKey = Math.random() < 0.03 ? 'glitter_blade' : pool[Math.floor(Math.random() * pool.length)];
+            game.items.push({ x: enemy.x + 0.5, y: enemy.y, type: 'weapon', weaponKey: wKey, name: 'Dropped Weapon' });
+        }
     }
 }
 
@@ -112,6 +126,13 @@ function rollTier(game, enemy) {
         weights.rare *= 1.6;
         weights.epic *= 1.4;
     }
+    if (enemy.elite) {
+        // Elites skip junk and double the top of the curve.
+        weights.common *= 0.2;
+        weights.rare *= 2.0;
+        weights.epic *= 2.0;
+        weights.legendary *= 2.0;
+    }
     if (enemy.enemyType === 'wraith') {
         weights.rare *= 1.8;
         weights.epic *= 1.4;
@@ -138,6 +159,7 @@ export function dropLoot(game, enemy) {
     let chance = 0.55 * diff.lootBonus;
     if (enemy.enemyType === 'boss') chance = 1.0;
     if (enemy.enemyType === 'gatekeeper') chance = Math.min(0.95, chance + 0.15);
+    if (enemy.elite) chance = Math.min(0.95, chance + 0.30);
     if (Math.random() > chance) return;
 
     const tierKey = rollTier(game, enemy);
@@ -210,9 +232,10 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
     const targetY = py + dy;
 
     // Search a small box around target so jumping/landing one tile off still connects
+    const weaponNow = equippedWeapon(game);
     const candidates = game.trolls.filter(t => {
         const inFront = Math.sign(t.x - px) === Math.sign(dx) || dx === 0;
-        return Math.abs(t.x - targetX) <= 1 && Math.abs(t.y - targetY) <= 1 && inFront !== false;
+        return Math.abs(t.x - targetX) <= (weaponNow.reach || 1) && Math.abs(t.y - targetY) <= 1 && inFront !== false;
     });
     const enemy = candidates[0] || game.trolls.find(t => t.x === targetX && t.y === targetY);
 
@@ -236,7 +259,7 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
         return false;
     }
 
-    let damage = game.player.baseDamage;
+    let damage = game.player.baseDamage + (weaponNow.dmgBonus || 0);
     let knockback = false;
 
     if (type === 'power') {
@@ -272,9 +295,13 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
         else if (comboStep === 2) comboLabel = QUEER_CALLOUTS[Math.floor(Math.random() * QUEER_CALLOUTS.length)];
     }
 
-    // Pattern Master: 20% crit chance for double damage
+    // Pattern Master: 20% crit chance for double damage. Weapons and the
+    // Alley Cat companion stack on top.
     let crit = false;
-    const critChance = (hasTrait(game.player, 'autism') ? 0.20 : 0) + (game.player.critBonus || 0);
+    const critChance = (hasTrait(game.player, 'autism') ? 0.20 : 0)
+        + (game.player.critBonus || 0)
+        + (weaponNow.critBonus || 0)
+        + ((game.companionPerks && game.companionPerks.crit) || 0);
     if (Math.random() < critChance) {
         damage *= 2;
         crit = true;
@@ -290,7 +317,7 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
     const baseKB = 2;
     const growth = 1.2;
     // KB = (((damage/10 + damage*percent/20) * 200 / (weight + 100) * 1.4) + baseKB) * growth
-    const kb = (((damage / 10 + (damage * enemy.percent) / 20) * 200 / (weight + 100) * 1.4) + baseKB) * growth;
+    const kb = (((damage / 10 + (damage * enemy.percent) / 20) * 200 / (weight + 100) * 1.4) + baseKB) * growth * (weaponNow.kb || 1);
     
     // Apply velocity (enemies are now physics-driven)
     enemy.vx = (dx || (enemy.x > px ? 1 : -1)) * kb * 0.15;
@@ -338,6 +365,13 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
     if (game.player.hasRage) damage *= 2;
     // Rare-loot damage buff (decremented in main.js update)
     if (game.player.lootBuff > 0) damage += 1;
+
+    // Weapon proc (tattoo gun burn, banjo shock, glitterblade ignite…).
+    if (weaponNow.proc && Math.random() < weaponNow.proc.chance) {
+        applyStatus(enemy, weaponNow.proc.status, weaponNow.proc.duration, 1);
+    }
+    // Static Eel snack: every hit stuns while the charge lasts.
+    if ((game.player.shockAuraTimer || 0) > 0) applyStatus(enemy, 'shock', 45, 1);
 
     // Apply status effects based on attack type / class.
     if (type === 'power') {
@@ -458,6 +492,10 @@ export function attackEnemy(game, dx, dy, type, dirY = 0) {
     if (isFrozen(enemy)) damage = Math.ceil(damage * 1.5);
 
     enemy.health -= damage;
+    // Glitterblade drinks deep: quarter-heart back on every connected hit.
+    if (weaponNow.lifesteal && game.player.health < game.player.maxHealth) {
+        game.player.health = Math.min(game.player.maxHealth, game.player.health + 0.25);
+    }
     UI.addMessage(`${crit ? 'CRIT! ' : ''}${comboLabel ? comboLabel + ' ' : ''}Hit ${enemy.enemyType} for ${damage}!`, 'combat');
     UI.shakeScreen();
     Audio.playHit();

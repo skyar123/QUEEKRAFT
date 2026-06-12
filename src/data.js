@@ -1033,6 +1033,120 @@ export const NAMED_ITEM_EFFECTS = {
 };
 
 // ---------------------------------------------------------------------------
+// WEAPONS — hack-and-slash loadout (Cendric-style modifiers baked into each
+// weapon instead of socketed gems). dmgBonus adds to every swing; procs roll
+// per hit; kb multiplies knockback; reach 2 lets the swing connect a tile
+// further; lifesteal heals a fraction of damage dealt.
+export const WEAPONS = {
+    spoon: {
+        id: 'spoon', name: 'Rusty Spoon', icon: '🥄', tier: 'common', price: 0,
+        dmgBonus: 0, critBonus: 0, kb: 1.0, reach: 1,
+        desc: 'The classic. It has seen things.'
+    },
+    stiletto: {
+        id: 'stiletto', name: 'Stiletto Heel', icon: '👠', tier: 'uncommon', price: 10,
+        dmgBonus: 0, critBonus: 0.20, kb: 0.9, reach: 1,
+        desc: 'Fast, precise, fabulous. +20% crit.'
+    },
+    tattoo_gun: {
+        id: 'tattoo_gun', name: 'Tattoo Gun', icon: '🖋', tier: 'uncommon', price: 12,
+        dmgBonus: 0, critBonus: 0.05, kb: 0.9, reach: 1,
+        proc: { status: 'burn', chance: 0.35, duration: 150 },
+        desc: 'Inks a burn that keeps stinging. 35% ignite.'
+    },
+    bike_lock: {
+        id: 'bike_lock', name: 'Bike Lock & Chain', icon: '🔗', tier: 'rare', price: 16,
+        dmgBonus: 1, critBonus: 0, kb: 1.7, reach: 2,
+        desc: 'Heavy, long, and very persuasive. +1 dmg, big knockback, long reach.'
+    },
+    banjo: {
+        id: 'banjo', name: 'Cursed Banjo', icon: '🪕', tier: 'rare', price: 18,
+        dmgBonus: 1, critBonus: 0, kb: 1.3, reach: 1,
+        proc: { status: 'shock', chance: 0.25, duration: 45 },
+        desc: 'Every chord is a power chord. +1 dmg, 25% stun.'
+    },
+    glitter_blade: {
+        id: 'glitter_blade', name: 'The Glitterblade', icon: '⚔', tier: 'legendary', price: 40,
+        dmgBonus: 2, critBonus: 0.10, kb: 1.4, reach: 2, lifesteal: 0.5,
+        proc: { status: 'burn', chance: 0.25, duration: 150 },
+        desc: 'Forged from every brick ever thrown. +2 dmg, lifesteal, ignites.'
+    }
+};
+export const WEAPON_KEYS = Object.keys(WEAPONS);
+
+// ---------------------------------------------------------------------------
+// POTIONS — pocketable consumables (keys 1-4, or tap in the inventory bag).
+export const POTIONS = {
+    tonic: {
+        id: 'tonic', name: 'Herbal Tonic', icon: '🧪', hotkey: '1', price: 4,
+        desc: '+2 HP. Brewed with mountain herbs.'
+    },
+    brew: {
+        id: 'brew', name: 'Hearth Brew', icon: '☕', hotkey: '2', price: 9,
+        desc: 'Full heal. Tastes like being believed.'
+    },
+    warpaint: {
+        id: 'warpaint', name: 'War Paint', icon: '💄', hotkey: '3', price: 7,
+        desc: '+1 damage for 12 seconds. Wing it sharp enough to kill.'
+    },
+    ward: {
+        id: 'ward', name: 'Ward Charm', icon: '🛡', hotkey: '4', price: 7,
+        desc: 'Halves incoming damage for 10 seconds.'
+    }
+};
+export const POTION_KEYS = Object.keys(POTIONS);
+
+// ---------------------------------------------------------------------------
+// COMPANIONS — rescued from cages in the depths; one rides along per run,
+// trailing behind you, each with a passive perk. The cozy-critter roster.
+export const COMPANIONS = {
+    cat: {
+        id: 'cat', name: 'Alley Cat', icon: '🐈‍⬛', color: '#B967DB',
+        perk: 'crit', perkDesc: '+10% crit chance — she shows you where to bite.'
+    },
+    crow: {
+        id: 'crow', name: 'Archive Crow', icon: '🐦‍⬛', color: '#01CDFE',
+        perk: 'magnet', perkDesc: 'Fetches loot — pickups drift to you from 3 tiles away.'
+    },
+    moth: {
+        id: 'moth', name: 'Lantern Moth', icon: '🦋', color: '#FFD700',
+        perk: 'light', perkDesc: '+2 sight radius — carries a little lamp of her own.'
+    },
+    axolotl: {
+        id: 'axolotl', name: 'Brave Axolotl', icon: '🦎', color: '#F5A9B8',
+        perk: 'regen', perkDesc: 'Regenerates 1 HP every 45 seconds. Soft and indestructible.'
+    },
+    snail: {
+        id: 'snail', name: 'Disco Snail', icon: '🐌', color: '#39FF14',
+        perk: 'aura', perkDesc: 'Sparkle aura — nearby enemies get briefly stunned sometimes.'
+    }
+};
+export const COMPANION_KEYS = Object.keys(COMPANIONS);
+
+// ---------------------------------------------------------------------------
+// FISH — the Safehouse pond. Casting is free; the catch log (fish-dex)
+// persists forever, and every fish is a pocketable snack with an effect.
+export const FISH = {
+    minnow:   { id: 'minnow',   name: 'Neon Minnow',       icon: '🐟', weight: 40, tier: 'common',
+                effect: 'heal1',      desc: 'Glows faintly. +1 HP.' },
+    bass:     { id: 'bass',     name: 'Brick Bass',        icon: '🐠', weight: 24, tier: 'uncommon',
+                effect: 'heal2',      desc: 'Dense. Historic. +2 HP.' },
+    turtle:   { id: 'turtle',   name: 'Teacup Turtle',     icon: '🐢', weight: 12, tier: 'uncommon',
+                effect: 'ward',       desc: 'Lends you its shell — damage halved for 10s.' },
+    eel:      { id: 'eel',      name: 'Static Eel',        icon: '🪱', weight: 9,  tier: 'rare',
+                effect: 'shock_aura', desc: 'Crackles. Your next 10s of hits stun.' },
+    koi:      { id: 'koi',      name: 'Glitter Koi',       icon: '🎏', weight: 8,  tier: 'rare',
+                effect: 'warpaint',   desc: 'Sheds sequins. +1 damage for 12s.' },
+    angelfish:{ id: 'angelfish',name: 'Archive Angelfish', icon: '🐡', weight: 4,  tier: 'epic',
+                effect: 'fullheal',   desc: 'Remembers you. Full heal + 50 XP.' },
+    bubbles:  { id: 'bubbles',  name: 'Mx. Bubbles',       icon: '🫧', weight: 2,  tier: 'epic',
+                effect: 'jump',       desc: 'Defies gravity, categories, and you. +1 jump this run.' },
+    carp:     { id: 'carp',     name: 'The Gilded Carp',   icon: '🐉', weight: 1,  tier: 'legendary',
+                effect: 'heart_piece',desc: 'The pond\'s landlord. Coughs up a Heart Piece.' }
+};
+export const FISH_KEYS = Object.keys(FISH);
+
+// ---------------------------------------------------------------------------
 // Cozy quests. Each quest is given by an NPC ('giver'), tracked across runs
 // in game.persistent.quests, and turned in via a dialogue branch on the same
 // (or another) NPC. Progress is updated by hooks placed throughout main.js

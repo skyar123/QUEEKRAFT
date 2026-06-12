@@ -8,7 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
     ZINES, HISTORICAL_FIGURES, HEALING_ITEMS, TREASURES, ECHO_KEYS,
-    LOOT_TIERS, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS, GOALS
+    LOOT_TIERS, NAMED_ITEM_EFFECTS, QUESTS, QUEST_KEYS, GOALS,
+    WEAPONS, WEAPON_KEYS, POTIONS, POTION_KEYS, COMPANIONS, COMPANION_KEYS, FISH, FISH_KEYS
 } from '../src/data.js';
 import { generateMap, generateHubMap } from '../src/map.js';
 
@@ -82,6 +83,42 @@ check(Object.keys(ZINES).length >= GOALS.zines, `GOALS.zines (${GOALS.zines}) ex
 const nonEcho = Object.values(HISTORICAL_FIGURES).filter(f => !f.echo).length;
 check(nonEcho >= GOALS.figures, `GOALS.figures (${GOALS.figures}) exceeds figure pool (${nonEcho})`);
 
+// ── RPG tables ──────────────────────────────────────────────────────────────
+console.log('RPG tables…');
+const VALID_PROCS = new Set(['burn', 'shock', 'freeze']);
+for (const k of WEAPON_KEYS) {
+    const w = WEAPONS[k];
+    check(w.id === k, `weapon ${k}: id mismatch`);
+    check(typeof w.dmgBonus === 'number' && typeof w.kb === 'number' && (w.reach === 1 || w.reach === 2),
+        `weapon ${k}: bad stats`);
+    check(w.icon && w.name && w.desc && TIER_OK(w.tier), `weapon ${k}: missing display fields`);
+    if (w.proc) check(VALID_PROCS.has(w.proc.status) && w.proc.chance > 0 && w.proc.chance <= 1 && w.proc.duration > 0,
+        `weapon ${k}: bad proc`);
+}
+function TIER_OK(t) { return ['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(t); }
+for (const k of POTION_KEYS) {
+    const p = POTIONS[k];
+    check(p.id === k && p.icon && p.name && p.price > 0 && ['1','2','3','4'].includes(p.hotkey),
+        `potion ${k}: malformed`);
+}
+const seenHotkeys = new Set(POTION_KEYS.map(k => POTIONS[k].hotkey));
+check(seenHotkeys.size === POTION_KEYS.length, 'potions: duplicate hotkeys');
+const VALID_PERKS = new Set(['crit', 'magnet', 'light', 'regen', 'aura']);
+for (const k of COMPANION_KEYS) {
+    const c = COMPANIONS[k];
+    check(c.id === k && c.icon && c.name && c.color && VALID_PERKS.has(c.perk) && c.perkDesc,
+        `companion ${k}: malformed`);
+}
+const VALID_FISH_FX = new Set(['heal1', 'heal2', 'ward', 'shock_aura', 'warpaint', 'fullheal', 'jump', 'heart_piece']);
+let fishWeight = 0;
+for (const k of FISH_KEYS) {
+    const f = FISH[k];
+    check(f.id === k && f.icon && f.name && f.weight > 0 && TIER_OK(f.tier) && VALID_FISH_FX.has(f.effect),
+        `fish ${k}: malformed`);
+    fishWeight += f.weight;
+}
+check(fishWeight > 0, 'fish: zero total weight');
+
 // ── Map generation invariants ───────────────────────────────────────────────
 console.log('Map generation…');
 function freshGame(depth) {
@@ -92,7 +129,7 @@ function freshGame(depth) {
         particles: [], spriteFX: [], seen: {}, floatingText: []
     };
 }
-const PASSABLE = new Set(['.', '>', '=', '^', 'C', 'H']);
+const PASSABLE = new Set(['.', '>', '=', 'C']);
 for (let depth = 1; depth <= 10; depth++) {
     for (let trial = 0; trial < 25; trial++) {
         const game = freshGame(depth);
@@ -106,12 +143,25 @@ for (let depth = 1; depth <= 10; depth++) {
         for (const it of game.items) {
             if (it.type === 'zine') check(ZINES[it.zineKey], `depth ${depth}: zine item with bad key "${it.zineKey}"`);
             if (it.type === 'healing') check(HEALING_ITEMS[it.healingKey], `depth ${depth}: healing item with bad key "${it.healingKey}"`);
+            if (it.type === 'weapon') check(WEAPONS[it.weaponKey], `depth ${depth}: weapon item with bad key "${it.weaponKey}"`);
+            if (it.type === 'cage') check(COMPANIONS[it.companionKey], `depth ${depth}: cage with bad companion "${it.companionKey}"`);
         }
         for (const n of game.npcs) {
+            if (n.type === 'merchant' || n.type === 'companion') continue;
             check(HISTORICAL_FIGURES[n.figureKey], `depth ${depth}: npc with bad figureKey "${n.figureKey}"`);
         }
         if (depth % 5 === 0) {
             check(game.trolls.some(t => t.enemyType === 'boss'), `depth ${depth}: boss missing on boss floor`);
+        }
+        // Vault invariants: outer + inner doors exist, a Small Key is on the
+        // floor, and the treasure chamber actually contains treasure.
+        if (game.vault) {
+            const v = game.vault;
+            check(game.map[`${v.doorX},${v.doorY}`] === 'V', `depth ${depth}: vault outer door tile missing`);
+            check(game.map[`${v.innerX},${v.innerY}`] === 'V', `depth ${depth}: vault inner door tile missing`);
+            check(game.items.some(i => i.type === 'key'), `depth ${depth}: vault exists but no Small Key on floor`);
+            check(game.items.some(i => i.type === 'heart_piece'), `depth ${depth}: vault has no heart piece`);
+            check(game.mapHeight > v.innerY, `depth ${depth}: mapHeight not extended past vault`);
         }
     }
 }
@@ -119,12 +169,20 @@ for (let depth = 1; depth <= 10; depth++) {
 for (const seen of [{}, { marsha: true }, { marsha: 3, sylvia: 1, wewha: 7 }]) {
     const game = freshGame(0);
     game.persistent.seenFigures = seen;
+    game.persistent.companions = { cat: true, crow: true };
     game.persistent.deepestReached = 8;
     generateHubMap(game);
     check(game.inHub === true, 'hub: inHub flag not set');
     check(Object.values(game.map).includes('D') && Object.values(game.map).includes('F'),
         'hub: portal/campfire tile missing');
-    for (const n of game.npcs) check(HISTORICAL_FIGURES[n.figureKey], `hub: npc bad figureKey "${n.figureKey}"`);
+    check(Object.values(game.map).includes('W'), 'hub: fishing pond missing');
+    check(game.npcs.some(n => n.type === 'merchant'), 'hub: Mercy missing from the lobby');
+    check(game.npcs.filter(n => n.type === 'companion').length === 2, 'hub: rescued companions not idling');
+    for (const n of game.npcs) {
+        if (n.type === 'merchant') continue;
+        if (n.type === 'companion') { check(COMPANIONS[n.companionKey], `hub: idle companion bad key`); continue; }
+        check(HISTORICAL_FIGURES[n.figureKey], `hub: npc bad figureKey "${n.figureKey}"`);
+    }
 }
 
 if (failures > 0) {
