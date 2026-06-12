@@ -664,6 +664,10 @@ function updateResolution() {
     ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener('resize', updateResolution);
+// iOS reports stale innerWidth/innerHeight on the resize that fires *during* a
+// rotation, which can leave the canvas at the wrong portrait/landscape size.
+// Recompute again after the orientation settles.
+window.addEventListener('orientationchange', () => setTimeout(updateResolution, 250));
 
 let patterns = {};
 function initGame() {
@@ -4721,10 +4725,23 @@ function setupControls() {
     document.addEventListener('pointerdown', unlockAudio, { once: true });
     document.addEventListener('keydown', unlockAudio, { once: true });
 
-    // Prevent two-finger zoom / double-tap zoom on the canvas.
+    // Block all browser zoom. iOS Safari ignores the `maximum-scale`/`user-scalable=no`
+    // viewport meta, so a pinch or double-tap zooms the whole page (HUD + canvas)
+    // and there's no way to snap back without a reload. Guard at the DOCUMENT level
+    // so a gesture that *starts* on a control button or the HUD is caught too — the
+    // old code only guarded the canvas element. These only suppress the browser's
+    // default zoom; the joystick/buttons read their own touch events, so simultaneous
+    // multi-touch gameplay (steer + jump) keeps working.
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(ev =>
+        document.addEventListener(ev, e => e.preventDefault(), { passive: false })
+    );
+    // Android Chrome doesn't fire gesture* events — kill pinch via two-finger touchmove.
+    document.addEventListener('touchmove', e => {
+        if (e.touches.length > 1) e.preventDefault();
+    }, { passive: false });
+    // Keep gameplay touches on the canvas from scrolling/selecting.
     const canvasEl = document.getElementById('game-canvas');
     canvasEl.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
-    canvasEl.addEventListener('gesturestart', e => e.preventDefault());
 
     document.getElementById('victory-restart-btn').onclick = () => location.reload();
     document.getElementById('game-over-continue-btn').onclick = () => {

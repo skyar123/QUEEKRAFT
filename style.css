@@ -12,6 +12,11 @@
     margin: 0;
     padding: 0;
     font-family: 'VT323', monospace;
+    /* touch-action does NOT inherit, so setting it only on <body> leaves the
+       control buttons/HUD at the default 'auto' — which lets iOS double-tap-zoom
+       the whole page when you tap a button twice fast. Apply it to every element
+       (the canvas overrides to 'none'). 'manipulation' keeps modal scrolling. */
+    touch-action: manipulation;
 }
 
 body, html {
