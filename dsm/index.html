@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#050505">
+    <title>DSM ARCHIVE — A Learning Game</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <div id="crt-overlay" aria-hidden="true">
+        <div class="scanlines"></div>
+        <div class="vignette"></div>
+    </div>
+
+    <main id="app">
+        <!-- TITLE -->
+        <section id="screen-title" class="screen active">
+            <div class="title-stack">
+                <div class="eyebrow blink">⚠ ARCHIVE TERMINAL READY ⚠</div>
+                <h1 class="title glitch" data-text="DSM ARCHIVE">DSM ARCHIVE</h1>
+                <div class="sub">Diagnostic and Statistical Manual — Study Console</div>
+                <div class="tag">A learning game inspired by QUEEKRAFT</div>
+            </div>
+
+            <div class="menu">
+                <button class="mbtn" data-mode="diagnose">DIAGNOSE THE VIGNETTE</button>
+                <button class="mbtn" data-mode="category">CATEGORY DRILL</button>
+                <button class="mbtn" data-mode="flashcards">FLASHCARDS</button>
+                <button class="mbtn" data-mode="glossary">BROWSE THE ARCHIVE</button>
+            </div>
+
+            <div class="footer">
+                <span>Best streak: <span id="best-streak">0</span></span>
+                <span>Total correct: <span id="best-correct">0</span></span>
+                <button id="reset-stats" class="link">reset</button>
+            </div>
+
+            <div class="disclaimer">
+                Educational paraphrase only. Not for clinical use. DSM-5-TR® is a registered trademark of the American Psychiatric Association; no manual text is reproduced here.
+            </div>
+        </section>
+
+        <!-- QUIZ (used by diagnose + category) -->
+        <section id="screen-quiz" class="screen">
+            <header class="hud">
+                <button class="back" data-action="back">◀ ARCHIVE</button>
+                <div class="hud-mode" id="quiz-mode-label">DIAGNOSE</div>
+                <div class="hud-stats">
+                    <span>Score <b id="quiz-score">0</b></span>
+                    <span>Streak <b id="quiz-streak">0</b></span>
+                    <span>Q <b id="quiz-q">1</b></span>
+                </div>
+            </header>
+
+            <div class="quiz-card">
+                <div class="prompt-label" id="quiz-prompt-label">VIGNETTE</div>
+                <div class="prompt" id="quiz-prompt">…</div>
+                <div class="choices" id="quiz-choices"></div>
+                <div class="feedback" id="quiz-feedback"></div>
+                <div class="cta">
+                    <button id="quiz-next" class="primary" disabled>NEXT ▶</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- FLASHCARDS -->
+        <section id="screen-cards" class="screen">
+            <header class="hud">
+                <button class="back" data-action="back">◀ ARCHIVE</button>
+                <div class="hud-mode">FLASHCARDS</div>
+                <div class="hud-stats">
+                    <span>Card <b id="card-index">1</b>/<b id="card-total">0</b></span>
+                </div>
+            </header>
+
+            <div class="card-stage" id="card-stage">
+                <div class="flashcard" id="flashcard">
+                    <div class="face front">
+                        <div class="card-eyebrow">DISORDER</div>
+                        <div class="card-name" id="card-name">…</div>
+                        <div class="card-hint">tap / space to flip</div>
+                    </div>
+                    <div class="face back">
+                        <div class="card-eyebrow" id="card-cat">…</div>
+                        <ul class="card-cues" id="card-cues"></ul>
+                        <div class="card-hint">tap / space to flip</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-controls">
+                <button id="card-prev" class="ghost">◀ PREV</button>
+                <button id="card-flip" class="primary">FLIP</button>
+                <button id="card-shuffle" class="ghost">SHUFFLE</button>
+                <button id="card-next" class="ghost">NEXT ▶</button>
+            </div>
+        </section>
+
+        <!-- GLOSSARY -->
+        <section id="screen-glossary" class="screen">
+            <header class="hud">
+                <button class="back" data-action="back">◀ ARCHIVE</button>
+                <div class="hud-mode">ARCHIVE</div>
+                <div class="hud-stats">
+                    <span><b id="glossary-count">0</b> categories</span>
+                </div>
+            </header>
+
+            <div class="glossary" id="glossary-list"></div>
+        </section>
+    </main>
+
+    <!-- Interstitial fact / round summary -->
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html>
